@@ -1,0 +1,8 @@
+Employee Name,Role,Date,Clock In Time,Clock Out Time,Duration (Mins),Clock In Location,Clock Out Location
+"fatma","employee",2026-06-05,10:48:16 AM,10:48:18 AM,0,"https://www.google.com/maps?q=31.43201,74.221218","https://www.google.com/maps?q=31.43201,74.221218"
+"sana","employee",2026-06-05,10:45:14 AM,10:45:16 AM,0,"https://www.google.com/maps?q=31.43201,74.221218","https://www.google.com/maps?q=31.43201,74.221218"
+"sana","employee",2026-06-05,10:40:10 AM,10:40:37 AM,0,"https://www.google.com/maps?q=31.431929,74.221222","https://www.google.com/maps?q=31.431929,74.221222"
+"fatma","employee",2026-06-04,12:48:10 PM,12:48:13 PM,0,"https://www.google.com/maps?q=31.431986,74.221228","https://www.google.com/maps?q=31.431986,74.221228"
+"John Doe","Developer",2026-06-04,12:38:27 PM,12:38:27 PM,0,"https://www.google.com/maps?q=40.7128,-74.006","https://www.google.com/maps?q=40.713,-74.0062"
+"John Doe","Developer",2026-06-04,12:26:00 PM,12:26:10 PM,0,"https://www.google.com/maps?q=31.431986,74.221228","https://www.google.com/maps?q=31.431986,74.221228"
+"John Doe","Developer",2026-06-04,12:14:46 PM,12:14:46 PM,0,"https://www.google.com/maps?q=40.7128,-74.006","https://www.google.com/maps?q=40.713,-74.0062"

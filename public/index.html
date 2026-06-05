@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office Attendance Portal</title>
+  
+  <!-- PWA meta tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  
+  <!-- Google Fonts: Outfit for titles, Inter for UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Background decorative elements for rich aesthetics -->
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <!-- Main Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo-section">
+        <div class="logo-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-.621-.504-1.125-1.125-1.125H9.75M8.25 21h8.25c.621 0 1.125-.504 1.125-1.125V3.875c0-.621-.504-1.125-1.125-1.125H8.25c-.621 0-1.125.504-1.125 1.125v15.975c0 .621.504 1.125 1.125 1.125z" />
+          </svg>
+        </div>
+        <div>
+          <h1 id="office-title">Office Attendance</h1>
+          <p class="subtitle">Daily Registry & Tracker</p>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <!-- Live Clock -->
+        <div class="live-clock-container">
+          <div id="live-time">12:00:00 PM</div>
+          <div id="live-date">Thursday, June 4, 2026</div>
+        </div>
+        
+        <!-- Toggle button to swap views -->
+        <button id="btn-toggle-portal" class="btn btn-secondary">
+          <span class="btn-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+          </span>
+          <span class="btn-text">Admin Panel</span>
+        </button>
+
+        <!-- Employee Logout Button -->
+        <button id="btn-employee-logout" class="btn btn-secondary btn-logout hidden">
+          <span class="btn-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+            </svg>
+          </span>
+          <span class="btn-text">Exit Account</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <!-- EMPLOYEE PORTAL VIEW -->
+    <section id="employee-portal-view" class="view-section active">
+      <div class="portal-grid" id="portal-grid">
+        <!-- Selector Panel -->
+        <div class="panel select-employee-panel" id="select-employee-panel">
+          <h2 class="panel-title">Identify Yourself</h2>
+          <p class="panel-subtitle">Select your name from the staff registry to begin</p>
+          
+          <div class="search-container">
+            <input type="text" id="employee-search" placeholder="Type name to search staff..." autocomplete="off">
+            <span class="search-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.637 10.637z" />
+              </svg>
+            </span>
+          </div>
+
+          <div class="employee-list-container">
+            <ul id="portal-employee-list" class="clickable-list">
+              <!-- JS Populated -->
+              <li class="list-empty">Loading staff list...</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Clock Card Panel -->
+        <div class="panel clock-card-panel">
+          <div id="clock-card-placeholder" class="clock-card-placeholder">
+            <div class="placeholder-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672 13.684 16.6m0 0-2.51 2.225.569-9.47 5.227 7.917-3.286-.672ZM12 2.25V4.5m5.303.197-1.591 1.591M21 12h-2.25m-.197 5.303-1.591-1.591m-12 0-1.591 1.591M3 12h2.25m-.197-5.303 1.591 1.591" />
+              </svg>
+            </div>
+            <h3>No Employee Selected</h3>
+            <p>Please select your name from the staff registry to clock in/out or view your log.</p>
+          </div>
+
+          <div id="clock-card-content" class="clock-card-content hidden">
+            <div class="profile-header">
+              <div class="profile-avatar" id="employee-avatar">E</div>
+              <div class="profile-info">
+                <h3 id="selected-employee-name">Employee Name</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem; flex-wrap: wrap;">
+                  <span id="selected-employee-role" class="badge-role">Role</span>
+                  <button id="btn-change-pin" class="btn-change-pin-link">Change PIN</button>
+                </div>
+              </div>
+              <div id="selected-employee-status" class="status-indicator status-out">Clocked Out</div>
+            </div>
+
+            <!-- Location Check Card -->
+            <div class="location-status-card" id="location-card">
+              <div class="loc-icon spinner" id="loc-icon-indicator">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+              </div>
+              <div class="loc-details">
+                <h4 id="loc-status-title">Detecting GPS Location...</h4>
+                <p id="loc-status-text" class="text-muted">Attendance registry requires location permissions.</p>
+              </div>
+              <button id="btn-retry-location" class="btn btn-icon-only hidden" title="Retry location tracking">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Action Buttons Grid -->
+            <div class="action-buttons-grid">
+              <button id="btn-clock-in" class="btn btn-clock btn-success" disabled>
+                <span class="btn-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+                <span class="btn-text-large">CLOCK IN</span>
+              </button>
+
+              <button id="btn-clock-out" class="btn btn-clock btn-danger" disabled>
+                <span class="btn-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+                <span class="btn-text-large">CLOCK OUT</span>
+              </button>
+            </div>
+
+            <!-- Active Shift Card (shows when logged in) -->
+            <div id="active-shift-card" class="shift-info-card hidden">
+              <div class="shift-label">Active Shift Tracker</div>
+              <div class="shift-grid">
+                <div>
+                  <span class="grid-label">Clocked In:</span>
+                  <span id="shift-start-time" class="grid-value">-</span>
+                </div>
+                <div>
+                  <span class="grid-label">Duration:</span>
+                  <span id="shift-duration" class="grid-value duration-counter">0m</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Individual History -->
+            <div class="employee-today-history">
+              <h4>Your Log Today</h4>
+              <div id="employee-log-today" class="log-timeline">
+                <!-- JS populated -->
+                <div class="timeline-empty">No check-ins logged today.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ADMIN PANEL VIEW -->
+    <section id="admin-panel-view" class="view-section">
+      <div class="admin-wrapper">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="admin-sidebar">
+          <div class="sidebar-user">
+            <div class="sidebar-avatar">A</div>
+            <div class="sidebar-info">
+              <h3>Administrator</h3>
+              <p class="badge-role badge-admin">Secure Mode</p>
+            </div>
+          </div>
+          
+          <nav class="sidebar-nav">
+            <button class="nav-link active" data-tab="tab-dashboard">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
+              </svg>
+              Dashboard
+            </button>
+            <button class="nav-link" data-tab="tab-roster">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+              </svg>
+              Staff Roster
+            </button>
+            <button class="nav-link" data-tab="tab-settings">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Settings
+            </button>
+            
+            <button id="btn-lock-admin" class="nav-link nav-link-logout">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+              Exit Admin
+            </button>
+          </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="admin-body">
+          
+          <!-- TAB 1: DASHBOARD -->
+          <div id="tab-dashboard" class="tab-pane active">
+            <h2 class="admin-tab-title">Overview Dashboard</h2>
+            
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-icon bg-indigo">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A2.25 2.25 0 0112.75 21.5h-1.5a2.25 2.25 0 01-2.25-2.263V19.13m4.5-9.75a3 3 0 11-6 0 3 3 0 016 0zm-3 8.25a9.765 9.765 0 00-4.124-.988 9.75 9.75 0 00-4.053.882 4.125 4.125 0 00-1.826 3.447v.883a.75.75 0 00.75.75h13.5a.75.75 0 00.75-.75v-.883a4.125 4.125 0 00-1.826-3.447z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Total Staff</span>
+                  <span class="stat-number" id="stat-total-staff">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-emerald">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Currently In</span>
+                  <span class="stat-number" id="stat-currently-in">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-violet">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.35 11.65a3.75 3.75 0 11-5.3 0 3.75 3.75 0 015.3 0zM16.5 15.75a3 3 0 10-6 0 3 3 0 006 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6.002 6.002 0 00-4-5.659V12a3.75 3.75 0 00-3.75-3.75H4a.75.75 0 00-.75.75V12a6.002 6.002 0 004 5.659v1.091c0 .75.467 1.42 1.171 1.666A11.966 11.966 0 0012 21c2.17 0 4.207-.576 5.963-1.584A1.82 1.82 0 0019.09 17.75v-1.091a6.002 6.002 0 004-5.659V9a.75.75 0 00-.75-.75h-.25a3.75 3.75 0 00-3.75 3.75v1.091a6.002 6.002 0 00-4 5.659z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Present Today</span>
+                  <span class="stat-number" id="stat-present-today">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-rose">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Absent Today</span>
+                  <span class="stat-number" id="stat-absent-today">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Attendance Table Card -->
+            <div class="panel data-panel">
+              <div class="panel-header-actions">
+                <div>
+                  <h3 class="data-panel-title">Daily Attendance Logs</h3>
+                  <p class="data-panel-subtitle">Review employee check-ins and check-outs with geographical tags</p>
+                </div>
+                <div class="table-filters">
+                  <!-- Date Filter -->
+                  <div class="filter-group">
+                    <label for="admin-date-filter">Date:</label>
+                    <input type="date" id="admin-date-filter">
+                  </div>
+                  <!-- Search Filter -->
+                  <div class="filter-group">
+                    <input type="text" id="admin-log-search" placeholder="Search staff name...">
+                  </div>
+                  <!-- Export CSV -->
+                  <button id="btn-export-csv" class="btn btn-primary">
+                    <span class="btn-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                      </svg>
+                    </span>
+                    Export CSV
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-container">
+                <table id="admin-logs-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Role</th>
+                      <th>Date</th>
+                      <th>Clock In</th>
+                      <th>Clock Out</th>
+                      <th>Duration</th>
+                      <th>In Location</th>
+                      <th>Out Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colspan="8" class="table-empty">Loading logs...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: STAFF ROSTER -->
+          <div id="tab-roster" class="tab-pane">
+            <div class="roster-grid">
+              <!-- Add Employee Panel -->
+              <div class="panel add-staff-panel">
+                <h3 class="panel-title">Add New Staff Member</h3>
+                <p class="panel-subtitle">Create a login profile for registry access</p>
+                
+                <form id="form-add-employee" class="admin-form">
+                  <div class="form-group">
+                    <label for="new-emp-name">Full Name *</label>
+                    <input type="text" id="new-emp-name" placeholder="Enter staff's full name" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="new-emp-role">Job Title / Role</label>
+                    <input type="text" id="new-emp-role" placeholder="e.g. Graphic Designer, Manager">
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-full">
+                    Add Staff Member
+                  </button>
+                </form>
+              </div>
+
+              <!-- Employee Roster List Panel -->
+              <div class="panel roster-list-panel">
+                <h3 class="panel-title">Current Staff Roster</h3>
+                <p class="panel-subtitle">Manage registry access and review active states</p>
+                
+                <div class="table-container text-smaller">
+                  <table id="admin-roster-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>PIN</th>
+                        <th>Current Status</th>
+                        <th>Created Date</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td colspan="6" class="table-empty">Loading roster...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: SETTINGS -->
+          <div id="tab-settings" class="tab-pane">
+            <div class="settings-grid">
+              <div class="panel">
+                <h3 class="panel-title">System Settings</h3>
+                <p class="panel-subtitle">Configure application settings and security passcode</p>
+                
+                <form id="form-settings" class="admin-form">
+                  <div class="form-group">
+                    <label for="settings-office-name">Office Name</label>
+                    <input type="text" id="settings-office-name" placeholder="Enter office / company name" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-passcode">Admin Passcode</label>
+                    <input type="password" id="settings-passcode" placeholder="Change admin passcode" minlength="4">
+                    <small class="form-help-text">Used to unlock the administrator dashboard. Default: 1234</small>
+                  </div>
+                  <button type="submit" class="btn btn-primary">Save Settings</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- PASSWORD DIALOG MODAL -->
+  <div id="admin-auth-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Admin Passcode Required</h3>
+        <button id="btn-close-auth-modal" class="btn-close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Enter administrative passcode to unlock logs, roster, and settings.</p>
+        <form id="form-admin-auth">
+          <div class="form-group">
+            <input type="password" id="auth-passcode" placeholder="••••" required autofocus autocomplete="current-password" class="auth-input-field">
+            <div id="auth-error-msg" class="form-error-msg hidden">Incorrect passcode, please try again.</div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Unlock Dashboard</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMPLOYEE PIN AUTH DIALOG MODAL -->
+  <div id="employee-auth-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" id="emp-auth-title">Verify Employee PIN</h3>
+        <button id="btn-close-emp-auth-modal" class="btn-close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" id="emp-auth-subtitle">Please enter your 4-digit PIN code.</p>
+        <form id="form-employee-auth">
+          <div class="form-group pin-field-container">
+            <input type="password" id="emp-auth-pin" placeholder="••••" required autofocus maxlength="4" minlength="4" inputmode="numeric" pattern="[0-9]*" class="auth-input-field pin-input">
+            <div id="emp-auth-error-msg" class="form-error-msg hidden">Incorrect PIN. Please try again.</div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Unlock Registry</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PIN DIALOG MODAL -->
+  <div id="change-pin-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Change Your PIN</h3>
+        <button id="btn-close-change-pin-modal" class="btn-close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="form-change-pin">
+          <div class="form-group">
+            <label for="change-pin-old">Current 4-Digit PIN</label>
+            <input type="password" id="change-pin-old" placeholder="••••" required maxlength="4" minlength="4" inputmode="numeric" pattern="[0-9]*" class="auth-input-field">
+          </div>
+          <div class="form-group">
+            <label for="change-pin-new">New 4-Digit PIN</label>
+            <input type="password" id="change-pin-new" placeholder="••••" required maxlength="4" minlength="4" inputmode="numeric" pattern="[0-9]*" class="auth-input-field">
+          </div>
+          <div id="change-pin-error-msg" class="form-error-msg hidden">Incorrect current PIN or invalid new PIN.</div>
+          <button type="submit" class="btn btn-primary btn-full">Save New PIN</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Script Load -->
+  <script src="app.js"></script>
+</body>
+</html>

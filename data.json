@@ -1,0 +1,177 @@
+{
+  "employees": [
+    {
+      "id": "emp_demo2",
+      "name": "Jane Smith",
+      "role": "Designer",
+      "status": "OUT",
+      "dateCreated": "2026-06-04T07:14:06.706Z",
+      "pin": "1234",
+      "token": "fcb9c97093b06c0e2e8c4ed15d6c43c2"
+    },
+    {
+      "id": "emp_mpz706o9_6rawr",
+      "name": "fatma",
+      "role": "employee",
+      "status": "OUT",
+      "dateCreated": "2026-06-04T07:47:30.633Z",
+      "pin": "1234",
+      "token": "e8194b00ff9490c0f4ed96039a6fc500"
+    },
+    {
+      "id": "emp_mq0hvo3d_5m21u",
+      "name": "sana",
+      "role": "employee",
+      "status": "OUT",
+      "pin": "2345",
+      "dateCreated": "2026-06-05T05:39:41.881Z",
+      "token": "ea09936074d921edb534cfe4afc740e3"
+    }
+  ],
+  "attendance": [
+    {
+      "id": "att_mpz5u2t3_z78ij",
+      "employeeId": "emp_demo1",
+      "employeeName": "John Doe",
+      "role": "Developer",
+      "date": "2026-06-04",
+      "clockInTime": "2026-06-04T07:14:46.071Z",
+      "clockOutTime": "2026-06-04T07:14:46.077Z",
+      "clockInLocation": {
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "accuracy": 10
+      },
+      "clockOutLocation": {
+        "latitude": 40.713,
+        "longitude": -74.0062,
+        "accuracy": 12
+      },
+      "duration": 0
+    },
+    {
+      "id": "att_mpz68j8k_shuz5",
+      "employeeId": "emp_demo1",
+      "employeeName": "John Doe",
+      "role": "Developer",
+      "date": "2026-06-04",
+      "clockInTime": "2026-06-04T07:26:00.548Z",
+      "clockOutTime": "2026-06-04T07:26:10.373Z",
+      "clockInLocation": {
+        "latitude": 31.431986,
+        "longitude": 74.221228,
+        "accuracy": 147
+      },
+      "clockOutLocation": {
+        "latitude": 31.431986,
+        "longitude": 74.221228,
+        "accuracy": 147
+      },
+      "duration": 0
+    },
+    {
+      "id": "att_mpz6ojqj_hnvku",
+      "employeeId": "emp_demo1",
+      "employeeName": "John Doe",
+      "role": "Developer",
+      "date": "2026-06-04",
+      "clockInTime": "2026-06-04T07:38:27.690Z",
+      "clockOutTime": "2026-06-04T07:38:27.714Z",
+      "clockInLocation": {
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "accuracy": 10
+      },
+      "clockOutLocation": {
+        "latitude": 40.713,
+        "longitude": -74.0062,
+        "accuracy": 12
+      },
+      "duration": 0
+    },
+    {
+      "id": "att_mpz711mc_rmlwn",
+      "employeeId": "emp_mpz706o9_6rawr",
+      "employeeName": "fatma",
+      "role": "employee",
+      "date": "2026-06-04",
+      "clockInTime": "2026-06-04T07:48:10.740Z",
+      "clockOutTime": "2026-06-04T07:48:13.790Z",
+      "clockInLocation": {
+        "latitude": 31.431986,
+        "longitude": 74.221228,
+        "accuracy": 147
+      },
+      "clockOutLocation": {
+        "latitude": 31.431986,
+        "longitude": 74.221228,
+        "accuracy": 147
+      },
+      "duration": 0
+    },
+    {
+      "id": "att_mq0hw9y8_27mtm",
+      "employeeId": "emp_mq0hvo3d_5m21u",
+      "employeeName": "sana",
+      "role": "employee",
+      "date": "2026-06-05",
+      "clockInTime": "2026-06-05T05:40:10.208Z",
+      "clockOutTime": "2026-06-05T05:40:37.119Z",
+      "clockInLocation": {
+        "latitude": 31.431929,
+        "longitude": 74.221222,
+        "accuracy": 41
+      },
+      "clockOutLocation": {
+        "latitude": 31.431929,
+        "longitude": 74.221222,
+        "accuracy": 41
+      },
+      "duration": 0
+    },
+    {
+      "id": "att_mq0i2t1b_clrhe",
+      "employeeId": "emp_mq0hvo3d_5m21u",
+      "employeeName": "sana",
+      "role": "employee",
+      "date": "2026-06-05",
+      "clockInTime": "2026-06-05T05:45:14.879Z",
+      "clockOutTime": "2026-06-05T05:45:16.866Z",
+      "clockInLocation": {
+        "latitude": 31.43201,
+        "longitude": 74.221218,
+        "accuracy": 213
+      },
+      "clockOutLocation": {
+        "latitude": 31.43201,
+        "longitude": 74.221218,
+        "accuracy": 213
+      },
+      "duration": 0
+    },
+    {
+      "id": "att_mq0i6pf9_xb44b",
+      "employeeId": "emp_mpz706o9_6rawr",
+      "employeeName": "fatma",
+      "role": "employee",
+      "date": "2026-06-05",
+      "clockInTime": "2026-06-05T05:48:16.821Z",
+      "clockOutTime": "2026-06-05T05:48:18.566Z",
+      "clockInLocation": {
+        "latitude": 31.43201,
+        "longitude": 74.221218,
+        "accuracy": 213
+      },
+      "clockOutLocation": {
+        "latitude": 31.43201,
+        "longitude": 74.221218,
+        "accuracy": 213
+      },
+      "duration": 0
+    }
+  ],
+  "settings": {
+    "adminPasscode": "1234",
+    "officeName": "My Office"
+  }
+}

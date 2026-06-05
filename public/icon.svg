@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#6366f1" flood-opacity="0.3" />
+    </filter>
+  </defs>
+  
+  <!-- Rounded Base Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  
+  <!-- Inner ring / Border glow -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#6366f1" stroke-width="6" stroke-opacity="0.15" />
+  
+  <!-- Main Glowing Icon Body -->
+  <g filter="url(#shadow)">
+    <!-- Clock Outer Ring -->
+    <circle cx="256" cy="256" r="130" fill="none" stroke="url(#glowGrad)" stroke-width="24" stroke-linecap="round" />
+    
+    <!-- Clock Center Dot -->
+    <circle cx="256" cy="256" r="14" fill="#fff" />
+    
+    <!-- Clock Hands -->
+    <line x1="256" y1="256" x2="256" y2="160" stroke="#fff" stroke-width="16" stroke-linecap="round" />
+    <line x1="256" y1="256" x2="330" y2="256" stroke="#fff" stroke-width="16" stroke-linecap="round" />
+    
+    <!-- Checklist/Registry details (bottom right corner accent) -->
+    <path d="M370 370 L340 370 M370 340 L330 340" stroke="#818cf8" stroke-width="12" stroke-linecap="round" opacity="0.8" />
+  </g>
+</svg>

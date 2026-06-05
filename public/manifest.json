@@ -1,0 +1,18 @@
+{
+  "name": "Office Attendance Registry",
+  "short_name": "Attendance",
+  "description": "Secure Daily Attendance Registry and Live Geolocation Tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b0f19",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
