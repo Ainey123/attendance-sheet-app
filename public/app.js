@@ -8,10 +8,17 @@ let adminPasscode = '';
 let currentView = 'employee'; // 'employee' or 'admin'
 let activeShiftTimer = null;
 let currentAdminTab = 'tab-dashboard';
+let settings = {
+  organizationName: 'Company Name',
+  clockInRadius: 500
+};
 
 // Base API endpoints
 const API = {
   getSettings: () => fetch('/api/settings').then(r => r.json()),
+  getEmployees: () => fetch('/api/employees', {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }).then(r => r.json()),
   verifyPasscode: (passcode) => fetch('/api/settings/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -46,10 +53,10 @@ const API = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, location })
   }).then(r => r.json()),
-  clockOut: (employeeId, location) => fetch('/api/attendance/clock-out', {
+  clockOut: (employeeId, location, performanceNotes, moneySpent) => fetch('/api/attendance/clock-out', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ employeeId, location })
+    body: JSON.stringify({ employeeId, location, performanceNotes, moneySpent })
   }).then(r => r.json()),
   verifyEmployeePin: (employeeId, pin) => fetch('/api/employees/verify-pin', {
     method: 'POST',
@@ -134,12 +141,14 @@ function fetchLocation() {
   const locText = document.getElementById('loc-status-text');
   const locIcon = document.getElementById('loc-icon-indicator');
   const btnRetry = document.getElementById('btn-retry-location');
+  const mapContainer = document.getElementById('map-container');
   
   locCard.className = 'location-status-card';
   locIcon.className = 'loc-icon spinner';
   locTitle.innerText = 'Detecting GPS Location...';
   locText.innerText = 'Attendance registry requires location permissions.';
   btnRetry.classList.add('hidden');
+  if (mapContainer) mapContainer.classList.add('hidden');
   
   // Disable buttons while obtaining GPS
   updateClockButtonsDisabledState(true);
@@ -149,7 +158,7 @@ function fetchLocation() {
     locIcon.className = 'loc-icon';
     locTitle.innerText = 'GPS Not Supported';
     locText.innerText = 'Your browser does not support Geolocation.';
-    updateClockButtonsDisabledState(false);
+    updateClockButtonsDisabledState(true);
     return;
   }
   
@@ -166,6 +175,11 @@ function fetchLocation() {
       locTitle.innerText = 'GPS Location Secured';
       locText.innerText = `Coordinates: ${userLocation.latitude.toFixed(5)}, ${userLocation.longitude.toFixed(5)} (±${Math.round(userLocation.accuracy)}m)`;
       
+      if (mapContainer) {
+        mapContainer.innerHTML = `<iframe width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="https://www.openstreetmap.org/export/embed.html?bbox=${userLocation.longitude-0.005},${userLocation.latitude-0.005},${userLocation.longitude+0.005},${userLocation.latitude+0.005}&layer=mapnik&marker=${userLocation.latitude},${userLocation.longitude}"></iframe>`;
+        mapContainer.classList.remove('hidden');
+      }
+
       updateClockButtonsDisabledState(false);
     },
     (error) => {
@@ -173,12 +187,13 @@ function fetchLocation() {
       locCard.classList.add('error');
       locIcon.className = 'loc-icon';
       btnRetry.classList.remove('hidden');
+      if (mapContainer) mapContainer.classList.add('hidden');
       
       let errMsg = 'Location permission denied. Please allow GPS to verify check-in location.';
       if (error.code === error.POSITION_UNAVAILABLE) {
-        errMsg = 'Location information is unavailable.';
+        errMsg = 'Location information is unavailable. Please try again.';
       } else if (error.code === error.TIMEOUT) {
-        errMsg = 'Request to get location timed out.';
+        errMsg = 'Request to get location timed out. Please try again.';
       }
       
       locTitle.innerText = 'GPS Access Blocked';
@@ -187,7 +202,7 @@ function fetchLocation() {
       // Enforce GPS: disable buttons if location tracking fails
       updateClockButtonsDisabledState(true);
     },
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 }
   );
 }
 
@@ -254,17 +269,26 @@ function stopShiftTimer() {
 async function loadEmployeesList(selectedId = null) {
   try {
     allEmployees = await API.getEmployees();
+    // Persist employees to localStorage
+    Store.saveEmployees(allEmployees);
     renderEmployeePortalList(allEmployees);
     
     if (selectedId) {
-      // Re-fetch state
       const refreshed = allEmployees.find(e => e.id === selectedId);
       if (refreshed) {
         selectEmployee(refreshed);
       }
     }
   } catch (err) {
-    showToast('Failed to load employee list', 'error');
+    // Fallback to cached employees from localStorage
+    const cached = Store.loadEmployees();
+    if (cached && cached.length > 0) {
+      allEmployees = cached;
+      renderEmployeePortalList(allEmployees);
+      showToast('Loaded employee list from cache', 'info');
+    } else {
+      showToast('Failed to load employee list', 'error');
+    }
   }
 }
 
@@ -479,34 +503,6 @@ async function handleClockIn() {
   }
 }
 
-// Clock Out trigger
-async function handleClockOut() {
-  if (!selectedEmployee) return;
-  const originalBtn = document.getElementById('btn-clock-out');
-  const btnText = originalBtn.querySelector('.btn-text-large');
-  
-  btnText.innerText = 'CLOCKING OUT...';
-  updateClockButtonsDisabledState(true);
-
-  try {
-    const res = await API.clockOut(selectedEmployee.id, userLocation);
-    if (res.success) {
-      showToast(`Clock Out successful. Total shift: ${res.data.record.duration} minutes.`, 'success');
-      
-      // Re-load list & update selection status
-      await loadEmployeesList(selectedEmployee.id);
-    } else {
-      showToast(res.error || 'Clock out failed', 'error');
-      updateClockButtonsDisabledState(false);
-    }
-  } catch (err) {
-    showToast('Network error during clock out', 'error');
-    updateClockButtonsDisabledState(false);
-  } finally {
-    btnText.innerText = 'CLOCK OUT';
-  }
-}
-
 // ==========================================================================
 // ADMIN DASHBOARD & VERIFICATION SYSTEM
 // ==========================================================================
@@ -523,17 +519,19 @@ async function handleAdminAuthSubmit(e) {
   try {
     const res = await API.verifyPasscode(passcode);
     if (res.success) {
-      adminPasscode = passcode;
-      input.value = '';
-      closeAdminAuthModal();
-      
-      // Unlock view
-      switchView('admin');
-      showToast('Admin access granted', 'success');
-    } else {
-      errorMsg.classList.remove('hidden');
-      input.focus();
-    }
+        adminPasscode = passcode;
+        // Persist admin passcode
+        Store.savePasscode(adminPasscode);
+        input.value = '';
+        closeAdminAuthModal();
+        
+        // Unlock view
+        switchView('admin');
+        showToast('Admin access granted', 'success');
+      } else {
+        errorMsg.classList.remove('hidden');
+        input.focus();
+      }
   } catch (err) {
     showToast('Connection error', 'error');
   }
@@ -561,6 +559,8 @@ function switchView(viewName) {
     
     // Clear admin passcode to log out session on view return
     adminPasscode = '';
+    // Clear persisted passcode
+    Store.savePasscode('');
     
     // Reload portal listings
     loadEmployeesList(selectedEmployee ? selectedEmployee.id : null);
@@ -705,6 +705,7 @@ function filterAdminLogs(searchText) {
 async function loadAdminRoster() {
   try {
     const employees = await API.getEmployees();
+    Store.saveEmployees(employees);
     const tbody = document.querySelector('#admin-roster-table tbody');
     tbody.innerHTML = '';
 
@@ -743,9 +744,24 @@ async function loadAdminRoster() {
       `;
       
       // Copy Link listener
-      tr.querySelector('.btn-share-link').addEventListener('click', (e) => {
+ tr.querySelector('.btn-share-link').addEventListener('click', async (e) => {
         const id = e.currentTarget.getAttribute('data-id');
-        const shareUrl = emp.token ? `${window.location.origin}/?mode=employee&token=${emp.token}` : `${window.location.origin}/?mode=employee&empId=${id}`;
+        let token = emp.token;
+        if (!token) {
+          // Generate token via API if missing
+          const res = await fetch(`/api/employees/${id}/generate-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode }
+          }).then(r => r.json());
+          if (res.success) {
+            token = res.link.split('token=')[1];
+            emp.token = token; // update local object
+          } else {
+            showToast('Failed to generate token', 'error');
+            return;
+          }
+        }
+        const shareUrl = `${window.location.origin}/?mode=employee\&token=${token}`;
         navigator.clipboard.writeText(shareUrl).then(() => {
           showToast(`Direct login link copied for ${emp.name}!`, 'success');
         }).catch(err => {
@@ -823,8 +839,9 @@ async function handleAddEmployeeSubmit(e) {
 
   try {
     const res = await API.addEmployee(name, role);
-    if (res.id) {
-      showToast(`Registered employee: ${res.name}`, 'success');
+    if (res.employee || res.id) {
+      const emp = res.employee || res;
+      showToast(`Registered employee: ${emp.name}`, 'success');
       nameInput.value = '';
       roleInput.value = '';
       
@@ -1098,6 +1115,10 @@ async function handleQueryParams() {
     strictEmployeeMode = true;
     const btnToggle = document.getElementById('btn-toggle-portal');
     if (btnToggle) btnToggle.classList.add('hidden');
+    
+    // Hide the employee list so they only see their own login/dashboard
+    document.getElementById('select-employee-panel').classList.add('hidden');
+    document.getElementById('portal-grid').classList.add('session-active');
   }
   
   // 2. Direct Employee Login link check (by token or empId)
@@ -1181,6 +1202,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Clock in & out operations
   document.getElementById('btn-clock-in').addEventListener('click', handleClockIn);
   document.getElementById('btn-clock-out').addEventListener('click', handleClockOut);
+document.getElementById('form-clockout-details').addEventListener('submit', submitClockOutDetails);
 
   // Admin lock modal close
   document.getElementById('btn-close-auth-modal').addEventListener('click', closeAdminAuthModal);

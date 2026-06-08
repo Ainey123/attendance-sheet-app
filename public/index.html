@@ -138,6 +138,7 @@
                 </svg>
               </button>
             </div>
+            <div id="map-container" class="hidden" style="width: 100%; height: 200px; margin-bottom: 1.5rem; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color);"></div>
 
             <!-- Action Buttons Grid -->
             <div class="action-buttons-grid">
@@ -434,15 +435,34 @@
           </svg>
         </button>
       </div>
-      <div class="modal-body">
-        <p class="text-muted">Enter administrative passcode to unlock logs, roster, and settings.</p>
-        <form id="form-admin-auth">
-          <div class="form-group">
-            <input type="password" id="auth-passcode" placeholder="••••" required autofocus autocomplete="current-password" class="auth-input-field">
-            <div id="auth-error-msg" class="form-error-msg hidden">Incorrect passcode, please try again.</div>
-          </div>
-          <button type="submit" class="btn btn-primary btn-full">Unlock Dashboard</button>
-        </form>
+            <!-- Admin Link Generation Button -->
+
+            <!-- Clock-Out Details Modal -->
+            <div id="clockout-modal" class="modal-overlay hidden">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h3 class="modal-title">Clock Out Details</h3>
+                  <button id="btn-close-clockout-modal" class="btn-close">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="modal-body">
+                  <form id="form-clockout-details" class="admin-form">
+                    <div class="form-group">
+                      <label for="performance-notes">Performance Notes *</label>
+                      <textarea id="performance-notes" placeholder="Enter performance notes..." required style="width:100%;height:80px;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"></textarea>
+                    </div>
+                    <div class="form-group">
+                      <label for="money-spent">Money Spent ($) *</label>
+                      <input type="number" id="money-spent" placeholder="0.00" min="0" step="0.01" required style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-full">Submit</button>
+                  </form>
+                </div>
+              </div>
+            </div>        </form>
       </div>
     </div>
   </div>
@@ -503,6 +523,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Script Load -->
+  <script src="store.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

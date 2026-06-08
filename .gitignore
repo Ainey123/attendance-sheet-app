@@ -5,3 +5,6 @@ node_modules/
 .vscode
 *.log
 npm-debug.log*
+
+.vercel
+.env*
