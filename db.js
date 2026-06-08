@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
 // Path to local fallback JSON file
 const LOCAL_DATA_PATH = path.join(__dirname, 'data.json');
 
