@@ -11,64 +11,90 @@ const LOCAL_DATA_PATH = path.join(__dirname, 'data.json');
 const BLOB_ID = process.env.BLOB_ID || '019e9cae-8ba5-7613-9c4d-0a15a944c498';
 const BLOB_URL = `https://jsonblob.com/api/jsonBlob/${BLOB_ID}`;
 
+const IS_CLOUD = !!process.env.VERCEL || !!process.env.RENDER || process.env.NODE_ENV === 'production';
+
 // Read all data from the online database
 async function readData() {
-  // 1️⃣ Try local file first (fast, works offline)
+  // 1️⃣ Try remote JSONBlob first in cloud environments so we get live data
+  if (IS_CLOUD) {
+    try {
+      const response = await fetch(BLOB_URL, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Keep local fallback file updated if writable
+        try { fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8'); } catch (_) {}
+        return data;
+      }
+    } catch (err) {
+      console.error('Cloud remote read failed, falling back to local:', err);
+    }
+  }
+
+  // 2️⃣ Local file fallback (fast, offline-friendly for local dev)
   try {
     if (fs.existsSync(LOCAL_DATA_PATH)) {
       const raw = fs.readFileSync(LOCAL_DATA_PATH, 'utf8');
       return JSON.parse(raw);
     }
   } catch (localErr) {
-    console.error('Local read failed, falling back to remote:', localErr);
+    console.error('Local read failed:', localErr);
   }
 
-  // 2️⃣ Remote JSONBlob fallback (keeps compatibility with existing deployments)
-  try {
-    const response = await fetch(BLOB_URL, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-    });
-    if (!response.ok) throw new Error(`Read failed: ${response.status}`);
-    const data = await response.json();
-    // Persist a local copy for future fast reads
-    try { fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8'); } catch (_) {}
-    return data;
-  } catch (err) {
-    console.error('Error reading database (remote):', err);
-    // Return a clean default structure so the app continues to work
-    return {
-      employees: [],
-      attendance: [],
-      settings: { adminPasscode: '1234', officeName: 'My Office' }
-    };
+  // 3️⃣ Remote JSONBlob fallback for local dev if local file doesn't exist
+  if (!IS_CLOUD) {
+    try {
+      const response = await fetch(BLOB_URL, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        try { fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8'); } catch (_) {}
+        return data;
+      }
+    } catch (err) {
+      console.error('Local-dev remote read failed:', err);
+    }
   }
+
+  // Default structure
+  return {
+    employees: [],
+    attendance: [],
+    settings: { adminPasscode: '1234', officeName: 'My Office' }
+  };
 }
 
 // Write all data to the online database
 async function writeData(data) {
-  // Write to local file first – ensures immediate persistence without network latency
-  try {
-    fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
-  } catch (localErr) {
-    console.error('Local write failed:', localErr);
-    // Continue to remote write so we keep both copies in sync
-  }
+  let remoteSuccess = false;
 
-  // Then push the update to the remote JSONBlob (maintains the original cloud backup)
+  // 1️⃣ In cloud, write to JSONBlob synchronously
   try {
     const response = await fetch(BLOB_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!response.ok) throw new Error(`Write failed: ${response.status}`);
-    return true;
+    if (response.ok) {
+      remoteSuccess = true;
+    }
   } catch (err) {
-    console.error('Remote write failed (JSONBlob):', err);
-    // Return false only if both writes failed – local succeeded, so we consider the operation successful for the app
-    return false;
+    console.error('Remote write failed:', err);
   }
+
+  // 2️⃣ Write to local file for offline access or local caching
+  try {
+    fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
+    return true; // if local write succeeded, we have persistence
+  } catch (localErr) {
+    console.error('Local write failed:', localErr);
+  }
+
+  return remoteSuccess;
 }
 
 // Generate unique ID
