@@ -4,7 +4,7 @@
 let allEmployees = [];
 let selectedEmployee = null;
 let userLocation = null;
-let adminPasscode = Store.loadPasscode();
+let adminPasscode = '';
 let currentView = 'employee'; // 'employee' or 'admin'
 let activeShiftTimer = null;
 let currentAdminTab = 'tab-dashboard';
@@ -1120,26 +1120,9 @@ async function handleQueryParams() {
     document.getElementById('select-employee-panel').classList.add('hidden');
     document.getElementById('portal-grid').classList.add('session-active');
   }
-
-  // 1b. Admin Mode Login token check
-  const modeParam = urlParams.get('mode');
-  const tokenParam = urlParams.get('token');
-  if (modeParam === 'admin' || (tokenParam && tokenParam.length === 32)) {
-    try {
-      const res = await fetch(`/api/admin/grant?token=${tokenParam}`).then(r => r.json());
-      if (res.admin && res.passcode) {
-        adminPasscode = res.passcode;
-        Store.savePasscode(adminPasscode);
-        switchView('admin');
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return;
-      }
-    } catch (e) {
-      console.error('Admin token login failed', e);
-    }
-  }
   
   // 2. Direct Employee Login link check (by token or empId)
+  const tokenParam = urlParams.get('token');
   if (tokenParam) {
     try {
       const res = await API.getEmployeeByToken(tokenParam);
