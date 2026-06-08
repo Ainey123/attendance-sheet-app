@@ -14,9 +14,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Helper to check admin password
-const checkAdminAuth = (req, res, next) => {
+const checkAdminAuth = async (req, res, next) => {
   const passcode = req.headers['x-admin-passcode'];
-  const settings = db.getSettings();
+  const settings = await db.getSettings();
   if (passcode === settings.adminPasscode) {
     next();
   } else {
@@ -25,8 +25,8 @@ const checkAdminAuth = (req, res, next) => {
 };
 
 // Migration: ensure all employees have a token
-(function ensureEmployeeTokens() {
-  const employees = db.getEmployees();
+(async function ensureEmployeeTokens() {
+  const employees = await db.getEmployees();
   let updated = false;
   employees.forEach(emp => {
     if (!emp.token) {
@@ -38,9 +38,6 @@ const checkAdminAuth = (req, res, next) => {
     }
   });
   if (updated) {
-    // Overwrite the whole data file with new tokens
-    const data = require('./db'); // get db module (already loaded)
-    // Since db methods write to file, we can just re-write via internal helper
     const fs = require('fs');
     const path = require('path');
     const FILE_PATH = path.join(__dirname, 'data.json');
@@ -53,15 +50,15 @@ const checkAdminAuth = (req, res, next) => {
 // --- API Endpoints ---
 
 // Get active office name
-app.get('/api/settings', (req, res) => {
-  const settings = db.getSettings();
+app.get('/api/settings', async (req, res) => {
+  const settings = await db.getSettings();
   res.json({ officeName: settings.officeName });
 });
 
 // Verify admin passcode
-app.post('/api/settings/verify', (req, res) => {
+app.post('/api/settings/verify', async (req, res) => {
   const { passcode } = req.body;
-  const settings = db.getSettings();
+  const settings = await db.getSettings();
   if (passcode === settings.adminPasscode) {
     res.json({ success: true, message: 'Passcode verified.' });
   } else {
@@ -70,20 +67,30 @@ app.post('/api/settings/verify', (req, res) => {
 });
 
 // Update office settings
-app.post('/api/settings/update', checkAdminAuth, (req, res) => {
+app.post('/api/settings/update', checkAdminAuth, async (req, res) => {
   const { officeName, adminPasscode } = req.body;
   const updateData = {};
   if (officeName) updateData.officeName = officeName.trim();
   if (adminPasscode) updateData.adminPasscode = adminPasscode.trim();
 
-  const updated = db.updateSettings(updateData);
+  const updated = await db.updateSettings(updateData);
   res.json({ success: true, settings: { officeName: updated.officeName } });
 });
 
-// Get all employees
-app.get('/api/employees', (req, res) => {
+// Generate permanent admin token
+app.post('/api/settings/generate-admin-token', checkAdminAuth, async (req, res) => {
   try {
-    const employees = db.getEmployees();
+    const token = await db.generateAdminToken();
+    res.json({ success: true, token });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get all employees
+app.get('/api/employees', async (req, res) => {
+  try {
+    const employees = await db.getEmployees();
     res.json(employees);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -91,6 +98,19 @@ app.get('/api/employees', (req, res) => {
 });
 
 // Create new employee (admin only)
+app.post('/api/employees', checkAdminAuth, async (req, res) => {
+  const { name, role } = req.body;
+  if (!name || name.trim() === '') {
+    return res.status(400).json({ error: 'Employee name is required.' });
+  }
+  try {
+    const employee = await db.addEmployee(name, role);
+    res.status(201).json(employee);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Generate a permanent share token for an employee (admin only)
 app.post('/api/employees/:id/generate-token', checkAdminAuth, (req, res) => {
   const { id } = req.params;
@@ -116,17 +136,7 @@ app.post('/api/employees/:id/generate-token', checkAdminAuth, (req, res) => {
   res.json({ success: true, link });
 });
 
-  const { name, role } = req.body;
-  if (!name || name.trim() === '') {
-    return res.status(400).json({ error: 'Employee name is required.' });
-  }
-  try {
-    const employee = db.addEmployee(name, role);
-    res.status(201).json(employee);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+
 
 // Delete employee (admin only)
 app.delete('/api/employees/:id', checkAdminAuth, (req, res) => {
