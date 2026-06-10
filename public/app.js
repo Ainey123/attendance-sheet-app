@@ -67,7 +67,26 @@ const API = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, oldPin, newPin })
-  }).then(r => r.json())
+  }).then(r => r.json()),
+  getWorkRecords: (employeeId, month) => {
+    let url = `/api/work-records?employeeId=${encodeURIComponent(employeeId)}`;
+    if (month) url += `&month=${encodeURIComponent(month)}`;
+    return fetch(url).then(r => r.json());
+  },
+  getWorkProfile: (employeeId, month) =>
+    fetch(`/api/work-records/profile?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}`).then(r => r.json()),
+  saveWorkProfile: (employeeId, month, fatherName) => fetch('/api/work-records/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employeeId, month, fatherName })
+  }).then(r => r.json()),
+  addWorkRecord: (data) => fetch('/api/work-records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json()),
+  deleteWorkRecord: (id, employeeId) =>
+    fetch(`/api/work-records/${id}?employeeId=${encodeURIComponent(employeeId)}`, { method: 'DELETE' }).then(r => r.json())
 };
 
 // ==========================================================================
@@ -125,6 +144,31 @@ function getLocalDateString(date = new Date()) {
   return adjustedDate.toISOString().split('T')[0];
 }
 
+function getCurrentMonthString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatWorkDateDisplay(isoDate) {
+  if (!isoDate) return '-';
+  const parts = isoDate.split('-');
+  if (parts.length === 3) return `${parseInt(parts[2], 10)}-${parseInt(parts[1], 10)}`;
+  return isoDate;
+}
+
+function formatRemarksBadge(remark) {
+  if (!remark) return '<span class="text-muted">—</span>';
+  const cls = {
+    COMPLETE: 'remarks-complete',
+    VISIT: 'remarks-visit',
+    COMPLICATIONS: 'remarks-complications',
+    PENDING: 'remarks-pending'
+  }[(remark || '').toUpperCase()] || '';
+  return cls
+    ? `<span class="remarks-badge ${cls}">${remark}</span>`
+    : remark;
+}
+
 // Helper: Format datetime for table display
 function formatDateTime(isoString) {
   if (!isoString) return '-';
@@ -149,16 +193,14 @@ function fetchLocation() {
   locText.innerText = 'Attendance registry requires location permissions.';
   btnRetry.classList.add('hidden');
   if (mapContainer) mapContainer.classList.add('hidden');
-  
-  // Disable buttons while obtaining GPS
-  updateClockButtonsDisabledState(true);
 
   if (!navigator.geolocation) {
     locCard.classList.add('error');
     locIcon.className = 'loc-icon';
-    locTitle.innerText = 'GPS Not Supported';
-    locText.innerText = 'Your browser does not support Geolocation.';
-    updateClockButtonsDisabledState(true);
+    locTitle.innerText = 'GPS Not Available';
+    locText.innerText = 'Clock in/out will work without GPS. Location will not be recorded.';
+    btnRetry.classList.add('hidden');
+    updateClockButtonsDisabledState(false);
     return;
   }
   
@@ -196,22 +238,22 @@ function fetchLocation() {
         errMsg = 'Request to get location timed out. Please try again.';
       }
       
-      locTitle.innerText = 'GPS Access Blocked';
-      locText.innerText = errMsg;
+      locTitle.innerText = 'GPS Unavailable';
+      locText.innerText = `${errMsg} You can still clock in/out without location.`;
       
-      // Enforce GPS: disable buttons if location tracking fails
-      updateClockButtonsDisabledState(true);
+      updateClockButtonsDisabledState(false);
     },
-    { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 }
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
   );
 }
 
-// Enable/Disable Clock In & Out buttons based on employee selection state, status, and GPS coordinates
+// Enable/disable clock buttons from employee selection and shift status (GPS is optional)
 function updateClockButtonsDisabledState(disableAll = false) {
   const btnIn = document.getElementById('btn-clock-in');
   const btnOut = document.getElementById('btn-clock-out');
-  
-  if (disableAll || !selectedEmployee || !userLocation) {
+  if (!btnIn || !btnOut) return;
+
+  if (disableAll || !selectedEmployee) {
     btnIn.disabled = true;
     btnOut.disabled = true;
     return;
@@ -400,20 +442,21 @@ async function loadSelectedEmployeeLogs(employeeId) {
   
   try {
     const res = await API.getAttendanceStatus(employeeId);
-    const active = res.activeRecord;
-    
-    if (active) {
-      // Set active clock-in details
-      document.getElementById('shift-start-time').innerText = formatDateTime(active.clockInTime);
-      startShiftTimer(active.clockInTime);
-      
-      // Render timeline view
+    const record = res.activeRecord;
+    const isActiveShift = record && !record.clockOutTime;
+
+    if (isActiveShift) {
+      selectedEmployee.status = 'IN';
+      updateEmployeeStatusBadge('IN');
+      document.getElementById('shift-start-time').innerText = formatDateTime(record.clockInTime);
+      startShiftTimer(record.clockInTime);
+
       timeline.innerHTML = `
         <div class="timeline-item">
           <div class="timeline-times">
             <div class="time-box">
               <span class="time-label">Clocked In</span>
-              <span class="time-value">${formatDateTime(active.clockInTime)}</span>
+              <span class="time-value">${formatDateTime(record.clockInTime)}</span>
             </div>
             <span class="time-arrow">➔</span>
             <div class="time-box">
@@ -426,52 +469,42 @@ async function loadSelectedEmployeeLogs(employeeId) {
           </div>
         </div>
       `;
-    } else {
-      // No active session. Fetch historical logs of today to see past checkins
+    } else if (record && record.clockOutTime) {
+      selectedEmployee.status = 'OUT';
+      updateEmployeeStatusBadge('OUT');
       stopShiftTimer();
       document.getElementById('shift-start-time').innerText = '-';
-      
-      // Fetch admin level logs or let's verify if server supports status logic.
-      // Actually, if activeRecord was empty, there are no uncompleted logs. 
-      // To show today's logs for this specific employee, we can filter today's records.
-      // But since employees cannot access all logs (privacy), we can just fetch logs for today from api.
-      // To keep it simple, if no active checkin is present, we show that they are ready to clock in.
-      // We can also retrieve the latest completed logs for this employee.
-      // For design wow-factor, let's pull historical log for today if available. 
-      // (Wait, since we don't want to expose others' logs, we will make a client call. 
-      // In db.js, getTodayAttendanceForEmployee already retrieves the most recent record of today!)
-      // If it returned a record and it has clockOutTime, let's display it.
-      
-      // Let's modify API response parsing or database querying.
-      // Actually, our API `/api/attendance/status/:employeeId` returns the ACTIVE record, 
-      // or if not active, the LATEST completed check-in of today!
-      // Let's check if the returned record has clockOutTime:
-      if (active === null) {
-        timeline.innerHTML = '<div class="timeline-empty">No check-ins logged today. Ready to clock in!</div>';
-      } else {
-        // Returned object is the completed log
-        timeline.innerHTML = `
-          <div class="timeline-item">
-            <div class="timeline-times">
-              <div class="time-box">
-                <span class="time-label">Clocked In</span>
-                <span class="time-value">${formatDateTime(active.clockInTime)}</span>
-              </div>
-              <span class="time-arrow">➔</span>
-              <div class="time-box">
-                <span class="time-label">Clocked Out</span>
-                <span class="time-value">${formatDateTime(active.clockOutTime)}</span>
-              </div>
+
+      timeline.innerHTML = `
+        <div class="timeline-item">
+          <div class="timeline-times">
+            <div class="time-box">
+              <span class="time-label">Clocked In</span>
+              <span class="time-value">${formatDateTime(record.clockInTime)}</span>
             </div>
-            <div class="timeline-duration">
-              ${active.duration}m
+            <span class="time-arrow">➔</span>
+            <div class="time-box">
+              <span class="time-label">Clocked Out</span>
+              <span class="time-value">${formatDateTime(record.clockOutTime)}</span>
             </div>
           </div>
-        `;
-      }
+          <div class="timeline-duration">
+            ${record.duration}m
+          </div>
+        </div>
+      `;
+    } else {
+      selectedEmployee.status = 'OUT';
+      updateEmployeeStatusBadge('OUT');
+      stopShiftTimer();
+      document.getElementById('shift-start-time').innerText = '-';
+      timeline.innerHTML = '<div class="timeline-empty">No check-ins logged today. Ready to clock in!</div>';
     }
+
+    updateClockButtonsDisabledState(false);
   } catch (err) {
     timeline.innerHTML = '<div class="timeline-empty">Failed to load shifts.</div>';
+    updateClockButtonsDisabledState(false);
   }
 }
 
@@ -488,9 +521,10 @@ async function handleClockIn() {
     const res = await API.clockIn(selectedEmployee.id, userLocation);
     if (res.success) {
       showToast(`Clock In successful for ${selectedEmployee.name}`, 'success');
-      
-      // Re-load list & update selection status
+      selectedEmployee.status = 'IN';
+      updateEmployeeStatusBadge('IN');
       await loadEmployeesList(selectedEmployee.id);
+      updateClockButtonsDisabledState(false);
     } else {
       showToast(res.error || 'Clock in failed', 'error');
       updateClockButtonsDisabledState(false);
@@ -500,6 +534,60 @@ async function handleClockIn() {
     updateClockButtonsDisabledState(false);
   } finally {
     btnText.innerText = 'CLOCK IN';
+  }
+}
+
+function openClockOutModal() {
+  document.getElementById('clockout-modal').classList.remove('hidden');
+  document.getElementById('performance-notes').value = '';
+  document.getElementById('money-spent').value = '';
+  document.getElementById('performance-notes').focus();
+}
+
+function closeClockOutModal() {
+  document.getElementById('clockout-modal').classList.add('hidden');
+}
+
+function handleClockOut() {
+  if (!selectedEmployee) return;
+  openClockOutModal();
+}
+
+async function submitClockOutDetails(e) {
+  e.preventDefault();
+  if (!selectedEmployee) return;
+
+  const performanceNotes = document.getElementById('performance-notes').value.trim();
+  const moneySpent = document.getElementById('money-spent').value;
+
+  if (!performanceNotes) {
+    showToast('Performance notes are required', 'error');
+    return;
+  }
+
+  updateClockButtonsDisabledState(true);
+
+  try {
+    const res = await API.clockOut(
+      selectedEmployee.id,
+      userLocation,
+      performanceNotes,
+      moneySpent
+    );
+    if (res.success) {
+      showToast(`Clock out successful for ${selectedEmployee.name}`, 'success');
+      closeClockOutModal();
+      selectedEmployee.status = 'OUT';
+      updateEmployeeStatusBadge('OUT');
+      await loadEmployeesList(selectedEmployee.id);
+      updateClockButtonsDisabledState(false);
+    } else {
+      showToast(res.error || 'Clock out failed', 'error');
+      updateClockButtonsDisabledState(false);
+    }
+  } catch (err) {
+    showToast('Network error during clock out', 'error');
+    updateClockButtonsDisabledState(false);
   }
 }
 
@@ -590,6 +678,10 @@ async function switchAdminTab(tabId) {
     await loadAdminDashboard();
   } else if (tabId === 'tab-roster') {
     await loadAdminRoster();
+  } else if (tabId === 'tab-workrecords') {
+    await loadAdminWorkRecords();
+  } else if (tabId === 'tab-progress') {
+    await loadWorkProgress();
   } else if (tabId === 'tab-settings') {
     await loadAdminSettings();
   }
@@ -839,7 +931,7 @@ async function handleAddEmployeeSubmit(e) {
 
   try {
     const res = await API.addEmployee(name, role);
-    if (res.employee || res.id) {
+    if (res && (res.employee || res.id || res.name)) {
       const emp = res.employee || res;
       showToast(`Registered employee: ${emp.name}`, 'success');
       nameInput.value = '';
@@ -945,6 +1037,479 @@ function exportLogsToCSV() {
 }
 
 // ==========================================================================
+// MONTHLY WORK & PAYMENT RECORDS
+// ==========================================================================
+let currentEmployeeWorkRecords = [];
+let currentAdminWorkRecords = [];
+
+function switchEmployeeTab(tabId) {
+  document.querySelectorAll('.emp-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-emp-tab') === tabId);
+  });
+  document.querySelectorAll('.emp-tab-pane').forEach(pane => {
+    const isActive = pane.id === tabId;
+    pane.classList.toggle('active', isActive);
+    if (isActive) pane.classList.remove('hidden');
+    else pane.classList.add('hidden');
+  });
+  const grid = document.getElementById('portal-grid');
+  if (tabId === 'emp-pane-workrecord') {
+    grid.classList.add('work-record-active');
+    loadEmployeeWorkRecords();
+  } else {
+    grid.classList.remove('work-record-active');
+  }
+}
+
+function renderWorkRecordRows(records, tbodySelector, allowDelete) {
+  const tbody = document.querySelector(`${tbodySelector} tbody`);
+  tbody.innerHTML = '';
+
+  if (!records.length) {
+    const cols = allowDelete ? 9 : 8;
+    tbody.innerHTML = `<tr><td colspan="${cols}" class="table-empty">No entries for this month yet.</td></tr>`;
+    return;
+  }
+
+  records.forEach((rec, idx) => {
+    const tr = document.createElement('tr');
+    const payment = rec.paymentIssuance != null ? rec.paymentIssuance.toLocaleString() : '—';
+    tr.innerHTML = `
+      <td class="col-sn">${idx + 1}</td>
+      <td>${formatWorkDateDisplay(rec.date)}</td>
+      <td class="col-work">${rec.performedWork || '—'}</td>
+      <td>${payment}</td>
+      <td>${rec.balancePayment || '—'}</td>
+      <td>${rec.materialIssuance || '—'}</td>
+      <td>${rec.materialBalance || '—'}</td>
+      <td>${formatRemarksBadge(rec.otherRemarks)}</td>
+      ${allowDelete ? '<td></td>' : ''}
+    `;
+    if (allowDelete) {
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn-delete-work';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', () => handleDeleteWorkRecord(rec.id));
+      tr.lastElementChild.appendChild(delBtn);
+    }
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadEmployeeWorkRecords() {
+  if (!selectedEmployee) return;
+
+  const monthInput = document.getElementById('emp-work-month');
+  if (!monthInput.value) monthInput.value = getCurrentMonthString();
+
+  const month = monthInput.value;
+  document.getElementById('emp-work-name').value = selectedEmployee.name;
+
+  try {
+    const profile = await API.getWorkProfile(selectedEmployee.id, month);
+    document.getElementById('emp-work-father').value = profile.fatherName || '';
+
+    currentEmployeeWorkRecords = await API.getWorkRecords(selectedEmployee.id, month);
+    if (!Array.isArray(currentEmployeeWorkRecords)) currentEmployeeWorkRecords = [];
+    renderWorkRecordRows(currentEmployeeWorkRecords, '#emp-work-table', true);
+
+    const dateInput = document.getElementById('work-entry-date');
+    if (!dateInput.value) dateInput.value = getLocalDateString();
+  } catch (err) {
+    showToast('Failed to load work records', 'error');
+  }
+}
+
+async function handleSaveWorkProfile() {
+  if (!selectedEmployee) return;
+  const month = document.getElementById('emp-work-month').value;
+  const fatherName = document.getElementById('emp-work-father').value;
+  if (!month) {
+    showToast('Please select a month', 'error');
+    return;
+  }
+  try {
+    const res = await API.saveWorkProfile(selectedEmployee.id, month, fatherName);
+    if (res.success) showToast('Header saved', 'success');
+    else showToast(res.error || 'Failed to save', 'error');
+  } catch (err) {
+    showToast('Connection error', 'error');
+  }
+}
+
+async function handleAddWorkEntry(e) {
+  e.preventDefault();
+  if (!selectedEmployee) return;
+
+  const month = document.getElementById('emp-work-month').value;
+  const date = document.getElementById('work-entry-date').value;
+  const performedWork = document.getElementById('work-entry-work').value.trim();
+
+  if (!month || !date || !performedWork) {
+    showToast('Month, date, and work description are required', 'error');
+    return;
+  }
+
+  const payload = {
+    employeeId: selectedEmployee.id,
+    month,
+    date,
+    performedWork,
+    paymentIssuance: document.getElementById('work-entry-payment').value,
+    balancePayment: document.getElementById('work-entry-balance').value,
+    materialIssuance: document.getElementById('work-entry-material').value,
+    materialBalance: document.getElementById('work-entry-mat-balance').value,
+    otherRemarks: document.getElementById('work-entry-remarks').value
+  };
+
+  try {
+    const res = await API.addWorkRecord(payload);
+    if (res.success || res.record) {
+      showToast('Entry added', 'success');
+      document.getElementById('work-entry-work').value = '';
+      document.getElementById('work-entry-payment').value = '';
+      document.getElementById('work-entry-balance').value = '';
+      document.getElementById('work-entry-material').value = '';
+      document.getElementById('work-entry-mat-balance').value = '';
+      document.getElementById('work-entry-remarks').value = '';
+      await loadEmployeeWorkRecords();
+    } else {
+      showToast(res.error || 'Failed to add entry', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+  }
+}
+
+async function handleDeleteWorkRecord(id) {
+  if (!selectedEmployee) return;
+  if (!confirm('Delete this work entry?')) return;
+  try {
+    const res = await API.deleteWorkRecord(id, selectedEmployee.id);
+    if (res.success) {
+      showToast('Entry deleted', 'success');
+      await loadEmployeeWorkRecords();
+    } else {
+      showToast(res.error || 'Failed to delete', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+  }
+}
+
+async function loadAdminWorkRecords() {
+  const monthInput = document.getElementById('admin-work-month');
+  const empSelect = document.getElementById('admin-work-employee');
+
+  if (!monthInput.value) monthInput.value = getCurrentMonthString();
+
+  try {
+    const employees = await API.getEmployees();
+    const currentVal = empSelect.value;
+    empSelect.innerHTML = '<option value="">Select employee...</option>';
+    employees.forEach(emp => {
+      const opt = document.createElement('option');
+      opt.value = emp.id;
+      opt.textContent = emp.name;
+      empSelect.appendChild(opt);
+    });
+    if (currentVal) empSelect.value = currentVal;
+
+    const employeeId = empSelect.value;
+    const month = monthInput.value;
+
+    if (!employeeId) {
+      document.getElementById('admin-work-summary').classList.add('hidden');
+      document.querySelector('#admin-work-table tbody').innerHTML =
+        '<tr><td colspan="8" class="table-empty">Select an employee and month to view records.</td></tr>';
+      return;
+    }
+
+    const employee = employees.find(e => e.id === employeeId);
+    const profile = await API.getWorkProfile(employeeId, month);
+    currentAdminWorkRecords = await API.getWorkRecords(employeeId, month);
+    if (!Array.isArray(currentAdminWorkRecords)) currentAdminWorkRecords = [];
+
+    const totalPayment = currentAdminWorkRecords.reduce((sum, r) => sum + (r.paymentIssuance || 0), 0);
+
+    document.getElementById('admin-work-summary').classList.remove('hidden');
+    document.getElementById('admin-work-summary-name').textContent = employee ? employee.name : '—';
+    document.getElementById('admin-work-summary-father').textContent = profile.fatherName || '—';
+    document.getElementById('admin-work-summary-count').textContent = currentAdminWorkRecords.length;
+    document.getElementById('admin-work-summary-payment').textContent = totalPayment.toLocaleString();
+
+    renderWorkRecordRows(currentAdminWorkRecords, '#admin-work-table', false);
+  } catch (err) {
+    showToast('Failed to load work records', 'error');
+  }
+}
+
+function exportWorkRecordsToCSV() {
+  if (!currentAdminWorkRecords.length) {
+    showToast('No records to export', 'warning');
+    return;
+  }
+  const employeeName = document.getElementById('admin-work-summary-name').textContent;
+  const month = document.getElementById('admin-work-month').value;
+  const headers = ['S.No', 'Date', 'Performed Work', 'Payment Issuance', 'Balance Payment', 'Material Issuance', 'Material Balance', 'Other Remarks'];
+  const rows = [headers.join(',')];
+  currentAdminWorkRecords.forEach((rec, idx) => {
+    rows.push([
+      idx + 1,
+      formatWorkDateDisplay(rec.date),
+      `"${(rec.performedWork || '').replace(/"/g, '""')}"`,
+      rec.paymentIssuance != null ? rec.paymentIssuance : '',
+      `"${(rec.balancePayment || '').replace(/"/g, '""')}"`,
+      `"${(rec.materialIssuance || '').replace(/"/g, '""')}"`,
+      `"${(rec.materialBalance || '').replace(/"/g, '""')}"`,
+      `"${(rec.otherRemarks || '').replace(/"/g, '""')}"`
+    ].join(','));
+  });
+  const link = document.createElement('a');
+  link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+  link.download = `WorkRecord_${employeeName}_${month}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('Work record exported', 'success');
+}
+
+// ==========================================================================
+// WORK PROGRESS DASHBOARD
+// ==========================================================================
+let progressDataCache = [];
+
+async function loadWorkProgress() {
+  const dateFilter = document.getElementById('progress-date-filter');
+  if (!dateFilter.value) {
+    dateFilter.value = getLocalDateString();
+  }
+
+  try {
+    const [employees, attendance, workRecords] = await Promise.all([
+      API.getEmployees(),
+      API.getAttendanceLogs(dateFilter.value),
+      API.getWorkRecords(null, null)
+    ]);
+
+    // Filter work records for the selected date
+    const todayWorkRecords = workRecords.filter(r => r.date === dateFilter.value);
+
+    progressDataCache = { employees, attendance, workRecords: todayWorkRecords };
+
+    // Calculate financial metrics
+    const totalMoneySpent = attendance.reduce((sum, r) => sum + (r.moneySpent || 0), 0);
+    const activeWorkers = employees.filter(e => e.status === 'IN').length;
+    const tasksCompleted = todayWorkRecords.filter(r => r.otherRemarks === 'COMPLETE').length;
+    const totalMinutes = attendance.reduce((sum, r) => sum + (r.duration || 0), 0);
+    const totalHours = Math.floor(totalMinutes / 60);
+
+    // Update stat cards
+    document.getElementById('progress-total-spent').textContent = `$${totalMoneySpent.toLocaleString()}`;
+    document.getElementById('progress-active-workers').textContent = activeWorkers;
+    document.getElementById('progress-completed-today').textContent = tasksCompleted;
+    document.getElementById('progress-total-hours').textContent = `${totalHours}h`;
+
+    // Render progress feed
+    renderProgressFeed(employees, attendance, todayWorkRecords);
+
+    // Render cost breakdown table
+    renderCostBreakdown(employees, attendance, todayWorkRecords);
+
+  } catch (err) {
+    showToast('Failed to load work progress data', 'error');
+    console.error(err);
+  }
+}
+
+function renderProgressFeed(employees, attendance, workRecords) {
+  const feedContainer = document.getElementById('progress-feed');
+  feedContainer.innerHTML = '';
+
+  // Combine attendance and work records into a timeline
+  const timelineItems = [];
+
+  // Add attendance records
+  attendance.forEach(att => {
+    const employee = employees.find(e => e.id === att.employeeId);
+    if (!employee) return;
+
+    const status = att.clockOutTime ? 'Completed' : 'Active';
+    const statusClass = att.clockOutTime ? 'status-completed' : 'status-active';
+
+    timelineItems.push({
+      type: 'attendance',
+      timestamp: att.clockOutTime || att.clockInTime,
+      employee,
+      status,
+      statusClass,
+      data: att,
+      location: att.clockOutLocation || att.clockInLocation
+    });
+  });
+
+  // Add work records
+  workRecords.forEach(wr => {
+    const employee = employees.find(e => e.id === wr.employeeId);
+    if (!employee) return;
+
+    const status = wr.otherRemarks === 'COMPLETE' ? 'Completed' : wr.otherRemarks === 'PENDING' ? 'On Break' : 'Active';
+    const statusClass = wr.otherRemarks === 'COMPLETE' ? 'status-completed' : wr.otherRemarks === 'PENDING' ? 'status-break' : 'status-active';
+
+    timelineItems.push({
+      type: 'work',
+      timestamp: wr.createdAt,
+      employee,
+      status,
+      statusClass,
+      data: wr,
+      location: null
+    });
+  });
+
+  // Sort by timestamp (newest first)
+  timelineItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  if (timelineItems.length === 0) {
+    feedContainer.innerHTML = '<div class="progress-empty">No work progress recorded for this date.</div>';
+    return;
+  }
+
+  // Render timeline
+  timelineItems.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'progress-card';
+
+    const timeStr = formatDateTime(item.timestamp);
+    const locationLink = item.location
+      ? `<a href="https://www.google.com/maps?q=${item.location.latitude},${item.location.longitude}" target="_blank" class="location-link">
+           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:14px;height:14px;">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+           </svg>
+           View Location
+         </a>`
+      : '<span class="text-muted" style="font-size:0.8rem">No GPS</span>';
+
+    if (item.type === 'attendance') {
+      const duration = item.data.duration ? `${item.data.duration}m` : 'Active';
+      const notes = item.data.performanceNotes || 'No performance notes';
+      const moneySpent = item.data.moneySpent ? `$${item.data.moneySpent.toLocaleString()}` : '$0';
+
+      card.innerHTML = `
+        <div class="progress-card-header">
+          <div class="progress-employee-info">
+            <div class="progress-avatar">${item.employee.name.charAt(0).toUpperCase()}</div>
+            <div>
+              <strong>${item.employee.name}</strong>
+              <span class="badge-role">${item.employee.role || 'Staff'}</span>
+            </div>
+          </div>
+          <span class="progress-badge ${item.statusClass}">${item.status}</span>
+        </div>
+        <div class="progress-card-body">
+          <div class="progress-detail">
+            <span class="detail-label">Time:</span>
+            <span class="detail-value">${timeStr}</span>
+          </div>
+          <div class="progress-detail">
+            <span class="detail-label">Duration:</span>
+            <span class="detail-value">${duration}</span>
+          </div>
+          <div class="progress-detail">
+            <span class="detail-label">Money Spent:</span>
+            <span class="detail-value">${moneySpent}</span>
+          </div>
+          <div class="progress-detail">
+            <span class="detail-label">Location:</span>
+            <span class="detail-value">${locationLink}</span>
+          </div>
+          <div class="progress-notes">
+            <span class="detail-label">Notes:</span>
+            <p class="detail-notes">${notes}</p>
+          </div>
+        </div>
+      `;
+    } else {
+      const payment = item.data.paymentIssuance ? `$${item.data.paymentIssuance.toLocaleString()}` : '$0';
+      const workDesc = item.data.performedWork || 'No work description';
+
+      card.innerHTML = `
+        <div class="progress-card-header">
+          <div class="progress-employee-info">
+            <div class="progress-avatar">${item.employee.name.charAt(0).toUpperCase()}</div>
+            <div>
+              <strong>${item.employee.name}</strong>
+              <span class="badge-role">${item.employee.role || 'Staff'}</span>
+            </div>
+          </div>
+          <span class="progress-badge ${item.statusClass}">${item.status}</span>
+        </div>
+        <div class="progress-card-body">
+          <div class="progress-detail">
+            <span class="detail-label">Time:</span>
+            <span class="detail-value">${timeStr}</span>
+          </div>
+          <div class="progress-detail">
+            <span class="detail-label">Payment:</span>
+            <span class="detail-value">${payment}</span>
+          </div>
+          <div class="progress-notes">
+            <span class="detail-label">Work:</span>
+            <p class="detail-notes">${workDesc}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    feedContainer.appendChild(card);
+  });
+}
+
+function renderCostBreakdown(employees, attendance, workRecords) {
+  const tbody = document.querySelector('#progress-cost-table tbody');
+  tbody.innerHTML = '';
+
+  if (employees.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No employees found.</td></tr>';
+    return;
+  }
+
+  employees.forEach(emp => {
+    const empAttendance = attendance.filter(a => a.employeeId === emp.id);
+    const empWorkRecords = workRecords.filter(w => w.employeeId === emp.id);
+
+    const totalMinutes = empAttendance.reduce((sum, a) => sum + (a.duration || 0), 0);
+    const totalHours = (totalMinutes / 60).toFixed(1);
+    const totalMoneySpent = empAttendance.reduce((sum, a) => sum + (a.moneySpent || 0), 0);
+    const tasksCompleted = empWorkRecords.filter(w => w.otherRemarks === 'COMPLETE').length;
+
+    const statusBadge = emp.status === 'IN'
+      ? '<span class="status-indicator status-in">Active</span>'
+      : '<span class="status-indicator status-out">Clocked Out</span>';
+
+    const lastLocation = empAttendance.length > 0 && empAttendance[0].clockOutLocation
+      ? `<a href="https://www.google.com/maps?q=${empAttendance[0].clockOutLocation.latitude},${empAttendance[0].clockOutLocation.longitude}" target="_blank" class="map-link">View</a>`
+      : empAttendance.length > 0 && empAttendance[0].clockInLocation
+      ? `<a href="https://www.google.com/maps?q=${empAttendance[0].clockInLocation.latitude},${empAttendance[0].clockInLocation.longitude}" target="_blank" class="map-link">View</a>`
+      : '<span class="text-muted">—</span>';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${emp.name}</strong></td>
+      <td><span class="badge-role">${emp.role || 'Staff'}</span></td>
+      <td>${statusBadge}</td>
+      <td>${totalHours}h</td>
+      <td>$${totalMoneySpent.toLocaleString()}</td>
+      <td>${tasksCompleted}</td>
+      <td>${lastLocation}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ==========================================================================
 // MODALS LOGIC
 // ==========================================================================
 function openAdminAuthModal() {
@@ -1027,9 +1592,15 @@ function setupEmployeeSessionUI(employee) {
   document.getElementById('btn-toggle-portal').classList.add('hidden');
   // Show logout button
   document.getElementById('btn-employee-logout').classList.remove('hidden');
+  // Show employee sub-tabs
+  document.getElementById('employee-subnav').classList.remove('hidden');
   // Set session active to grid
   document.getElementById('portal-grid').classList.add('session-active');
-  
+  switchEmployeeTab('emp-pane-attendance');
+
+  document.getElementById('emp-work-month').value = getCurrentMonthString();
+  document.getElementById('emp-work-name').value = employee.name;
+
   // Make sure to request fresh location
   fetchLocation();
 }
@@ -1046,8 +1617,10 @@ function handleEmployeeLogout() {
   // Hide logout button
   document.getElementById('btn-employee-logout').classList.add('hidden');
   // Clear session active grid
-  document.getElementById('portal-grid').classList.remove('session-active');
-  
+  document.getElementById('portal-grid').classList.remove('session-active', 'work-record-active');
+  document.getElementById('employee-subnav').classList.add('hidden');
+  switchEmployeeTab('emp-pane-attendance');
+
   // Reset selected employee details
   document.getElementById('clock-card-content').classList.add('hidden');
   document.getElementById('clock-card-placeholder').classList.remove('hidden');
@@ -1202,7 +1775,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Clock in & out operations
   document.getElementById('btn-clock-in').addEventListener('click', handleClockIn);
   document.getElementById('btn-clock-out').addEventListener('click', handleClockOut);
-document.getElementById('form-clockout-details').addEventListener('submit', submitClockOutDetails);
+  document.getElementById('form-clockout-details').addEventListener('submit', submitClockOutDetails);
+  document.getElementById('btn-close-clockout-modal').addEventListener('click', closeClockOutModal);
 
   // Admin lock modal close
   document.getElementById('btn-close-auth-modal').addEventListener('click', closeAdminAuthModal);
@@ -1261,17 +1835,38 @@ document.getElementById('form-clockout-details').addEventListener('submit', subm
   // Settings update form
   document.getElementById('form-settings').addEventListener('submit', handleSettingsSubmit);
 
+  // Employee work record tabs & forms
+  document.querySelectorAll('.emp-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchEmployeeTab(btn.getAttribute('data-emp-tab')));
+  });
+  document.getElementById('emp-work-month').addEventListener('change', loadEmployeeWorkRecords);
+  document.getElementById('btn-save-work-profile').addEventListener('click', handleSaveWorkProfile);
+  document.getElementById('form-add-work-entry').addEventListener('submit', handleAddWorkEntry);
+
+  // Admin work records
+  document.getElementById('admin-work-employee').addEventListener('change', loadAdminWorkRecords);
+  document.getElementById('admin-work-month').addEventListener('change', loadAdminWorkRecords);
+  document.getElementById('btn-export-work-csv').addEventListener('click', exportWorkRecordsToCSV);
+  document.getElementById('admin-work-month').value = getCurrentMonthString();
+
+  // Work Progress dashboard
+  document.getElementById('progress-date-filter').addEventListener('change', loadWorkProgress);
+  document.getElementById('btn-refresh-progress').addEventListener('click', loadWorkProgress);
+
   // Window clicks to close modals on backdrop
   window.addEventListener('click', (e) => {
     const adminModal = document.getElementById('admin-auth-modal');
     const empModal = document.getElementById('employee-auth-modal');
     const pinModal = document.getElementById('change-pin-modal');
+    const clockoutModal = document.getElementById('clockout-modal');
     if (e.target === adminModal) {
       closeAdminAuthModal();
     } else if (e.target === empModal) {
       closeEmployeeAuthModal();
     } else if (e.target === pinModal) {
       closeChangePinModal();
+    } else if (e.target === clockoutModal) {
+      closeClockOutModal();
     }
   });
 });

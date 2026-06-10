@@ -111,38 +111,58 @@ app.post('/api/employees', checkAdminAuth, async (req, res) => {
   }
 });
 
-// Generate a permanent share token for an employee (admin only)
-app.post('/api/employees/:id/generate-token', checkAdminAuth, (req, res) => {
-  const { id } = req.params;
-  const employee = db.getEmployees().find(e => e.id === id);
-  if (!employee) return res.status(404).json({ success: false, error: 'Employee not found' });
-  // Regenerate token (optional) – ensure it's set
-  employee.token = typeof employee.token === 'string' && employee.token.length === 8 ? employee.token : (function(){
-    const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let t='';
-    for(let i=0;i<8;i++) t+=chars.charAt(Math.floor(Math.random()*chars.length));
-    return t;
-  })();
-  // Persist change
-  const data = require('./db'); // force reload of db module (already loaded)
-  const fs = require('fs');
-  const path = require('path');
-  const FILE_PATH = path.join(__dirname, 'data.json');
-  const current = JSON.parse(fs.readFileSync(FILE_PATH, 'utf8'));
-  const idx = current.employees.findIndex(e=>e.id===id);
-  if (idx!==-1) current.employees[idx].token = employee.token;
-  fs.writeFileSync(FILE_PATH, JSON.stringify(current, null, 2), 'utf8');
-  const link = `${req.protocol}://${req.get('host')}/?mode=employee&token=${employee.token}`;
-  res.json({ success: true, link });
+// Get employee by share token (public)
+app.get('/api/employees/token/:token', async (req, res) => {
+  const { token } = req.params;
+  try {
+    const employee = await db.getEmployeeByToken(token);
+    if (employee) {
+      res.json({ success: true, employee });
+    } else {
+      res.status(404).json({ success: false, error: 'Invalid token' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-
-
-// Delete employee (admin only)
-app.delete('/api/employees/:id', checkAdminAuth, (req, res) => {
+// Generate a permanent share token for an employee (admin only)
+app.post('/api/employees/:id/generate-token', checkAdminAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const success = db.deleteEmployee(id);
+    const employees = await db.getEmployees();
+    const employee = employees.find(e => e.id === id);
+    if (!employee) {
+      return res.status(404).json({ success: false, error: 'Employee not found' });
+    }
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    if (!employee.token || employee.token.length !== 8) {
+      let token = '';
+      for (let i = 0; i < 8; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
+      employee.token = token;
+      const fs = require('fs');
+      const FILE_PATH = path.join(__dirname, 'data.json');
+      const current = JSON.parse(fs.readFileSync(FILE_PATH, 'utf8'));
+      const idx = current.employees.findIndex(e => e.id === id);
+      if (idx !== -1) {
+        current.employees[idx].token = employee.token;
+        fs.writeFileSync(FILE_PATH, JSON.stringify(current, null, 2), 'utf8');
+      }
+    }
+
+    const link = `${req.protocol}://${req.get('host')}/?mode=employee&token=${employee.token}`;
+    res.json({ success: true, link });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete employee (admin only)
+app.delete('/api/employees/:id', checkAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const success = await db.deleteEmployee(id);
     if (success) {
       res.json({ success: true, message: 'Employee deleted.' });
     } else {
@@ -154,13 +174,13 @@ app.delete('/api/employees/:id', checkAdminAuth, (req, res) => {
 });
 
 // Verify employee PIN
-app.post('/api/employees/verify-pin', (req, res) => {
+app.post('/api/employees/verify-pin', async (req, res) => {
   const { employeeId, pin } = req.body;
   if (!employeeId || !pin) {
     return res.status(400).json({ success: false, error: 'Employee ID and PIN are required.' });
   }
   try {
-    const verified = db.verifyEmployeePin(employeeId, pin);
+    const verified = await db.verifyEmployeePin(employeeId, pin);
     if (verified) {
       res.json({ success: true, message: 'PIN verified.' });
     } else {
@@ -172,11 +192,11 @@ app.post('/api/employees/verify-pin', (req, res) => {
 });
 
 // Update employee PIN (admin option)
-app.post('/api/employees/:id/pin', checkAdminAuth, (req, res) => {
+app.post('/api/employees/:id/pin', checkAdminAuth, async (req, res) => {
   const { id } = req.params;
   const { pin } = req.body;
   try {
-    const employee = db.updateEmployeePin(id, pin);
+    const employee = await db.updateEmployeePin(id, pin);
     res.json({ success: true, message: 'Employee PIN updated.', employee: { id: employee.id, name: employee.name } });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -184,17 +204,17 @@ app.post('/api/employees/:id/pin', checkAdminAuth, (req, res) => {
 });
 
 // Update employee PIN (employee self-update)
-app.post('/api/employees/update-pin', (req, res) => {
+app.post('/api/employees/update-pin', async (req, res) => {
   const { employeeId, oldPin, newPin } = req.body;
   if (!employeeId || !oldPin || !newPin) {
     return res.status(400).json({ error: 'Employee ID, current PIN, and new PIN are required.' });
   }
   try {
-    const verified = db.verifyEmployeePin(employeeId, oldPin);
+    const verified = await db.verifyEmployeePin(employeeId, oldPin);
     if (!verified) {
       return res.status(401).json({ error: 'Incorrect current PIN.' });
     }
-    db.updateEmployeePin(employeeId, newPin);
+    await db.updateEmployeePin(employeeId, newPin);
     res.json({ success: true, message: 'PIN updated successfully.' });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -202,9 +222,9 @@ app.post('/api/employees/update-pin', (req, res) => {
 });
 
 // Get stats summary (can be public or auth depending on privacy, we allow it for dashboard tiles)
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', async (req, res) => {
   try {
-    const stats = db.getDashboardStats();
+    const stats = await db.getDashboardStats();
     res.json(stats);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -212,10 +232,10 @@ app.get('/api/stats', (req, res) => {
 });
 
 // Get attendance logs (admin check)
-app.get('/api/attendance', checkAdminAuth, (req, res) => {
-  const { date } = req.query; // Expects YYYY-MM-DD
+app.get('/api/attendance', checkAdminAuth, async (req, res) => {
+  const { date } = req.query;
   try {
-    const attendance = db.getAttendance(date);
+    const attendance = await db.getAttendance(date);
     res.json(attendance);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -223,10 +243,10 @@ app.get('/api/attendance', checkAdminAuth, (req, res) => {
 });
 
 // Get daily attendance status of a single employee
-app.get('/api/attendance/status/:employeeId', (req, res) => {
+app.get('/api/attendance/status/:employeeId', async (req, res) => {
   const { employeeId } = req.params;
   try {
-    const status = db.getTodayAttendanceForEmployee(employeeId);
+    const status = await db.getTodayAttendanceForEmployee(employeeId);
     res.json({ activeRecord: status });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -234,30 +254,116 @@ app.get('/api/attendance/status/:employeeId', (req, res) => {
 });
 
 // Clock In
-app.post('/api/attendance/clock-in', (req, res) => {
+app.post('/api/attendance/clock-in', async (req, res) => {
   const { employeeId, location } = req.body;
   if (!employeeId) {
     return res.status(400).json({ error: 'Employee ID is required.' });
   }
   try {
-    const result = db.clockIn(employeeId, location);
+    const result = await db.clockIn(employeeId, location);
     res.json({ success: true, message: 'Clocked in successfully!', data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Clock Out
+app.post('/api/attendance/clock-out', async (req, res) => {
+  const { employeeId, location, performanceNotes, moneySpent } = req.body;
+  if (!employeeId) {
+    return res.status(400).json({ error: 'Employee ID is required.' });
+  }
+  try {
+    const result = await db.clockOut(employeeId, location, performanceNotes, moneySpent);
+    res.json({ success: true, message: 'Clocked out successfully!', data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// --- Work & Payment Records ---
+
+app.get('/api/work-records', async (req, res) => {
+  const { employeeId, month } = req.query;
+  try {
+    const records = await db.getWorkRecords(employeeId || null, month || null);
+    res.json(records);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/work-records/profile', async (req, res) => {
+  const { employeeId, month } = req.query;
+  if (!employeeId || !month) {
+    return res.status(400).json({ error: 'employeeId and month are required.' });
+  }
+  try {
+    const profile = await db.getWorkProfile(employeeId, month);
+    res.json(profile);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/work-records/profile', async (req, res) => {
+  const { employeeId, month, fatherName } = req.body;
+  if (!employeeId || !month) {
+    return res.status(400).json({ error: 'employeeId and month are required.' });
+  }
+  try {
+    const profile = await db.saveWorkProfile(employeeId, month, fatherName);
+    res.json({ success: true, profile });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/work-records', async (req, res) => {
+  const { employeeId, month, date, performedWork } = req.body;
+  if (!employeeId || !month || !date) {
+    return res.status(400).json({ error: 'employeeId, month, and date are required.' });
+  }
+  if (!performedWork || !String(performedWork).trim()) {
+    return res.status(400).json({ error: 'Performed work description is required.' });
+  }
+  try {
+    const record = await db.addWorkRecord(req.body);
+    res.status(201).json({ success: true, record });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/work-records/:id', async (req, res) => {
+  const { id } = req.params;
+  const { employeeId, ...updates } = req.body;
+  if (!employeeId) {
+    return res.status(400).json({ error: 'employeeId is required.' });
+  }
+  try {
+    const record = await db.updateWorkRecord(id, employeeId, updates);
+    res.json({ success: true, record });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// Clock Out
-app.post('/api/attendance/clock-out', (req, res) => {
-  const { employeeId, location } = req.body;
+app.delete('/api/work-records/:id', async (req, res) => {
+  const { id } = req.params;
+  const { employeeId } = req.query;
   if (!employeeId) {
-    return res.status(400).json({ error: 'Employee ID is required.' });
+    return res.status(400).json({ error: 'employeeId is required.' });
   }
   try {
-    const result = db.clockOut(employeeId, location);
-    res.json({ success: true, message: 'Clocked out successfully!', data: result });
+    const success = await db.deleteWorkRecord(id, employeeId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Record not found.' });
+    }
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -270,15 +376,13 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log('\n================================================================');
   console.log(`⏰ Attendance System running locally at: http://localhost:${PORT}`);
-  
-  // Find local IP addresses
+
   const nets = os.networkInterfaces();
   let ipFound = false;
 
   console.log('\n📱 SHAREABLE LINKS FOR EMPLOYEES (On the same Wi-Fi/Network):');
   for (const name of Object.keys(nets)) {
     for (const net of nets[name]) {
-      // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
       if (net.family === 'IPv4' && !net.internal) {
         console.log(`   👉  http://${net.address}:${PORT}`);
         ipFound = true;
@@ -294,19 +398,4 @@ app.listen(PORT, () => {
   console.log('   You can expose this port to the internet. Recommendation:');
   console.log(`   Run this in a separate command prompt: npx localtunnel --port ${PORT}`);
   console.log('================================================================\n');
-
-  // Add token-based direct link endpoint
-  app.get('/api/employees/token/:token', (req, res) => {
-    const { token } = req.params;
-    try {
-      const employee = db.getEmployeeByToken(token);
-      if (employee) {
-        res.json({ success: true, employee });
-      } else {
-        res.status(404).json({ success: false, error: 'Invalid token' });
-      }
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
 });

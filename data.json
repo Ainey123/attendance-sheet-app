@@ -26,6 +26,33 @@
       "pin": "2345",
       "dateCreated": "2026-06-05T05:39:41.881Z",
       "token": "ea09936074d921edb534cfe4afc740e3"
+    },
+    {
+      "id": "emp_mq681sd6_rhbgb",
+      "name": "Auto Test",
+      "role": "QA",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "JzdxLcDU",
+      "dateCreated": "2026-06-09T05:51:08.250Z"
+    },
+    {
+      "id": "emp_mq68nb3s_c7bga",
+      "name": "sana",
+      "role": "employee",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "0Vha5baD",
+      "dateCreated": "2026-06-09T06:07:52.312Z"
+    },
+    {
+      "id": "emp_mq6hcjzy_lchrf",
+      "name": "alina",
+      "role": "engineer",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "vNPu8xml",
+      "dateCreated": "2026-06-09T10:11:27.166Z"
     }
   ],
   "attendance": [
@@ -168,8 +195,141 @@
         "accuracy": 213
       },
       "duration": 0
+    },
+    {
+      "id": "att_mq687zzp_fmtom",
+      "employeeId": "emp_mpz706o9_6rawr",
+      "employeeName": "fatma",
+      "role": "employee",
+      "date": "2026-06-09",
+      "clockInTime": "2026-06-09T05:55:58.069Z",
+      "clockOutTime": "2026-06-09T05:57:05.658Z",
+      "clockInLocation": null,
+      "clockOutLocation": null,
+      "duration": 1,
+      "performanceNotes": "sir aj meny jan sa march tak ki recouncilation ki hai",
+      "moneySpent": 2000
+    },
+    {
+      "id": "att_mq68pud8_m8fbc",
+      "employeeId": "emp_demo2",
+      "employeeName": "Jane Smith",
+      "role": "Designer",
+      "date": "2026-06-09",
+      "clockInTime": "2026-06-09T06:09:50.588Z",
+      "clockOutTime": "2026-06-09T06:10:16.248Z",
+      "clockInLocation": null,
+      "clockOutLocation": null,
+      "duration": 0,
+      "performanceNotes": "today i wok on excel sheet",
+      "moneySpent": 0
+    },
+    {
+      "id": "att_mq6bra9y_nva1s",
+      "employeeId": "emp_mpz706o9_6rawr",
+      "employeeName": "fatma",
+      "role": "employee",
+      "date": "2026-06-09",
+      "clockInTime": "2026-06-09T07:34:56.710Z",
+      "clockOutTime": "2026-06-09T07:36:39.632Z",
+      "clockInLocation": null,
+      "clockOutLocation": null,
+      "duration": 2,
+      "performanceNotes": "i do mis entry of 3 sheets",
+      "moneySpent": 3000
+    },
+    {
+      "id": "att_mq6hh3bz_32wbn",
+      "employeeId": "emp_demo2",
+      "employeeName": "Jane Smith",
+      "role": "Designer",
+      "date": "2026-06-09",
+      "clockInTime": "2026-06-09T10:14:58.847Z",
+      "clockOutTime": "2026-06-09T10:15:27.183Z",
+      "clockInLocation": null,
+      "clockOutLocation": null,
+      "duration": 0,
+      "performanceNotes": "mis sheet",
+      "moneySpent": 0
     }
   ],
+  "workRecords": [
+    {
+      "id": "wr_mq68kx2m_z2ymg",
+      "employeeId": "emp_mpz706o9_6rawr",
+      "employeeName": "fatma",
+      "month": "2026-06",
+      "date": "2026-06-09",
+      "performedWork": "Door installation at site",
+      "paymentIssuance": 3000,
+      "balancePayment": "2460",
+      "materialIssuance": "MDF Sheet",
+      "materialBalance": "26FT",
+      "otherRemarks": "COMPLETE",
+      "createdAt": "2026-06-09T06:06:00.814Z"
+    },
+    {
+      "id": "wr_mq68pn3r_2j5d4",
+      "employeeId": "emp_demo2",
+      "employeeName": "Jane Smith",
+      "month": "2026-06",
+      "date": "2026-06-09",
+      "performedWork": "today i work on bank building",
+      "paymentIssuance": 25677,
+      "balancePayment": "30000",
+      "materialIssuance": "",
+      "materialBalance": "234",
+      "otherRemarks": "COMPLETE",
+      "createdAt": "2026-06-09T06:09:41.175Z"
+    },
+    {
+      "id": "wr_mq6bkf1i_obgxq",
+      "employeeId": "emp_mq0hvo3d_5m21u",
+      "employeeName": "sana",
+      "month": "2026-06",
+      "date": "2026-06-09",
+      "performedWork": "glass work",
+      "paymentIssuance": 50000,
+      "balancePayment": "40000",
+      "materialIssuance": "glass, steal",
+      "materialBalance": "10000,30000",
+      "otherRemarks": "COMPLETE",
+      "createdAt": "2026-06-09T07:29:36.294Z"
+    },
+    {
+      "id": "wr_mq6bsik2_mztbd",
+      "employeeId": "emp_mpz706o9_6rawr",
+      "employeeName": "fatma",
+      "month": "2026-06",
+      "date": "2026-06-09",
+      "performedWork": "mis sheet 4,5",
+      "paymentIssuance": 0,
+      "balancePayment": "40000",
+      "materialIssuance": "glass, steal",
+      "materialBalance": "10000,30000",
+      "otherRemarks": "COMPLETE",
+      "createdAt": "2026-06-09T07:35:54.098Z"
+    },
+    {
+      "id": "wr_mq6hfhhb_ewumm",
+      "employeeId": "emp_mq6hcjzy_lchrf",
+      "employeeName": "alina",
+      "month": "2026-06",
+      "date": "2026-06-09",
+      "performedWork": "glass",
+      "paymentIssuance": 50000,
+      "balancePayment": "40000",
+      "materialIssuance": "glass,steal",
+      "materialBalance": "16ft",
+      "otherRemarks": "COMPLETE",
+      "createdAt": "2026-06-09T10:13:43.871Z"
+    }
+  ],
+  "workProfiles": {
+    "emp_mq0hvo3d_5m21u:2026-06": {
+      "fatherName": "khalil"
+    }
+  },
   "settings": {
     "adminPasscode": "1234",
     "officeName": "My Office"

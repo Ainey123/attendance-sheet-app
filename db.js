@@ -40,6 +40,8 @@ async function readData() {
     return {
       employees: [],
       attendance: [],
+      workRecords: [],
+      workProfiles: {},
       settings: { adminPasscode: '1234', officeName: 'My Office' }
     };
   }
@@ -263,6 +265,82 @@ const db = {
       absentToday,
       officeName: data.settings.officeName
     };
+  },
+
+  // --- Monthly Work & Payment Records ---
+  async getWorkRecords(employeeId, month = null) {
+    const data = await readData();
+    let records = data.workRecords || [];
+    if (employeeId) records = records.filter(r => r.employeeId === employeeId);
+    if (month) records = records.filter(r => r.month === month);
+    return records.sort((a, b) => new Date(a.date) - new Date(b.date));
+  },
+
+  async getWorkProfile(employeeId, month) {
+    const data = await readData();
+    const profiles = data.workProfiles || {};
+    return profiles[`${employeeId}:${month}`] || { fatherName: '' };
+  },
+
+  async saveWorkProfile(employeeId, month, fatherName) {
+    const data = await readData();
+    if (!data.workProfiles) data.workProfiles = {};
+    data.workProfiles[`${employeeId}:${month}`] = { fatherName: String(fatherName || '').trim() };
+    await writeData(data);
+    return data.workProfiles[`${employeeId}:${month}`];
+  },
+
+  async addWorkRecord(record) {
+    const data = await readData();
+    if (!data.workRecords) data.workRecords = [];
+    const employee = data.employees.find(e => e.id === record.employeeId);
+    const payment = record.paymentIssuance;
+    const newRecord = {
+      id: generateId('wr'),
+      employeeId: record.employeeId,
+      employeeName: employee ? employee.name : record.employeeName || '',
+      month: record.month,
+      date: record.date,
+      performedWork: String(record.performedWork || '').trim(),
+      paymentIssuance: payment === '' || payment == null ? null : Number(payment),
+      balancePayment: String(record.balancePayment || '').trim(),
+      materialIssuance: String(record.materialIssuance || '').trim(),
+      materialBalance: String(record.materialBalance || '').trim(),
+      otherRemarks: String(record.otherRemarks || '').trim(),
+      createdAt: new Date().toISOString()
+    };
+    data.workRecords.push(newRecord);
+    await writeData(data);
+    return newRecord;
+  },
+
+  async updateWorkRecord(id, employeeId, updates) {
+    const data = await readData();
+    const idx = (data.workRecords || []).findIndex(r => r.id === id && r.employeeId === employeeId);
+    if (idx === -1) throw new Error('Record not found');
+    const r = data.workRecords[idx];
+    if (updates.date !== undefined) r.date = updates.date;
+    if (updates.performedWork !== undefined) r.performedWork = String(updates.performedWork).trim();
+    if (updates.paymentIssuance !== undefined) {
+      r.paymentIssuance = updates.paymentIssuance === '' || updates.paymentIssuance == null
+        ? null
+        : Number(updates.paymentIssuance);
+    }
+    if (updates.balancePayment !== undefined) r.balancePayment = String(updates.balancePayment).trim();
+    if (updates.materialIssuance !== undefined) r.materialIssuance = String(updates.materialIssuance).trim();
+    if (updates.materialBalance !== undefined) r.materialBalance = String(updates.materialBalance).trim();
+    if (updates.otherRemarks !== undefined) r.otherRemarks = String(updates.otherRemarks).trim();
+    await writeData(data);
+    return r;
+  },
+
+  async deleteWorkRecord(id, employeeId) {
+    const data = await readData();
+    const idx = (data.workRecords || []).findIndex(r => r.id === id && r.employeeId === employeeId);
+    if (idx === -1) return false;
+    data.workRecords.splice(idx, 1);
+    await writeData(data);
+    return true;
   }
 };
 

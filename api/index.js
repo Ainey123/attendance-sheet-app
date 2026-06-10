@@ -174,6 +174,50 @@ module.exports = async (req, res) => {
       return res.json({ admin: true, passcode: settings.adminPasscode });
     }
 
+    // ── GET /api/work-records ───────────────────────────────────────────────────
+    if (path === 'work-records' && method === 'GET') {
+      const records = await db.getWorkRecords(query.employeeId || null, query.month || null);
+      return res.json(records);
+    }
+
+    // ── GET /api/work-records/profile ───────────────────────────────────────────
+    if (path === 'work-records/profile' && method === 'GET') {
+      if (!query.employeeId || !query.month) return res.status(400).json({ error: 'employeeId and month required' });
+      const profile = await db.getWorkProfile(query.employeeId, query.month);
+      return res.json(profile);
+    }
+
+    // ── POST /api/work-records/profile ──────────────────────────────────────────
+    if (path === 'work-records/profile' && method === 'POST') {
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month) return res.status(400).json({ error: 'employeeId and month required' });
+      const profile = await db.saveWorkProfile(body.employeeId, body.month, body.fatherName);
+      return res.json({ success: true, profile });
+    }
+
+    // ── POST /api/work-records ──────────────────────────────────────────────────
+    if (path === 'work-records' && method === 'POST') {
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month || !body.date) return res.status(400).json({ error: 'Missing required fields' });
+      const record = await db.addWorkRecord(body);
+      return res.status(201).json({ success: true, record });
+    }
+
+    // ── PUT /api/work-records/:id ───────────────────────────────────────────────
+    if (path.startsWith('work-records/') && method === 'PUT' && path !== 'work-records/profile') {
+      const id = path.replace('work-records/', '');
+      const body = await parseBody(req);
+      const record = await db.updateWorkRecord(id, body.employeeId, body);
+      return res.json({ success: true, record });
+    }
+
+    // ── DELETE /api/work-records/:id ────────────────────────────────────────────
+    if (path.startsWith('work-records/') && method === 'DELETE') {
+      const id = path.replace('work-records/', '');
+      const success = await db.deleteWorkRecord(id, query.employeeId);
+      return success ? res.json({ success: true }) : res.status(404).json({ error: 'Not found' });
+    }
+
     // ── POST /api/attendance/clock-out ─────────────────────────────────────────
     if (path === 'attendance/clock-out' && method === 'POST') {
       const body = await parseBody(req);
