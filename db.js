@@ -8,7 +8,7 @@ const LOCAL_DATA_PATH = path.join(__dirname, 'data.json');
 // ─── Online Database (JSONBlob) ──────────────────────────────────────────────
 // Free, no account needed. Data is stored at jsonblob.com permanently.
 // BLOB_ID can be set via .env for persistence across restarts.
-const BLOB_ID = process.env.BLOB_ID || '019e9cae-8ba5-7613-9c4d-0a15a944c498';
+const BLOB_ID = process.env.BLOB_ID || '019eb05a-7934-747a-aa82-6c829c0c6032';
 const BLOB_URL = `https://jsonblob.com/api/jsonBlob/${BLOB_ID}`;
 
 // Read all data from the online database
