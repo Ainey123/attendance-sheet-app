@@ -1864,3 +1864,310 @@ tr:hover td {
   transform: scale(1.05);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
 }
+
+/* ==========================================================================
+   DAILY CASH REGISTRY STYLES
+   ========================================================================== */
+
+/* Received Cell Layout in Roster Table */
+.received-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.received-new {
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.received-carryover {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  white-space: nowrap;
+}
+
+.received-total {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #a5b4fc;
+}
+
+.expense-cell {
+  font-weight: 600;
+  color: #fda4af; /* Soft rose red for expense */
+}
+
+.balance-cell {
+  font-weight: 600;
+  color: #86efac; /* Soft green for remaining balance */
+}
+
+/* ==========================================================================
+   MONTHLY EXPENSE FLOW PDF REPORT STYLES
+   ========================================================================== */
+
+/* This wrapper will only be processed for PDF or print layout */
+.pdf-report-wrapper {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  padding: 24px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.pdf-header {
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.pdf-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: 0.05em;
+  margin: 0 0 4px 0;
+}
+
+.pdf-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+}
+
+.pdf-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  text-align: left;
+  max-width: 600px;
+  margin: 0 auto;
+  font-size: 13px;
+  background: #f8fafc;
+  padding: 10px 16px;
+  border-radius: 6px;
+  border: 1px solid #edf2f7;
+}
+
+.pdf-meta-item {
+  color: #334155;
+}
+
+.pdf-flow-container {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+}
+
+.pdf-flow-row {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  page-break-inside: avoid;
+}
+
+.pdf-flow-date {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-left: 3px solid #6366f1;
+  padding-left: 6px;
+}
+
+.pdf-flow-boxes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pdf-box {
+  flex: 1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border-width: 1.5px;
+  border-style: solid;
+}
+
+.pdf-box-title {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  margin-bottom: 2px;
+}
+
+.pdf-box-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pdf-box-sub {
+  font-size: 9px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+.pdf-box-total {
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 2px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
+  padding-top: 2px;
+}
+
+.pdf-box-desc {
+  font-size: 9px;
+  color: #475569;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
+/* Specific colors for PDF boxes */
+.pdf-box-received {
+  background: #f0f5ff;
+  border-color: #adc6ff;
+  color: #1d39c4;
+}
+.pdf-box-received .pdf-box-title {
+  color: #2f54eb;
+}
+.pdf-box-received .pdf-box-total {
+  color: #1d39c4;
+}
+
+.pdf-box-expense {
+  background: #fff0f6;
+  border-color: #ffadd2;
+  color: #c41d7f;
+}
+.pdf-box-expense .pdf-box-title {
+  color: #eb2f96;
+}
+
+.pdf-box-balance {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #389e0d;
+}
+.pdf-box-balance .pdf-box-title {
+  color: #52c41a;
+}
+
+.pdf-flow-arrow {
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* Svg connector between rows */
+.pdf-row-connector {
+  width: 100%;
+  height: 40px;
+  margin: 4px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.pdf-row-connector svg {
+  width: 100%;
+  max-width: 680px;
+}
+
+/* Summary Card section in PDF */
+.pdf-footer-summary {
+  margin-top: 32px;
+  border-top: 2px solid #e2e8f0;
+  padding-top: 20px;
+  page-break-inside: avoid;
+}
+
+.pdf-summary-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.pdf-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.pdf-summary-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.pdf-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.pdf-card-val {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.text-success { color: #15803d; }
+.text-danger { color: #b91c1c; }
+.text-primary { color: #1d4ed8; }
+
+.pdf-signature-section {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 48px;
+  padding: 0 24px;
+}
+
+.pdf-signature-line {
+  width: 180px;
+  text-align: center;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.sig-line {
+  border-bottom: 1.5px solid #94a3b8;
+  margin-bottom: 6px;
+  height: 24px;
+}

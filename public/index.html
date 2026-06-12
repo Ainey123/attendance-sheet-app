@@ -17,6 +17,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- html2pdf.js for generating monthly expense flow PDF reports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 
@@ -221,8 +223,9 @@
                     <label for="emp-work-father">Father's Name</label>
                     <input type="text" id="emp-work-father" placeholder="Enter father's name">
                   </div>
-                  <div class="form-group" style="align-self: end;">
-                    <button type="button" id="btn-save-work-profile" class="btn btn-secondary btn-full">Save Header</button>
+                  <div class="form-group" style="align-self: end; display: flex; gap: 0.5rem;">
+                    <button type="button" id="btn-save-work-profile" class="btn btn-secondary" style="flex: 1;">Save Header</button>
+                    <button type="button" id="btn-export-work-pdf" class="btn btn-primary" style="flex: 1;">Export PDF</button>
                   </div>
                 </div>
 
@@ -233,8 +236,9 @@
                         <th>S.No</th>
                         <th>Date</th>
                         <th>Performed Work</th>
-                        <th>Payment Issuance</th>
-                        <th>Balance Payment</th>
+                        <th>Received ($)</th>
+                        <th>Expense ($)</th>
+                        <th>Balance ($)</th>
                         <th>Material Issuance</th>
                         <th>Material Balance</th>
                         <th>Other Remarks</th>
@@ -242,7 +246,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td colspan="9" class="table-empty">No entries for this month yet.</td></tr>
+                      <tr><td colspan="10" class="table-empty">No entries for this month yet.</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -260,12 +264,20 @@
                         <textarea id="work-entry-work" rows="2" placeholder="Describe work performed..." required></textarea>
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-payment">Payment Issuance</label>
-                        <input type="number" id="work-entry-payment" min="0" step="0.01" placeholder="0">
+                        <label for="work-entry-received">Amount Received ($) *</label>
+                        <input type="number" id="work-entry-received" min="0" step="0.01" value="0" required>
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-balance">Balance Payment</label>
-                        <input type="text" id="work-entry-balance" placeholder="e.g. 2460">
+                        <label for="work-entry-expense">Expense Amount ($) *</label>
+                        <input type="number" id="work-entry-expense" min="0" step="0.01" value="0" required>
+                      </div>
+                      <div class="form-group">
+                        <label for="work-entry-balance">Remaining Balance ($)</label>
+                        <input type="number" id="work-entry-balance" readonly placeholder="Calculated automatically">
+                      </div>
+                      <div class="form-group" style="grid-column: 1 / -1; font-size: 0.85rem; padding: 0.5rem; background: rgba(59, 130, 246, 0.1); border-radius: 4px; display: none; align-items: center; gap: 1rem; border: 1px solid rgba(59, 130, 246, 0.2);" id="carryover-balance-info">
+                        <span>💼 <strong id="label-carryover">Carried Over: $0.00</strong></span>
+                        <span>💰 <strong id="label-total-received">Total Available: $0.00</strong></span>
                       </div>
                       <div class="form-group">
                         <label for="work-entry-material">Material Issuance</label>
@@ -548,7 +560,10 @@
                 <button id="btn-export-work-csv" class="btn btn-secondary">
                   Export CSV
                 </button>
-                <button id="btn-export-all-work-csv" class="btn btn-primary">
+                <button id="btn-export-work-pdf-admin" class="btn btn-primary">
+                  Export PDF
+                </button>
+                <button id="btn-export-all-work-csv" class="btn btn-secondary">
                   Export All Employees CSV
                 </button>
               </div>
@@ -579,15 +594,16 @@
                       <th>S.No</th>
                       <th>Date</th>
                       <th>Performed Work</th>
-                      <th>Payment Issuance</th>
-                      <th>Balance Payment</th>
+                      <th>Received ($)</th>
+                      <th>Expense ($)</th>
+                      <th>Balance ($)</th>
                       <th>Material Issuance</th>
                       <th>Material Balance</th>
                       <th>Other Remarks</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr><td colspan="8" class="table-empty">Select an employee and month to view records.</td></tr>
+                    <tr><td colspan="9" class="table-empty">Select an employee and month to view records.</td></tr>
                   </tbody>
                 </table>
               </div>

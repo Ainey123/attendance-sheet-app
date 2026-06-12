@@ -1159,20 +1159,46 @@ function renderWorkRecordRows(records, tbodySelector, allowDelete) {
   tbody.innerHTML = '';
 
   if (!records.length) {
-    const cols = allowDelete ? 9 : 8;
+    const cols = allowDelete ? 10 : 9;
     tbody.innerHTML = `<tr><td colspan="${cols}" class="table-empty">No entries for this month yet.</td></tr>`;
     return;
   }
 
   records.forEach((rec, idx) => {
     const tr = document.createElement('tr');
-    const payment = rec.paymentIssuance != null ? rec.paymentIssuance.toLocaleString() : '—';
+    
+    const newReceived = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
+    const carriedOver = rec.carriedOverBalance || 0;
+    const totalReceived = rec.totalReceived !== undefined ? rec.totalReceived : (newReceived + carriedOver);
+    const expense = rec.expenseAmount || 0;
+    const balance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalReceived - expense);
+
+    const fmtNewReceived = newReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtCarriedOver = carriedOver.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtTotalReceived = totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtExpense = expense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtBalance = balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    let receivedHtml = '';
+    if (carriedOver > 0) {
+      receivedHtml = `
+        <div class="received-cell">
+          <span class="received-new">${fmtNewReceived}</span>
+          <span class="received-carryover" title="Carried over from previous day">+${fmtCarriedOver} carry</span>
+          <span class="received-total">= ${fmtTotalReceived}</span>
+        </div>
+      `;
+    } else {
+      receivedHtml = `<span class="received-new">${fmtNewReceived}</span>`;
+    }
+
     tr.innerHTML = `
       <td class="col-sn">${idx + 1}</td>
       <td>${formatWorkDateDisplay(rec.date)}</td>
       <td class="col-work">${rec.performedWork || '—'}</td>
-      <td>${payment}</td>
-      <td>${rec.balancePayment || '—'}</td>
+      <td>${receivedHtml}</td>
+      <td class="expense-cell">${fmtExpense}</td>
+      <td class="balance-cell">${fmtBalance}</td>
       <td>${rec.materialIssuance || '—'}</td>
       <td>${rec.materialBalance || '—'}</td>
       <td>${formatRemarksBadge(rec.otherRemarks)}</td>
@@ -1209,6 +1235,9 @@ async function loadEmployeeWorkRecords() {
 
     const dateInput = document.getElementById('work-entry-date');
     if (!dateInput.value) dateInput.value = getLocalDateString();
+    
+    // Auto calculate and update balance fields in the form
+    await updateAutoCalculatedBalance();
   } catch (err) {
     showToast('Failed to load work records', 'error');
   }
@@ -1249,8 +1278,8 @@ async function handleAddWorkEntry(e) {
     month,
     date,
     performedWork,
-    paymentIssuance: document.getElementById('work-entry-payment').value,
-    balancePayment: document.getElementById('work-entry-balance').value,
+    receivedAmount: document.getElementById('work-entry-received').value,
+    expenseAmount: document.getElementById('work-entry-expense').value,
     materialIssuance: document.getElementById('work-entry-material').value,
     materialBalance: document.getElementById('work-entry-mat-balance').value,
     otherRemarks: document.getElementById('work-entry-remarks').value
@@ -1261,7 +1290,8 @@ async function handleAddWorkEntry(e) {
     if (res.success || res.record) {
       showToast('Entry added', 'success');
       document.getElementById('work-entry-work').value = '';
-      document.getElementById('work-entry-payment').value = '';
+      document.getElementById('work-entry-received').value = '0';
+      document.getElementById('work-entry-expense').value = '0';
       document.getElementById('work-entry-balance').value = '';
       document.getElementById('work-entry-material').value = '';
       document.getElementById('work-entry-mat-balance').value = '';
@@ -1315,7 +1345,7 @@ async function loadAdminWorkRecords() {
     if (!employeeId) {
       document.getElementById('admin-work-summary').classList.add('hidden');
       document.querySelector('#admin-work-table tbody').innerHTML =
-        '<tr><td colspan="8" class="table-empty">Select an employee and month to view records.</td></tr>';
+        '<tr><td colspan="9" class="table-empty">Select an employee and month to view records.</td></tr>';
       return;
     }
 
@@ -1324,13 +1354,13 @@ async function loadAdminWorkRecords() {
     currentAdminWorkRecords = await API.getWorkRecords(employeeId, month);
     if (!Array.isArray(currentAdminWorkRecords)) currentAdminWorkRecords = [];
 
-    const totalPayment = currentAdminWorkRecords.reduce((sum, r) => sum + (r.paymentIssuance || 0), 0);
+    const totalReceived = currentAdminWorkRecords.reduce((sum, r) => sum + (r.receivedAmount !== undefined ? r.receivedAmount : (r.paymentIssuance || 0)), 0);
 
     document.getElementById('admin-work-summary').classList.remove('hidden');
     document.getElementById('admin-work-summary-name').textContent = employee ? employee.name : '—';
     document.getElementById('admin-work-summary-father').textContent = profile.fatherName || '—';
     document.getElementById('admin-work-summary-count').textContent = currentAdminWorkRecords.length;
-    document.getElementById('admin-work-summary-payment').textContent = totalPayment.toLocaleString();
+    document.getElementById('admin-work-summary-payment').textContent = totalReceived.toLocaleString();
 
     renderWorkRecordRows(currentAdminWorkRecords, '#admin-work-table', false);
   } catch (err) {
@@ -1345,15 +1375,22 @@ function exportWorkRecordsToCSV() {
   }
   const employeeName = document.getElementById('admin-work-summary-name').textContent;
   const month = document.getElementById('admin-work-month').value;
-  const headers = ['S.No', 'Date', 'Performed Work', 'Payment Issuance', 'Balance Payment', 'Material Issuance', 'Material Balance', 'Other Remarks'];
+  const headers = ['S.No', 'Date', 'Performed Work', 'Received Amount', 'Expense Amount', 'Remaining Balance', 'Material Issuance', 'Material Balance', 'Other Remarks'];
   const rows = [headers.join(',')];
   currentAdminWorkRecords.forEach((rec, idx) => {
+    const newReceived = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
+    const carriedOver = rec.carriedOverBalance || 0;
+    const totalReceived = rec.totalReceived !== undefined ? rec.totalReceived : (newReceived + carriedOver);
+    const expense = rec.expenseAmount || 0;
+    const balance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalReceived - expense);
+    
     rows.push([
       idx + 1,
       formatWorkDateDisplay(rec.date),
       `"${(rec.performedWork || '').replace(/"/g, '""')}"`,
-      rec.paymentIssuance != null ? rec.paymentIssuance : '',
-      `"${(rec.balancePayment || '').replace(/"/g, '""')}"`,
+      newReceived,
+      expense,
+      balance,
       `"${(rec.materialIssuance || '').replace(/"/g, '""')}"`,
       `"${(rec.materialBalance || '').replace(/"/g, '""')}"`,
       `"${(rec.otherRemarks || '').replace(/"/g, '""')}"`
@@ -1386,17 +1423,24 @@ async function exportAllEmployeesWorkRecordsToCSV() {
       return;
     }
 
-    const headers = ['S.No', 'Employee Name', 'Date', 'Performed Work', 'Payment Issuance', 'Balance Payment', 'Material Issuance', 'Material Balance', 'Other Remarks'];
+    const headers = ['S.No', 'Employee Name', 'Date', 'Performed Work', 'Received Amount', 'Expense Amount', 'Remaining Balance', 'Material Issuance', 'Material Balance', 'Other Remarks'];
     const rows = [headers.join(',')];
 
     records.forEach((rec, idx) => {
+      const newReceived = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
+      const carriedOver = rec.carriedOverBalance || 0;
+      const totalReceived = rec.totalReceived !== undefined ? rec.totalReceived : (newReceived + carriedOver);
+      const expense = rec.expenseAmount || 0;
+      const balance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalReceived - expense);
+
       rows.push([
         idx + 1,
         `"${(rec.employeeName || '').replace(/"/g, '""')}"`,
         formatWorkDateDisplay(rec.date),
         `"${(rec.performedWork || '').replace(/"/g, '""')}"`,
-        rec.paymentIssuance != null ? rec.paymentIssuance : '',
-        `"${(rec.balancePayment || '').replace(/"/g, '""')}"`,
+        newReceived,
+        expense,
+        balance,
         `"${(rec.materialIssuance || '').replace(/"/g, '""')}"`,
         `"${(rec.materialBalance || '').replace(/"/g, '""')}"`,
         `"${(rec.otherRemarks || '').replace(/"/g, '""')}"`
@@ -1801,7 +1845,33 @@ function setupEmployeeSessionUI(employee) {
   fetchLocation();
 }
 
-function handleEmployeeLogout() {
+async function handleEmployeeLogout() {
+  if (!selectedEmployee) return;
+
+  const todayStr = getLocalDateString();
+  const currentMonthStr = getCurrentMonthString();
+  
+  try {
+    const records = await API.getWorkRecords(selectedEmployee.id, currentMonthStr);
+    const hasTodayEntry = records && records.some(r => r.date === todayStr);
+    
+    if (!hasTodayEntry) {
+      showToast('Error: You must submit today\'s Received & Expense daily entry before logging out!', 'error');
+      switchEmployeeTab('emp-pane-workrecord');
+      
+      const receivedInput = document.getElementById('work-entry-received');
+      if (receivedInput) {
+        receivedInput.focus();
+        receivedInput.scrollIntoView({ behavior: 'smooth' });
+      }
+      return;
+    }
+  } catch (err) {
+    console.error('Error verifying daily entry before logout:', err);
+    showToast('Network error, unable to verify daily entry. Please check your connection.', 'error');
+    return;
+  }
+
   localStorage.removeItem('loggedInEmployeeId');
   
   // Show select list
@@ -1989,6 +2059,238 @@ function closePhotoModal() {
 }
 
 // ==========================================================================
+// DAILY CASH REGISTRY CARRY-OVER & PDF GENERATION
+// ==========================================================================
+
+async function getCarryOverBalanceForDate(employeeId, targetDateStr) {
+  try {
+    const allRecords = await API.getWorkRecords(employeeId);
+    if (!Array.isArray(allRecords) || allRecords.length === 0) {
+      return 0;
+    }
+    
+    // Sort them chronologically
+    allRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    let runningBalance = 0;
+    for (const rec of allRecords) {
+      if (rec.date < targetDateStr) {
+        const received = Number(rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0));
+        const expense = Number(rec.expenseAmount || 0);
+        runningBalance = runningBalance + received - expense;
+      }
+    }
+    return runningBalance;
+  } catch (err) {
+    console.error('Error calculating carry-over balance:', err);
+    return 0;
+  }
+}
+
+async function updateAutoCalculatedBalance() {
+  if (!selectedEmployee) return;
+  
+  const dateInput = document.getElementById('work-entry-date');
+  const receivedInput = document.getElementById('work-entry-received');
+  const expenseInput = document.getElementById('work-entry-expense');
+  const balanceInput = document.getElementById('work-entry-balance');
+  const carryOverInfo = document.getElementById('carryover-balance-info');
+  const labelCarryover = document.getElementById('label-carryover');
+  const labelTotalReceived = document.getElementById('label-total-received');
+  
+  if (!dateInput || !receivedInput || !expenseInput || !balanceInput) return;
+  
+  const dateStr = dateInput.value;
+  if (!dateStr) return;
+  
+  const receivedVal = Number(receivedInput.value) || 0;
+  const expenseVal = Number(expenseInput.value) || 0;
+  
+  const carryOver = await getCarryOverBalanceForDate(selectedEmployee.id, dateStr);
+  const totalReceived = carryOver + receivedVal;
+  const remaining = totalReceived - expenseVal;
+  
+  balanceInput.value = remaining.toFixed(2);
+  
+  if (carryOverInfo && labelCarryover && labelTotalReceived) {
+    labelCarryover.textContent = `Carried Over: $${carryOver.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    labelTotalReceived.textContent = `Total Available: $${totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    carryOverInfo.style.display = 'flex';
+  }
+}
+
+async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
+  try {
+    showToast('Generating PDF report...', 'info');
+    
+    // 1. Fetch records & profile
+    const records = await API.getWorkRecords(employeeId, month);
+    if (!records || records.length === 0) {
+      showToast('No records found for this month', 'warning');
+      return;
+    }
+    
+    const profile = await API.getWorkProfile(employeeId, month);
+    const fatherName = profile.fatherName || '—';
+    
+    // Format Month display (e.g. "June 2026")
+    const dateObj = new Date(month + '-02'); // add day to avoid timezone shifting
+    const monthDisplay = dateObj.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    
+    // 2. Build PDF Document Container
+    const printContainer = document.createElement('div');
+    printContainer.className = 'pdf-report-wrapper';
+    
+    let htmlContent = `
+      <div class="pdf-header">
+        <h1 class="pdf-title">MONTHLY EXPENSE REPORT</h1>
+        <div class="pdf-subtitle">${monthDisplay}</div>
+        <div class="pdf-meta-grid">
+          <div class="pdf-meta-item"><strong>Employee Name:</strong> ${employeeName}</div>
+          <div class="pdf-meta-item"><strong>Father's Name:</strong> ${fatherName}</div>
+        </div>
+      </div>
+      
+      <div class="pdf-flow-container">
+    `;
+    
+    records.forEach((rec, idx) => {
+      const newReceived = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
+      const carriedOver = rec.carriedOverBalance || 0;
+      const totalReceived = rec.totalReceived !== undefined ? rec.totalReceived : (newReceived + carriedOver);
+      const expense = rec.expenseAmount || 0;
+      const balance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalReceived - expense);
+      
+      const fmtNewReceived = newReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtCarriedOver = carriedOver.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtTotalReceived = totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtExpense = expense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtBalance = balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      
+      const isLast = idx === records.length - 1;
+      
+      htmlContent += `
+        <div class="pdf-flow-row">
+          <div class="pdf-flow-date">${formatWorkDateDisplay(rec.date)}</div>
+          
+          <div class="pdf-flow-boxes">
+            <!-- Received Box -->
+            <div class="pdf-box pdf-box-received">
+              <div class="pdf-box-title">RECEIVED</div>
+              <div class="pdf-box-value">$${fmtNewReceived}</div>
+              ${carriedOver > 0 ? `
+                <div class="pdf-box-sub">🎒 Carry-over: $${fmtCarriedOver}</div>
+                <div class="pdf-box-total">Total: $${fmtTotalReceived}</div>
+              ` : `
+                <div class="pdf-box-total">Total: $${fmtTotalReceived}</div>
+              `}
+            </div>
+            
+            <div class="pdf-flow-arrow">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            
+            <!-- Expense Box -->
+            <div class="pdf-box pdf-box-expense">
+              <div class="pdf-box-title">EXPENSE</div>
+              <div class="pdf-box-value">$${fmtExpense}</div>
+              <div class="pdf-box-desc" title="${rec.performedWork || ''}">Work: ${rec.performedWork || 'Daily task'}</div>
+            </div>
+            
+            <div class="pdf-flow-arrow">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            
+            <!-- Balance Box -->
+            <div class="pdf-box pdf-box-balance">
+              <div class="pdf-box-title">BALANCE</div>
+              <div class="pdf-box-value">$${fmtBalance}</div>
+            </div>
+          </div>
+      `;
+      
+      if (!isLast) {
+        htmlContent += `
+          <div class="pdf-row-connector">
+            <svg width="100%" height="45" viewBox="0 0 100 45" preserveAspectRatio="none">
+              <path d="M 85 0 L 85 20 L 15 20 L 15 40" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="5 5" stroke-linecap="round"/>
+              <polygon points="15,45 10,37 20,37" fill="#6366f1"/>
+            </svg>
+          </div>
+        `;
+      }
+      
+      htmlContent += `</div>`;
+    });
+    
+    const totalReceivedSum = records.reduce((sum, r) => sum + (r.receivedAmount || 0), 0);
+    const totalExpenseSum = records.reduce((sum, r) => sum + (r.expenseAmount || 0), 0);
+    const endingBalance = records[records.length - 1].remainingBalance || 0;
+    
+    htmlContent += `
+      </div>
+      
+      <div class="pdf-footer-summary">
+        <h3 class="pdf-summary-title">MONTHLY SUMMARY</h3>
+        <div class="pdf-summary-grid">
+          <div class="pdf-summary-card">
+            <span class="pdf-card-label">Total Cash Received</span>
+            <span class="pdf-card-val text-success">$${totalReceivedSum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+          </div>
+          <div class="pdf-summary-card">
+            <span class="pdf-card-label">Total Expenses</span>
+            <span class="pdf-card-val text-danger">$${totalExpenseSum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+          </div>
+          <div class="pdf-summary-card">
+            <span class="pdf-card-label">Ending Balance (Carried Over)</span>
+            <span class="pdf-card-val text-primary">$${endingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+          </div>
+        </div>
+        <div class="pdf-signature-section">
+          <div class="pdf-signature-line">
+            <div class="sig-line"></div>
+            <span>Employee Signature</span>
+          </div>
+          <div class="pdf-signature-line">
+            <div class="sig-line"></div>
+            <span>Manager Signature</span>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    printContainer.innerHTML = htmlContent;
+    document.body.appendChild(printContainer);
+    
+    if (window.html2pdf) {
+      const opt = {
+        margin:       [10, 10, 15, 10],
+        filename:     `${employeeName}_Expense_Report_${month}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      
+      await html2pdf().set(opt).from(printContainer).save();
+      document.body.removeChild(printContainer);
+      showToast('PDF downloaded successfully!', 'success');
+    } else {
+      showToast('html2pdf library offline. Opening browser print dialog...', 'info');
+      window.print();
+      document.body.removeChild(printContainer);
+    }
+  } catch (err) {
+    console.error('Error generating PDF:', err);
+    showToast('Failed to generate PDF', 'error');
+  }
+}
+
+// ==========================================================================
 // BOOTSTRAP EVENT BINDINGS
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -2108,6 +2410,30 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('emp-work-month').addEventListener('change', loadEmployeeWorkRecords);
   document.getElementById('btn-save-work-profile').addEventListener('click', handleSaveWorkProfile);
   document.getElementById('form-add-work-entry').addEventListener('submit', handleAddWorkEntry);
+  
+  // Real-time balance calculations for daily entry form
+  document.getElementById('work-entry-date').addEventListener('change', updateAutoCalculatedBalance);
+  document.getElementById('work-entry-received').addEventListener('input', updateAutoCalculatedBalance);
+  document.getElementById('work-entry-expense').addEventListener('input', updateAutoCalculatedBalance);
+  
+  // PDF Exports
+  document.getElementById('btn-export-work-pdf').addEventListener('click', () => {
+    if (selectedEmployee) {
+      const month = document.getElementById('emp-work-month').value;
+      exportWorkRecordsToPDF(selectedEmployee.id, month, selectedEmployee.name);
+    }
+  });
+  document.getElementById('btn-export-work-pdf-admin').addEventListener('click', () => {
+    const empId = document.getElementById('admin-work-employee').value;
+    const month = document.getElementById('admin-work-month').value;
+    const empSelect = document.getElementById('admin-work-employee');
+    const empName = empSelect.options[empSelect.selectedIndex]?.text || 'Employee';
+    if (empId && month) {
+      exportWorkRecordsToPDF(empId, month, empName);
+    } else {
+      showToast('Please select an employee and a month first', 'warning');
+    }
+  });
 
   // Admin work records
   document.getElementById('admin-work-employee').addEventListener('change', loadAdminWorkRecords);

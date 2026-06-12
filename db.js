@@ -278,9 +278,58 @@ const db = {
   async getWorkRecords(employeeId, month = null) {
     const data = await readData();
     let records = data.workRecords || [];
-    if (employeeId) records = records.filter(r => r.employeeId === employeeId);
-    if (month) records = records.filter(r => r.month === month);
-    return records.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // Sort all records chronologically first to ensure correct balance calculations
+    records.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // Group records by employeeId to compute individual running balances
+    const recordsByEmployee = {};
+    records.forEach(r => {
+      if (!recordsByEmployee[r.employeeId]) {
+        recordsByEmployee[r.employeeId] = [];
+      }
+      recordsByEmployee[r.employeeId].push(r);
+    });
+    
+    // For each employee, compute the running balance chronologically
+    const processedRecords = [];
+    for (const empId in recordsByEmployee) {
+      let runningBalance = 0;
+      recordsByEmployee[empId].forEach(r => {
+        // Backwards compatibility with paymentIssuance
+        const received = Number(r.receivedAmount !== undefined ? r.receivedAmount : (r.paymentIssuance || 0));
+        const expense = Number(r.expenseAmount || 0);
+        
+        r.carriedOverBalance = runningBalance;
+        r.totalReceived = runningBalance + received;
+        r.remainingBalance = r.totalReceived - expense;
+        
+        // Update r's properties so the client receives computed values
+        r.receivedAmount = r.receivedAmount !== undefined ? r.receivedAmount : (r.paymentIssuance || 0);
+        r.expenseAmount = r.expenseAmount || 0;
+        
+        // Also update legacy fields for older code if any
+        r.paymentIssuance = r.receivedAmount;
+        r.balancePayment = String(r.remainingBalance);
+        
+        runningBalance = r.remainingBalance;
+        processedRecords.push(r);
+      });
+    }
+    
+    // Now filter by employeeId if requested
+    let result = processedRecords;
+    if (employeeId) {
+      result = result.filter(r => r.employeeId === employeeId);
+    }
+    
+    // Filter by month if requested
+    if (month) {
+      result = result.filter(r => r.month === month);
+    }
+    
+    // Sort final result chronologically
+    return result.sort((a, b) => new Date(a.date) - new Date(b.date));
   },
 
   async getWorkProfile(employeeId, month) {
@@ -301,7 +350,11 @@ const db = {
     const data = await readData();
     if (!data.workRecords) data.workRecords = [];
     const employee = data.employees.find(e => e.id === record.employeeId);
-    const payment = record.paymentIssuance;
+    
+    // Use receivedAmount (or fall back to paymentIssuance for safety)
+    const payment = record.receivedAmount !== undefined ? record.receivedAmount : record.paymentIssuance;
+    const expense = record.expenseAmount !== undefined ? record.expenseAmount : 0;
+    
     const newRecord = {
       id: generateId('wr'),
       employeeId: record.employeeId,
@@ -309,8 +362,10 @@ const db = {
       month: record.month,
       date: record.date,
       performedWork: String(record.performedWork || '').trim(),
-      paymentIssuance: payment === '' || payment == null ? null : Number(payment),
-      balancePayment: String(record.balancePayment || '').trim(),
+      receivedAmount: payment === '' || payment == null ? 0 : Number(payment),
+      expenseAmount: expense === '' || expense == null ? 0 : Number(expense),
+      paymentIssuance: payment === '' || payment == null ? null : Number(payment), // back-compat
+      balancePayment: String(record.balancePayment || '').trim(), // back-compat
       materialIssuance: String(record.materialIssuance || '').trim(),
       materialBalance: String(record.materialBalance || '').trim(),
       otherRemarks: String(record.otherRemarks || '').trim(),
@@ -328,11 +383,19 @@ const db = {
     const r = data.workRecords[idx];
     if (updates.date !== undefined) r.date = updates.date;
     if (updates.performedWork !== undefined) r.performedWork = String(updates.performedWork).trim();
-    if (updates.paymentIssuance !== undefined) {
-      r.paymentIssuance = updates.paymentIssuance === '' || updates.paymentIssuance == null
-        ? null
-        : Number(updates.paymentIssuance);
+    
+    if (updates.receivedAmount !== undefined) {
+      r.receivedAmount = updates.receivedAmount === '' || updates.receivedAmount == null ? 0 : Number(updates.receivedAmount);
+      r.paymentIssuance = r.receivedAmount; // back-compat
+    } else if (updates.paymentIssuance !== undefined) {
+      r.receivedAmount = updates.paymentIssuance === '' || updates.paymentIssuance == null ? 0 : Number(updates.paymentIssuance);
+      r.paymentIssuance = r.receivedAmount;
     }
+    
+    if (updates.expenseAmount !== undefined) {
+      r.expenseAmount = updates.expenseAmount === '' || updates.expenseAmount == null ? 0 : Number(updates.expenseAmount);
+    }
+    
     if (updates.balancePayment !== undefined) r.balancePayment = String(updates.balancePayment).trim();
     if (updates.materialIssuance !== undefined) r.materialIssuance = String(updates.materialIssuance).trim();
     if (updates.materialBalance !== undefined) r.materialBalance = String(updates.materialBalance).trim();
