@@ -221,10 +221,10 @@ module.exports = async (req, res) => {
     // ── POST /api/attendance/clock-out ─────────────────────────────────────────
     if (path === 'attendance/clock-out' && method === 'POST') {
       const body = await parseBody(req);
-      const { employeeId, location, performanceNotes, moneySpent } = body;
+      const { employeeId, location, performanceNotes, moneySpent, image } = body;
       if (performanceNotes === undefined) return res.status(400).json({ error: 'performanceNotes required' });
       if (moneySpent === undefined) return res.status(400).json({ error: 'moneySpent required' });
-      const result = await db.clockOut(employeeId, location, performanceNotes, moneySpent);
+      const result = await db.clockOut(employeeId, location, performanceNotes, moneySpent, image);
       return res.json({ success: true, data: result });
     }
 

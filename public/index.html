@@ -438,6 +438,15 @@
                     </span>
                     Export CSV
                   </button>
+                  <!-- Export Monthly Attendance CSV -->
+                  <button id="btn-export-monthly-csv" class="btn btn-secondary">
+                    <span class="btn-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                      </svg>
+                    </span>
+                    Export Monthly Attendance
+                  </button>
                 </div>
               </div>
 
@@ -453,11 +462,12 @@
                       <th>Duration</th>
                       <th>In Location</th>
                       <th>Out Location</th>
+                      <th>Photo</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td colspan="8" class="table-empty">Loading logs...</td>
+                      <td colspan="9" class="table-empty">Loading logs...</td>
                     </tr>
                   </tbody>
                 </table>
@@ -537,6 +547,9 @@
                 </div>
                 <button id="btn-export-work-csv" class="btn btn-secondary">
                   Export CSV
+                </button>
+                <button id="btn-export-all-work-csv" class="btn btn-primary">
+                  Export All Employees CSV
                 </button>
               </div>
 
@@ -768,6 +781,23 @@
             <label for="money-spent">Money Spent ($) *</label>
             <input type="number" id="money-spent" placeholder="0.00" min="0" step="0.01" required style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
           </div>
+          <div class="form-group">
+            <label for="clockout-photo">Attach Photo (Optional)</label>
+            <div class="image-upload-wrapper" style="margin-top:0.25rem;">
+              <input type="file" id="clockout-photo" accept="image/*" capture="environment" style="display:none;" />
+              <button type="button" id="btn-trigger-camera" class="btn btn-secondary" style="width:100%;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:rgba(255,255,255,0.05);border:1px dashed var(--border-color);border-radius:var(--radius-md);">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:20px;height:20px;">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15c2.486 0 4.5-2.014 4.5-4.5V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                </svg>
+                <span>Take or Choose Photo</span>
+              </button>
+              <div id="photo-preview-container" class="hidden" style="margin-top:0.5rem;position:relative;text-align:center;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border-color);background:rgba(0,0,0,0.4);">
+                <img id="photo-preview" src="" alt="Work photo preview" style="max-width:100%;max-height:200px;display:block;margin:0 auto;object-fit:contain;" />
+                <button type="button" id="btn-remove-photo" style="position:absolute;top:5px;right:5px;background:rgba(220,53,69,0.85);color:#fff;border:none;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:bold;font-size:14px;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:22px;padding:0;">×</button>
+              </div>
+            </div>
+          </div>
           <button type="submit" class="btn btn-primary btn-full">Submit Clock Out</button>
         </form>
       </div>
@@ -822,6 +852,23 @@
           <div id="change-pin-error-msg" class="form-error-msg hidden">Incorrect current PIN or invalid new PIN.</div>
           <button type="submit" class="btn btn-primary btn-full">Save New PIN</button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Photo View Lightbox Modal -->
+  <div id="photo-view-modal" class="modal-overlay hidden" style="z-index:9999;">
+    <div class="modal-content" style="max-width: 500px; background: #1a1a1a; border: 1px solid var(--border-color);">
+      <div class="modal-header">
+        <h3 class="modal-title">Attached Work Photo</h3>
+        <button id="btn-close-photo-modal" class="btn-close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" style="text-align:center;padding:1rem;">
+        <img id="photo-modal-img" src="" alt="Work photo full view" style="max-width:100%;max-height:400px;border-radius:var(--radius-md);box-shadow:0 4px 12px rgba(0,0,0,0.5);object-fit:contain;" />
       </div>
     </div>
   </div>

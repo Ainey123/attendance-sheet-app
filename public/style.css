@@ -1830,3 +1830,37 @@ tr:hover td {
 .btn-delete-work:hover {
   text-decoration: underline;
 }
+
+/* Photo view styles */
+.btn-view-photo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-indigo);
+  text-decoration: none;
+  font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+
+.btn-view-photo:hover {
+  text-decoration: underline;
+  color: #818cf8;
+}
+
+.btn-view-photo svg {
+  width: 14px;
+  height: 14px;
+}
+
+.progress-photo-thumbnail {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.progress-photo-thumbnail:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}

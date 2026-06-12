@@ -269,12 +269,12 @@ app.post('/api/attendance/clock-in', async (req, res) => {
 
 // Clock Out
 app.post('/api/attendance/clock-out', async (req, res) => {
-  const { employeeId, location, performanceNotes, moneySpent } = req.body;
+  const { employeeId, location, performanceNotes, moneySpent, image } = req.body;
   if (!employeeId) {
     return res.status(400).json({ error: 'Employee ID is required.' });
   }
   try {
-    const result = await db.clockOut(employeeId, location, performanceNotes, moneySpent);
+    const result = await db.clockOut(employeeId, location, performanceNotes, moneySpent, image);
     res.json({ success: true, message: 'Clocked out successfully!', data: result });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });

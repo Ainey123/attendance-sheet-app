@@ -53,10 +53,10 @@ const API = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, location })
   }).then(r => r.json()),
-  clockOut: (employeeId, location, performanceNotes, moneySpent) => fetch('/api/attendance/clock-out', {
+  clockOut: (employeeId, location, performanceNotes, moneySpent, image) => fetch('/api/attendance/clock-out', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ employeeId, location, performanceNotes, moneySpent })
+    body: JSON.stringify({ employeeId, location, performanceNotes, moneySpent, image })
   }).then(r => r.json()),
   verifyEmployeePin: (employeeId, pin) => fetch('/api/employees/verify-pin', {
     method: 'POST',
@@ -69,9 +69,11 @@ const API = {
     body: JSON.stringify({ employeeId, oldPin, newPin })
   }).then(r => r.json()),
   getWorkRecords: (employeeId, month) => {
-    let url = `/api/work-records?employeeId=${encodeURIComponent(employeeId)}`;
-    if (month) url += `&month=${encodeURIComponent(month)}`;
-    return fetch(url).then(r => r.json());
+    let url = '/api/work-records?';
+    const params = [];
+    if (employeeId) params.push(`employeeId=${encodeURIComponent(employeeId)}`);
+    if (month) params.push(`month=${encodeURIComponent(month)}`);
+    return fetch(url + params.join('&')).then(r => r.json());
   },
   getWorkProfile: (employeeId, month) =>
     fetch(`/api/work-records/profile?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}`).then(r => r.json()),
@@ -541,11 +543,13 @@ function openClockOutModal() {
   document.getElementById('clockout-modal').classList.remove('hidden');
   document.getElementById('performance-notes').value = '';
   document.getElementById('money-spent').value = '';
+  resetClockOutPhoto();
   document.getElementById('performance-notes').focus();
 }
 
 function closeClockOutModal() {
   document.getElementById('clockout-modal').classList.add('hidden');
+  resetClockOutPhoto();
 }
 
 function handleClockOut() {
@@ -572,7 +576,8 @@ async function submitClockOutDetails(e) {
       selectedEmployee.id,
       userLocation,
       performanceNotes,
-      moneySpent
+      moneySpent,
+      selectedClockOutPhotoBase64
     );
     if (res.success) {
       showToast(`Clock out successful for ${selectedEmployee.name}`, 'success');
@@ -732,7 +737,7 @@ function renderAttendanceLogsTable(logs) {
   tbody.innerHTML = '';
   
   if (logs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No attendance records found for this date.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">No attendance records found for this date.</td></tr>';
     return;
   }
 
@@ -750,6 +755,19 @@ function renderAttendanceLogsTable(logs) {
           </svg>
           Map
         </a>
+      `;
+    };
+
+    // Photo link rendering
+    const renderPhotoLink = (img) => {
+      if (!img) return '<span class="text-muted" style="font-size: 0.8rem">No Photo</span>';
+      return `
+        <button type="button" class="btn-view-photo" data-img="${img}" style="background:none;border:none;color:var(--color-primary);cursor:pointer;padding:0;font-size:0.9rem;text-decoration:underline;display:flex;align-items:center;gap:0.25rem;margin:0 auto;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+          View
+        </button>
       `;
     };
 
@@ -772,7 +790,15 @@ function renderAttendanceLogsTable(logs) {
       <td><strong>${durationText}</strong></td>
       <td>${renderLocationLink(log.clockInLocation)}</td>
       <td>${renderLocationLink(log.clockOutLocation)}</td>
+      <td>${renderPhotoLink(log.image)}</td>
     `;
+    
+    // Bind photo click listeners
+    tr.querySelectorAll('.btn-view-photo').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openPhotoModal(btn.getAttribute('data-img'));
+      });
+    });
     
     tbody.appendChild(tr);
   });
@@ -998,7 +1024,7 @@ function exportLogsToCSV() {
   }
 
   const dateFilter = document.getElementById('admin-date-filter').value;
-  const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng'];
+  const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng', 'Performance Notes', 'Money Spent ($)', 'Photo Attached'];
   
   const csvRows = [headers.join(',')];
 
@@ -1019,21 +1045,88 @@ function exportLogsToCSV() {
       inLat,
       inLng,
       outLat,
-      outLng
+      outLng,
+      `"${(log.performanceNotes || '').replace(/"/g, '""')}"`,
+      log.moneySpent || 0,
+      log.image ? 'Yes' : 'No'
     ];
     csvRows.push(row.join(','));
   });
 
-  const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
-  const encodedUri = encodeURI(csvContent);
+  const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(csvRows.join("\n"));
   const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
+  link.setAttribute("href", csvContent);
   link.setAttribute("download", `Attendance_Report_${dateFilter}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   
   showToast('Attendance report exported!', 'success');
+}
+
+// Export Monthly Attendance Report to CSV
+async function exportMonthlyAttendanceToCSV() {
+  const dateFilter = document.getElementById('admin-date-filter').value;
+  if (!dateFilter) {
+    showToast('Please select a date first to determine the month', 'warning');
+    return;
+  }
+  const selectedMonth = dateFilter.substring(0, 7); // "YYYY-MM"
+  
+  try {
+    showToast('Generating monthly attendance report...', 'info');
+    // Fetch ALL logs (passing no date fetches all)
+    const logs = await API.getAttendanceLogs(null);
+    
+    // Filter for selected month
+    const monthlyLogs = logs.filter(log => log.date && log.date.startsWith(selectedMonth));
+    
+    if (monthlyLogs.length === 0) {
+      showToast(`No logs found for the month of ${selectedMonth}`, 'warning');
+      return;
+    }
+
+    const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng', 'Performance Notes', 'Money Spent ($)', 'Photo Attached'];
+    const csvRows = [headers.join(',')];
+
+    monthlyLogs.forEach(log => {
+      const inLat = log.clockInLocation ? log.clockInLocation.latitude : '';
+      const inLng = log.clockInLocation ? log.clockInLocation.longitude : '';
+      const outLat = log.clockOutLocation ? log.clockOutLocation.latitude : '';
+      const outLng = log.clockOutLocation ? log.clockOutLocation.longitude : '';
+      const duration = log.duration !== null ? log.duration : '';
+
+      const row = [
+        `"${log.employeeName.replace(/"/g, '""')}"`,
+        `"${(log.role || 'Staff').replace(/"/g, '""')}"`,
+        log.date,
+        log.clockInTime ? new Date(log.clockInTime).toLocaleTimeString() : '',
+        log.clockOutTime ? new Date(log.clockOutTime).toLocaleTimeString() : '',
+        duration,
+        inLat,
+        inLng,
+        outLat,
+        outLng,
+        `"${(log.performanceNotes || '').replace(/"/g, '""')}"`,
+        log.moneySpent || 0,
+        log.image ? 'Yes' : 'No'
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(csvRows.join("\n"));
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", `Monthly_Attendance_Report_${selectedMonth}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showToast(`Monthly report for ${selectedMonth} exported!`, 'success');
+  } catch (err) {
+    showToast('Failed to export monthly attendance', 'error');
+    console.error(err);
+  }
 }
 
 // ==========================================================================
@@ -1275,6 +1368,54 @@ function exportWorkRecordsToCSV() {
   showToast('Work record exported', 'success');
 }
 
+// Export All Employees' Work Records to CSV
+async function exportAllEmployeesWorkRecordsToCSV() {
+  const month = document.getElementById('admin-work-month').value;
+  if (!month) {
+    showToast('Please select a month first', 'warning');
+    return;
+  }
+  
+  try {
+    showToast('Generating overall work progress report...', 'info');
+    // Fetch all work records for the month (passing null for employeeId fetches all)
+    const records = await API.getWorkRecords(null, month);
+    
+    if (records.length === 0) {
+      showToast(`No work records found for the month of ${month}`, 'warning');
+      return;
+    }
+
+    const headers = ['S.No', 'Employee Name', 'Date', 'Performed Work', 'Payment Issuance', 'Balance Payment', 'Material Issuance', 'Material Balance', 'Other Remarks'];
+    const rows = [headers.join(',')];
+
+    records.forEach((rec, idx) => {
+      rows.push([
+        idx + 1,
+        `"${(rec.employeeName || '').replace(/"/g, '""')}"`,
+        formatWorkDateDisplay(rec.date),
+        `"${(rec.performedWork || '').replace(/"/g, '""')}"`,
+        rec.paymentIssuance != null ? rec.paymentIssuance : '',
+        `"${(rec.balancePayment || '').replace(/"/g, '""')}"`,
+        `"${(rec.materialIssuance || '').replace(/"/g, '""')}"`,
+        `"${(rec.materialBalance || '').replace(/"/g, '""')}"`,
+        `"${(rec.otherRemarks || '').replace(/"/g, '""')}"`
+      ].join(','));
+    });
+
+    const link = document.createElement('a');
+    link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+    link.download = `WorkProgress_All_Employees_${month}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('All employee work progress exported', 'success');
+  } catch (err) {
+    showToast('Failed to export work records', 'error');
+    console.error(err);
+  }
+}
+
 // ==========================================================================
 // WORK PROGRESS DASHBOARD
 // ==========================================================================
@@ -1396,6 +1537,12 @@ function renderProgressFeed(employees, attendance, workRecords) {
       const duration = item.data.duration ? `${item.data.duration}m` : 'Active';
       const notes = item.data.performanceNotes || 'No performance notes';
       const moneySpent = item.data.moneySpent ? `$${item.data.moneySpent.toLocaleString()}` : '$0';
+      const photoHtml = item.data.image ? `
+        <div class="progress-detail" style="margin-top: 0.5rem; display: block;">
+          <span class="detail-label">Work Photo:</span>
+          <img src="${item.data.image}" alt="Work Photo" class="progress-photo-thumbnail" style="max-width: 120px; max-height: 90px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); cursor: pointer; display: block; margin-top: 0.25rem; object-fit: cover;" />
+        </div>
+      ` : '';
 
       card.innerHTML = `
         <div class="progress-card-header">
@@ -1425,6 +1572,7 @@ function renderProgressFeed(employees, attendance, workRecords) {
             <span class="detail-label">Location:</span>
             <span class="detail-value">${locationLink}</span>
           </div>
+          ${photoHtml}
           <div class="progress-notes">
             <span class="detail-label">Notes:</span>
             <p class="detail-notes">${notes}</p>
@@ -1462,6 +1610,13 @@ function renderProgressFeed(employees, attendance, workRecords) {
         </div>
       `;
     }
+
+    // Bind thumbnail click if image exists
+    card.querySelectorAll('.progress-photo-thumbnail').forEach(img => {
+      img.addEventListener('click', () => {
+        openPhotoModal(img.src);
+      });
+    });
 
     feedContainer.appendChild(card);
   });
@@ -1765,6 +1920,75 @@ async function handleQueryParams() {
 }
 
 // ==========================================================================
+// PHOTO UPLOAD & VIEW HELPER FUNCTIONS
+// ==========================================================================
+let selectedClockOutPhotoBase64 = null;
+
+function compressImage(file, maxWidth, maxHeight, quality, callback) {
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  reader.onload = function (event) {
+    const img = new Image();
+    img.src = event.target.result;
+    img.onload = function () {
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      callback(dataUrl);
+    };
+  };
+}
+
+function resetClockOutPhoto() {
+  selectedClockOutPhotoBase64 = null;
+  const fileInput = document.getElementById('clockout-photo');
+  if (fileInput) fileInput.value = '';
+  const previewContainer = document.getElementById('photo-preview-container');
+  if (previewContainer) previewContainer.classList.add('hidden');
+  const previewImg = document.getElementById('photo-preview');
+  if (previewImg) previewImg.src = '';
+}
+
+function openPhotoModal(imgSrc) {
+  const modal = document.getElementById('photo-view-modal');
+  const modalImg = document.getElementById('photo-modal-img');
+  if (modal && modalImg) {
+    modalImg.src = imgSrc;
+    modal.classList.remove('hidden');
+  }
+}
+
+function closePhotoModal() {
+  const modal = document.getElementById('photo-view-modal');
+  const modalImg = document.getElementById('photo-modal-img');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+  setTimeout(() => {
+    if (modalImg) modalImg.src = '';
+  }, 300);
+}
+
+// ==========================================================================
 // BOOTSTRAP EVENT BINDINGS
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -1869,6 +2093,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Export CSV
   document.getElementById('btn-export-csv').addEventListener('click', exportLogsToCSV);
+  document.getElementById('btn-export-monthly-csv').addEventListener('click', exportMonthlyAttendanceToCSV);
 
   // Add Employee Form
   document.getElementById('form-add-employee').addEventListener('submit', handleAddEmployeeSubmit);
@@ -1888,11 +2113,35 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('admin-work-employee').addEventListener('change', loadAdminWorkRecords);
   document.getElementById('admin-work-month').addEventListener('change', loadAdminWorkRecords);
   document.getElementById('btn-export-work-csv').addEventListener('click', exportWorkRecordsToCSV);
+  document.getElementById('btn-export-all-work-csv').addEventListener('click', exportAllEmployeesWorkRecordsToCSV);
   document.getElementById('admin-work-month').value = getCurrentMonthString();
 
   // Work Progress dashboard
   document.getElementById('progress-date-filter').addEventListener('change', loadWorkProgress);
   document.getElementById('btn-refresh-progress').addEventListener('click', loadWorkProgress);
+
+  // Camera upload bindings
+  document.getElementById('btn-trigger-camera').addEventListener('click', () => {
+    document.getElementById('clockout-photo').click();
+  });
+
+  document.getElementById('clockout-photo').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    compressImage(file, 500, 500, 0.6, (compressedBase64) => {
+      selectedClockOutPhotoBase64 = compressedBase64;
+      document.getElementById('photo-preview').src = compressedBase64;
+      document.getElementById('photo-preview-container').classList.remove('hidden');
+    });
+  });
+
+  document.getElementById('btn-remove-photo').addEventListener('click', () => {
+    resetClockOutPhoto();
+  });
+
+  // Photo view modal bindings
+  document.getElementById('btn-close-photo-modal').addEventListener('click', closePhotoModal);
 
   // Window clicks to close modals on backdrop
   window.addEventListener('click', (e) => {
@@ -1900,6 +2149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const empModal = document.getElementById('employee-auth-modal');
     const pinModal = document.getElementById('change-pin-modal');
     const clockoutModal = document.getElementById('clockout-modal');
+    const photoViewModal = document.getElementById('photo-view-modal');
     if (e.target === adminModal) {
       closeAdminAuthModal();
     } else if (e.target === empModal) {
@@ -1908,6 +2158,8 @@ document.addEventListener('DOMContentLoaded', () => {
       closeChangePinModal();
     } else if (e.target === clockoutModal) {
       closeClockOutModal();
+    } else if (e.target === photoViewModal) {
+      closePhotoModal();
     }
   });
 });

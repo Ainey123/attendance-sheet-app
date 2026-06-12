@@ -224,8 +224,8 @@ const db = {
     await writeData(data);
     return { record, employee };
   },
-  // Clock Out with required performance notes and money spent
-  async clockOut(employeeId, location, performanceNotes, moneySpent) {
+  // Clock Out with required performance notes and money spent and optional image
+  async clockOut(employeeId, location, performanceNotes, moneySpent, image) {
     if (performanceNotes === undefined || performanceNotes === null) {
       throw new Error('Performance notes are required');
     }
@@ -248,6 +248,7 @@ const db = {
     record.duration = Math.round((now - inTime) / (1000 * 60));
     record.performanceNotes = performanceNotes;
     record.moneySpent = Number(moneySpent);
+    record.image = image || null;
     employee.status = 'OUT';
 
     await writeData(data);
