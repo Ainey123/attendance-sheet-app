@@ -542,8 +542,8 @@ async function handleClockIn() {
 function openClockOutModal() {
   document.getElementById('clockout-modal').classList.remove('hidden');
   document.getElementById('performance-notes').value = '';
-  document.getElementById('clockout-received').value = '0';
-  document.getElementById('clockout-expense').value = '0';
+  document.getElementById('clockout-received').value = '';
+  document.getElementById('clockout-expense').value = '';
   document.getElementById('clockout-balance').value = '';
   resetClockOutPhoto();
   document.getElementById('performance-notes').focus();
@@ -2080,8 +2080,15 @@ async function updateAutoCalculatedBalance() {
   
   if (!receivedInput || !expenseInput || !balanceInput) return;
   
-  const receivedVal = Number(receivedInput.value) || 0;
-  const expenseVal = Number(expenseInput.value) || 0;
+  // Only fill the remaining balance if BOTH fields are filled by the user
+  if (receivedInput.value === '' || expenseInput.value === '') {
+    balanceInput.value = '';
+    if (carryOverInfo) carryOverInfo.style.display = 'none';
+    return;
+  }
+  
+  const receivedVal = Number(receivedInput.value);
+  const expenseVal = Number(expenseInput.value);
   
   const carryOver = await getCarryOverBalanceForDate(selectedEmployee.id, dateStr);
   const totalReceived = carryOver + receivedVal;
