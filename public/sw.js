@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-portal-v5';
+const CACHE_NAME = 'attendance-portal-v6';
 const ASSETS = [
   '/',
   '/index.html',
