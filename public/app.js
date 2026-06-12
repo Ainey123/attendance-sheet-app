@@ -542,9 +542,12 @@ async function handleClockIn() {
 function openClockOutModal() {
   document.getElementById('clockout-modal').classList.remove('hidden');
   document.getElementById('performance-notes').value = '';
-  document.getElementById('money-spent').value = '';
+  document.getElementById('clockout-received').value = '0';
+  document.getElementById('clockout-expense').value = '0';
+  document.getElementById('clockout-balance').value = '';
   resetClockOutPhoto();
   document.getElementById('performance-notes').focus();
+  updateAutoCalculatedBalance();
 }
 
 function closeClockOutModal() {
@@ -562,7 +565,8 @@ async function submitClockOutDetails(e) {
   if (!selectedEmployee) return;
 
   const performanceNotes = document.getElementById('performance-notes').value.trim();
-  const moneySpent = document.getElementById('money-spent').value;
+  const receivedAmount = document.getElementById('clockout-received').value;
+  const expenseAmount = document.getElementById('clockout-expense').value;
 
   if (!performanceNotes) {
     showToast('Performance notes are required', 'error');
@@ -576,7 +580,8 @@ async function submitClockOutDetails(e) {
       selectedEmployee.id,
       userLocation,
       performanceNotes,
-      moneySpent,
+      receivedAmount,
+      expenseAmount,
       selectedClockOutPhotoBase64
     );
     if (res.success) {
@@ -1278,8 +1283,8 @@ async function handleAddWorkEntry(e) {
     month,
     date,
     performedWork,
-    receivedAmount: document.getElementById('work-entry-received').value,
-    expenseAmount: document.getElementById('work-entry-expense').value,
+    receivedAmount: document.getElementById('work-entry-payment').value,
+    balancePayment: document.getElementById('work-entry-balance-payment').value,
     materialIssuance: document.getElementById('work-entry-material').value,
     materialBalance: document.getElementById('work-entry-mat-balance').value,
     otherRemarks: document.getElementById('work-entry-remarks').value
@@ -1290,9 +1295,8 @@ async function handleAddWorkEntry(e) {
     if (res.success || res.record) {
       showToast('Entry added', 'success');
       document.getElementById('work-entry-work').value = '';
-      document.getElementById('work-entry-received').value = '0';
-      document.getElementById('work-entry-expense').value = '0';
-      document.getElementById('work-entry-balance').value = '';
+      document.getElementById('work-entry-payment').value = '';
+      document.getElementById('work-entry-balance-payment').value = '';
       document.getElementById('work-entry-material').value = '';
       document.getElementById('work-entry-mat-balance').value = '';
       document.getElementById('work-entry-remarks').value = '';
@@ -1848,30 +1852,6 @@ function setupEmployeeSessionUI(employee) {
 async function handleEmployeeLogout() {
   if (!selectedEmployee) return;
 
-  const todayStr = getLocalDateString();
-  const currentMonthStr = getCurrentMonthString();
-  
-  try {
-    const records = await API.getWorkRecords(selectedEmployee.id, currentMonthStr);
-    const hasTodayEntry = records && records.some(r => r.date === todayStr);
-    
-    if (!hasTodayEntry) {
-      showToast('Error: You must submit today\'s Received & Expense daily entry before logging out!', 'error');
-      switchEmployeeTab('emp-pane-workrecord');
-      
-      const receivedInput = document.getElementById('work-entry-received');
-      if (receivedInput) {
-        receivedInput.focus();
-        receivedInput.scrollIntoView({ behavior: 'smooth' });
-      }
-      return;
-    }
-  } catch (err) {
-    console.error('Error verifying daily entry before logout:', err);
-    showToast('Network error, unable to verify daily entry. Please check your connection.', 'error');
-    return;
-  }
-
   localStorage.removeItem('loggedInEmployeeId');
   
   // Show select list
@@ -2090,18 +2070,15 @@ async function getCarryOverBalanceForDate(employeeId, targetDateStr) {
 async function updateAutoCalculatedBalance() {
   if (!selectedEmployee) return;
   
-  const dateInput = document.getElementById('work-entry-date');
-  const receivedInput = document.getElementById('work-entry-received');
-  const expenseInput = document.getElementById('work-entry-expense');
-  const balanceInput = document.getElementById('work-entry-balance');
-  const carryOverInfo = document.getElementById('carryover-balance-info');
-  const labelCarryover = document.getElementById('label-carryover');
-  const labelTotalReceived = document.getElementById('label-total-received');
+  const dateStr = getLocalDateString();
+  const receivedInput = document.getElementById('clockout-received');
+  const expenseInput = document.getElementById('clockout-expense');
+  const balanceInput = document.getElementById('clockout-balance');
+  const carryOverInfo = document.getElementById('clockout-carryover-balance-info');
+  const labelCarryover = document.getElementById('clockout-label-carryover');
+  const labelTotalReceived = document.getElementById('clockout-label-total-received');
   
-  if (!dateInput || !receivedInput || !expenseInput || !balanceInput) return;
-  
-  const dateStr = dateInput.value;
-  if (!dateStr) return;
+  if (!receivedInput || !expenseInput || !balanceInput) return;
   
   const receivedVal = Number(receivedInput.value) || 0;
   const expenseVal = Number(expenseInput.value) || 0;
@@ -2412,9 +2389,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('form-add-work-entry').addEventListener('submit', handleAddWorkEntry);
   
   // Real-time balance calculations for daily entry form
-  document.getElementById('work-entry-date').addEventListener('change', updateAutoCalculatedBalance);
-  document.getElementById('work-entry-received').addEventListener('input', updateAutoCalculatedBalance);
-  document.getElementById('work-entry-expense').addEventListener('input', updateAutoCalculatedBalance);
+  document.getElementById('clockout-received').addEventListener('input', updateAutoCalculatedBalance);
+  document.getElementById('clockout-expense').addEventListener('input', updateAutoCalculatedBalance);
   
   // PDF Exports
   document.getElementById('btn-export-work-pdf').addEventListener('click', () => {

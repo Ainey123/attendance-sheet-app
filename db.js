@@ -225,12 +225,9 @@ const db = {
     return { record, employee };
   },
   // Clock Out with required performance notes and money spent and optional image
-  async clockOut(employeeId, location, performanceNotes, moneySpent, image) {
+  async clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) {
     if (performanceNotes === undefined || performanceNotes === null) {
       throw new Error('Performance notes are required');
-    }
-    if (moneySpent === undefined || moneySpent === null) {
-      throw new Error('Money spent is required');
     }
     const data = await readData();
     const employeeIndex = data.employees.findIndex(e => e.id === employeeId);
@@ -247,9 +244,42 @@ const db = {
     const inTime = new Date(record.clockInTime);
     record.duration = Math.round((now - inTime) / (1000 * 60));
     record.performanceNotes = performanceNotes;
-    record.moneySpent = Number(moneySpent);
+    record.receivedAmount = Number(receivedAmount) || 0;
+    record.expenseAmount = Number(expenseAmount) || 0;
+    record.moneySpent = record.expenseAmount; // back-compat
     record.image = image || null;
     employee.status = 'OUT';
+
+    // Auto-create a work record for the day
+    if (!data.workRecords) data.workRecords = [];
+    const dateStr = record.date;
+    const monthStr = dateStr.substring(0, 7);
+    
+    let wr = data.workRecords.find(w => w.employeeId === employeeId && w.date === dateStr);
+    if (!wr) {
+       wr = {
+         id: generateId('wr'),
+         employeeId: employee.id,
+         employeeName: employee.name,
+         month: monthStr,
+         date: dateStr,
+         performedWork: performanceNotes,
+         receivedAmount: record.receivedAmount,
+         expenseAmount: record.expenseAmount,
+         paymentIssuance: record.receivedAmount,
+         balancePayment: '',
+         materialIssuance: '',
+         materialBalance: '',
+         otherRemarks: '',
+         createdAt: now.toISOString()
+       };
+       data.workRecords.push(wr);
+    } else {
+       wr.performedWork = performanceNotes;
+       wr.receivedAmount = record.receivedAmount;
+       wr.expenseAmount = record.expenseAmount;
+       wr.paymentIssuance = record.receivedAmount;
+    }
 
     await writeData(data);
     return { record, employee };
