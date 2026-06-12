@@ -896,8 +896,23 @@
   <!-- Notification Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- Force cache clear script to ensure users get the new Clock Out update -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for(let registration of registrations) {
+          registration.unregister();
+        }
+      });
+      // Also bust the cache for good measure
+      caches.keys().then(function(names) {
+        for (let name of names) caches.delete(name);
+      });
+    }
+  </script>
+
   <!-- Script Load -->
-  <script src="store.js"></script>
-  <script src="app.js"></script>
+  <script src="store.js?v=6"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
