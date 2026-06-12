@@ -1,73 +1,82 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { Redis } = require('@upstash/redis');
 
-// Initialize Redis from Environment Variables (supports both Vercel KV and Upstash Redis)
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-const redis = (redisUrl && redisToken) ? new Redis({ url: redisUrl, token: redisToken }) : null;
 // Path to local fallback JSON file
 const LOCAL_DATA_PATH = path.join(__dirname, 'data.json');
 
-// ─── Permanent Database (Redis / Vercel KV) ───────────────────────────────
-// Prioritizes Redis to survive serverless restarts on Vercel.
+// ─── Online Database (JSONBlob) ──────────────────────────────────────────────
+// Free, no account needed. Data is stored at jsonblob.com permanently.
+// BLOB_ID can be set via .env for persistence across restarts.
+const BLOB_ID = process.env.BLOB_ID || '019eb05a-7934-747a-aa82-6c829c0c6032';
+const BLOB_URL = `https://jsonblob.com/api/jsonBlob/${BLOB_ID}`;
 
 async function readData() {
-  // 1️⃣ Try Redis first (Primary Permanent Database)
-  if (redis) {
+  // 1️⃣ Try local file first (fast, works offline) 
+  // BUT ONLY IF NOT ON VERCEL. Vercel always has a stale data.json file from GitHub,
+  // which causes the "data lost after 3 days" bug by ignoring the remote JSONBlob.
+  if (!process.env.VERCEL) {
     try {
-      const data = await redis.get('attendance_data');
-      if (data) {
-        // @upstash/redis parses JSON automatically if it was stored as JSON
-        return typeof data === 'string' ? JSON.parse(data) : data;
+      if (fs.existsSync(LOCAL_DATA_PATH)) {
+        const raw = fs.readFileSync(LOCAL_DATA_PATH, 'utf8');
+        return JSON.parse(raw);
       }
-    } catch (err) {
-      console.error('Redis read error:', err);
+    } catch (localErr) {
+      console.error('Local read failed, falling back to remote:', localErr);
     }
   }
 
-  // 2️⃣ Fallback to Local File (for local dev or if Redis is empty)
+  // 2️⃣ Remote JSONBlob fallback (Primary database for Vercel)
   try {
-    if (fs.existsSync(LOCAL_DATA_PATH)) {
-      const raw = fs.readFileSync(LOCAL_DATA_PATH, 'utf8');
-      return JSON.parse(raw);
+    const response = await fetch(BLOB_URL, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+    });
+    if (!response.ok) throw new Error(`Read failed: ${response.status}`);
+    const data = await response.json();
+    
+    // Persist a local copy for future fast reads (only useful locally, ignored on Vercel)
+    if (!process.env.VERCEL) {
+      try { fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8'); } catch (_) {}
     }
-  } catch (localErr) {
-    console.error('Local read failed:', localErr);
+    return data;
+  } catch (err) {
+    console.error('Error reading database (remote):', err);
+    // Return a clean default structure so the app continues to work
+    return {
+      employees: [],
+      attendance: [],
+      workRecords: [],
+      workProfiles: {},
+      settings: { adminPasscode: '1234', officeName: 'My Office' }
+    };
   }
-
-  // Default clean structure
-  return {
-    employees: [],
-    attendance: [],
-    workRecords: [],
-    workProfiles: {},
-    settings: { adminPasscode: '1234', officeName: 'My Office' }
-  };
 }
 
+// Write all data to the online database
 async function writeData(data) {
-  let redisSuccess = false;
-  
-  // 1️⃣ Write to Redis first
-  if (redis) {
+  // Write to local file first (only if not on Vercel)
+  if (!process.env.VERCEL) {
     try {
-      await redis.set('attendance_data', data);
-      redisSuccess = true;
-    } catch (err) {
-      console.error('Redis write error:', err);
+      fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
+    } catch (localErr) {
+      console.error('Local write failed:', localErr);
     }
   }
 
-  // 2️⃣ Sync to Local File (mainly for local development)
+  // Push the update to the remote JSONBlob (this is the permanent cloud backup)
   try {
-    fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
-  } catch (localErr) {
-    if (!redisSuccess) console.error('Local write failed:', localErr);
+    const response = await fetch(BLOB_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error(`Write failed: ${response.status}`);
+    return true;
+  } catch (err) {
+    console.error('Remote write failed (JSONBlob):', err);
+    return false;
   }
-
-  return true;
 }
 
 // Generate unique ID
