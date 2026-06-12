@@ -1,76 +1,73 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-// Uses global fetch (Node.js 18+ built-in) — no node-fetch import needed
+const { Redis } = require('@upstash/redis');
+
+// Initialize Redis from Environment Variables (supports both Vercel KV and Upstash Redis)
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+const redis = (redisUrl && redisToken) ? new Redis({ url: redisUrl, token: redisToken }) : null;
 // Path to local fallback JSON file
 const LOCAL_DATA_PATH = path.join(__dirname, 'data.json');
 
-// ─── Online Database (JSONBlob) ──────────────────────────────────────────────
-// Free, no account needed. Data is stored at jsonblob.com permanently.
-// BLOB_ID can be set via .env for persistence across restarts.
-const BLOB_ID = process.env.BLOB_ID || '019eb05a-7934-747a-aa82-6c829c0c6032';
-const BLOB_URL = `https://jsonblob.com/api/jsonBlob/${BLOB_ID}`;
+// ─── Permanent Database (Redis / Vercel KV) ───────────────────────────────
+// Prioritizes Redis to survive serverless restarts on Vercel.
 
-// Read all data from the online database
 async function readData() {
-  // 1️⃣ Try local file first (fast, works offline)
+  // 1️⃣ Try Redis first (Primary Permanent Database)
+  if (redis) {
+    try {
+      const data = await redis.get('attendance_data');
+      if (data) {
+        // @upstash/redis parses JSON automatically if it was stored as JSON
+        return typeof data === 'string' ? JSON.parse(data) : data;
+      }
+    } catch (err) {
+      console.error('Redis read error:', err);
+    }
+  }
+
+  // 2️⃣ Fallback to Local File (for local dev or if Redis is empty)
   try {
     if (fs.existsSync(LOCAL_DATA_PATH)) {
       const raw = fs.readFileSync(LOCAL_DATA_PATH, 'utf8');
       return JSON.parse(raw);
     }
   } catch (localErr) {
-    console.error('Local read failed, falling back to remote:', localErr);
+    console.error('Local read failed:', localErr);
   }
 
-  // 2️⃣ Remote JSONBlob fallback (keeps compatibility with existing deployments)
-  try {
-    const response = await fetch(BLOB_URL, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-    });
-    if (!response.ok) throw new Error(`Read failed: ${response.status}`);
-    const data = await response.json();
-    // Persist a local copy for future fast reads
-    try { fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8'); } catch (_) {}
-    return data;
-  } catch (err) {
-    console.error('Error reading database (remote):', err);
-    // Return a clean default structure so the app continues to work
-    return {
-      employees: [],
-      attendance: [],
-      workRecords: [],
-      workProfiles: {},
-      settings: { adminPasscode: '1234', officeName: 'My Office' }
-    };
-  }
+  // Default clean structure
+  return {
+    employees: [],
+    attendance: [],
+    workRecords: [],
+    workProfiles: {},
+    settings: { adminPasscode: '1234', officeName: 'My Office' }
+  };
 }
 
-// Write all data to the online database
 async function writeData(data) {
-  // Write to local file first – ensures immediate persistence without network latency
+  let redisSuccess = false;
+  
+  // 1️⃣ Write to Redis first
+  if (redis) {
+    try {
+      await redis.set('attendance_data', data);
+      redisSuccess = true;
+    } catch (err) {
+      console.error('Redis write error:', err);
+    }
+  }
+
+  // 2️⃣ Sync to Local File (mainly for local development)
   try {
     fs.writeFileSync(LOCAL_DATA_PATH, JSON.stringify(data, null, 2), 'utf8');
   } catch (localErr) {
-    console.error('Local write failed:', localErr);
-    // Continue to remote write so we keep both copies in sync
+    if (!redisSuccess) console.error('Local write failed:', localErr);
   }
 
-  // Then push the update to the remote JSONBlob (maintains the original cloud backup)
-  try {
-    const response = await fetch(BLOB_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (!response.ok) throw new Error(`Write failed: ${response.status}`);
-    return true;
-  } catch (err) {
-    console.error('Remote write failed (JSONBlob):', err);
-    // Return false only if both writes failed – local succeeded, so we consider the operation successful for the app
-    return false;
-  }
+  return true;
 }
 
 // Generate unique ID
