@@ -1,135 +1,141 @@
-# Deployment Guide - Supabase + Vercel
+# Supabase Deployment Guide - Permanent Data Storage
 
-This guide will help you migrate your attendance app to use Supabase PostgreSQL for persistent data storage on Vercel.
+This guide will help you migrate your attendance app to use Supabase PostgreSQL for persistent data storage on Vercel. This will fix the data loss issue when Vercel serverless instances restart.
 
-## Prerequisites
-- A GitHub repository with your attendance app code
-- A Vercel account (free)
-- A Supabase account (free)
-
----
-
-## Step 1: Set Up Supabase Database
-
-### 1.1 Create Supabase Project
-1. Go to https://supabase.com and sign up/login
-2. Click **"New Project"**
-3. Fill in:
-   - **Name**: attendance-sheet-app
-   - **Database Password**: Generate a strong password (save it!)
-   - **Region**: Choose a region closest to your users
-4. Click **"Create new project"**
-5. Wait 2-3 minutes for the project to be ready
-
-### 1.2 Initialize Database Schema
-1. In your Supabase dashboard, go to **SQL Editor** (left sidebar)
-2. Click **"New Query"**
-3. Copy the contents of `supabase-schema.sql` from your project
-4. Paste it into the SQL Editor
-5. Click **"Run"** (bottom right)
-6. You should see "Success" message
-
-### 1.3 Get Supabase Credentials
-1. In Supabase dashboard, go to **Project Settings** (gear icon)
-2. Click **"API"** in the left menu
-3. Copy these values:
-   - **Project URL**: `https://xxxxxxxxxxxxx.supabase.co`
-   - **service_role key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` (long string)
+## What Changed
+- Removed all local file storage (data.json, JSONBlob)
+- Replaced with Supabase PostgreSQL database
+- Added robust error handling for database operations
+- Data now persists permanently across serverless restarts
 
 ---
 
-## Step 2: Update Your Code
+## Step 1: Create Supabase Account (2 minutes)
 
-### 2.1 Install Supabase Client
-Run this command in your project directory:
-```bash
-npm install @supabase/supabase-js
-```
+1. Go to **https://supabase.com**
+2. Click **"Start your project"** or **"Sign up"**
+3. Sign up with GitHub or Google
+4. Click **"New Project"** button
+5. Fill in:
+   - **Name**: `attendance-app`
+   - **Database Password**: Type any password (remember it!)
+   - **Region**: Choose "Southeast Asia" or closest to you
+6. Click **"Create new project"**
+7. Wait 2-3 minutes (it will say "Creating project...")
 
-### 2.2 Commit Changes
+---
+
+## Step 2: Set Up Database (1 minute)
+
+1. After project is ready, look at the left sidebar
+2. Click **"SQL Editor"** (icon looks like a terminal)
+3. Click **"New query"** button
+4. Open the file `supabase-schema.sql` from your project folder
+5. Copy everything from that file
+6. Paste it into the Supabase SQL Editor
+7. Click **"Run"** button (bottom right)
+8. You should see "Success" at the bottom
+
+---
+
+## Step 3: Get Your Keys (30 seconds)
+
+1. In Supabase, click the **gear icon** (Settings) in left sidebar
+2. Click **"API"** or **"API key"** in the menu
+3. You will see 2 things to copy:
+
+**Copy this first:**
+- **Project URL** (starts with https://xxxx.supabase.co)
+
+**Copy this second:**
+- **anon key** or **public key** (starts with eyJhbGci...)
+- Look for "anon" or "public" key (NOT the service_role key)
+
+**Save these somewhere safe!**
+
+---
+
+## Step 4: Add Environment Variables to Vercel (1 minute)
+
+1. Go to **https://vercel.com/dashboard**
+2. Click on your `attendance-sheet-app` project
+3. Click **Settings** tab at the top
+4. Click **Environment Variables** on the left
+5. Click **"Add New"** button
+6. Add the following variables:
+
+| Key | Value | Environment |
+|-----|-------|-------------|
+| `SUPABASE_URL` | Your Supabase Project URL | Production, Preview, Development |
+| `SUPABASE_ANON_KEY` | Your Supabase anon key | Production, Preview, Development |
+
+7. Click **"Save"** for each variable
+
+---
+
+## Step 5: Deploy Your App (30 seconds)
+
+1. Commit and push your changes to GitHub:
 ```bash
 git add .
 git commit -m "Migrate to Supabase for persistent storage"
 git push origin main
 ```
 
----
-
-## Step 3: Configure Vercel Environment Variables
-
-### 3.1 Open Vercel Project
-1. Go to https://vercel.com/dashboard
-2. Open your attendance-sheet-app project
-
-### 3.2 Add Environment Variables
-1. Go to **Settings** > **Environment Variables**
-2. Click **"Add New"**
-3. Add the following variables:
-
-| Key | Value | Environment |
-|-----|-------|-------------|
-| `SUPABASE_URL` | Your Supabase Project URL | Production, Preview, Development |
-| `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service_role key | Production, Preview, Development |
-
-4. Click **"Save"**
-
-### 3.3 Redeploy
-1. Go to **Deployments** tab
-2. Click the three dots (...) next to the latest deployment
-3. Click **"Redeploy"**
-4. Wait for deployment to complete
+2. Vercel will automatically redeploy (wait 1-2 minutes)
 
 ---
 
-## Step 4: Verify Deployment
+## Step 6: Test It Works (1 minute)
 
-### 4.1 Test Your App
-1. Open your Vercel deployment URL
-2. Try adding a new employee
-3. Try clocking in/out
-4. Check if data persists after page refresh
+1. Click your deployment URL to open your app
+2. Add a new employee
+3. Clock them in
+4. Refresh the page
+5. Check if the employee is still there ✅
 
-### 4.2 Check Supabase Dashboard
-1. Go to Supabase dashboard
-2. Click **Table Editor** (left sidebar)
-3. Check the `employees` table - you should see your new employee
-4. Check the `attendance` table - you should see clock-in/out records
+**If data is still there after refresh, it works!**
+
+---
+
+## Step 7: Migrate Existing Data (Optional)
+
+If you have existing employees in your `data.json` file and want to migrate them to Supabase:
+
+1. Update the `migrate.js` file with your actual Supabase credentials
+2. Run this command in your project directory:
+```bash
+node migrate.js
+```
+
+This will import all your existing employees, attendance records, and work records into Supabase.
 
 ---
 
 ## Troubleshooting
 
-### Error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
-- Make sure you added both environment variables in Vercel
-- Make sure you selected all environments (Production, Preview, Development)
+**Error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY"**
+- Go back to Step 4 and make sure you added BOTH environment variables
+- Make sure you selected all 3 environments (Production, Preview, Development)
 - Redeploy after adding variables
 
-### Error: "Database connection failed"
+**Error: "Database connection failed"**
 - Check your Supabase project is active (not paused)
 - Verify your credentials are correct
 - Check Supabase status page: https://status.supabase.com
 
-### Data not persisting
-- Make sure you ran the SQL schema in Supabase SQL Editor
+**Data not persisting**
+- Make sure you ran the SQL schema in Supabase SQL Editor (Step 2)
 - Check Supabase Table Editor to see if data is being written
 - Check Vercel logs for errors
 
----
-
-## Benefits of This Setup
-
-✅ **Persistent Data**: Data survives serverless restarts  
-✅ **Free Tier**: Supabase offers 500MB storage (plenty for attendance data)  
-✅ **Scalable**: Can handle thousands of employees  
-✅ **Real-time**: Supabase supports real-time subscriptions (future feature)  
-✅ **Backup**: Automatic daily backups included in free tier  
+**Migration script fails**
+- Make sure you have the correct Supabase credentials in migrate.js
+- Update the migrate.js file with your actual Supabase URL and ANON key
+- Run the script again
 
 ---
 
-## Next Steps
+## Done! Your app now has permanent storage.
 
-After successful deployment:
-1. Delete the old `data.json` file (no longer needed)
-2. Remove JSONBlob references from code (if any)
-3. Consider adding authentication for admin panel
-4. Set up custom domain in Vercel
+Your data will never disappear again, even when Vercel restarts the server.

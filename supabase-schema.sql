@@ -1,5 +1,5 @@
 -- Supabase PostgreSQL Schema for Attendance Sheet App
--- Run this in your Supabase project's SQL Editor
+-- Run this in your Supabase project's SQL Editor to create all tables
 
 -- Employees Table
 CREATE TABLE IF NOT EXISTS employees (
