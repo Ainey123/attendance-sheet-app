@@ -1,0 +1,13 @@
+# Supabase Database Configuration
+# Copy these values from your Supabase project dashboard
+
+SUPABASE_URL=your-supabase-project-url
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+
+# Instructions:
+# 1. Go to https://supabase.com and create a free account
+# 2. Create a new project
+# 3. Go to Project Settings > API
+# 4. Copy the Project URL and paste it as SUPABASE_URL
+# 5. Copy the service_role key (NOT the anon key) and paste it as SUPABASE_SERVICE_ROLE_KEY
+# 6. Add these as Environment Variables in your Vercel project settings
