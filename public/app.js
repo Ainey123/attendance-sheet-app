@@ -2080,15 +2080,8 @@ async function updateAutoCalculatedBalance() {
   
   if (!receivedInput || !expenseInput || !balanceInput) return;
   
-  // Only fill the remaining balance if BOTH fields are filled by the user
-  if (receivedInput.value === '' || expenseInput.value === '') {
-    balanceInput.value = '';
-    if (carryOverInfo) carryOverInfo.style.display = 'none';
-    return;
-  }
-  
-  const receivedVal = Number(receivedInput.value);
-  const expenseVal = Number(expenseInput.value);
+  const receivedVal = Number(receivedInput.value) || 0;
+  const expenseVal = Number(expenseInput.value) || 0;
   
   const carryOver = await getCarryOverBalanceForDate(selectedEmployee.id, dateStr);
   const totalReceived = carryOver + receivedVal;
