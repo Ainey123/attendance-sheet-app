@@ -786,20 +786,20 @@
             <textarea id="performance-notes" placeholder="Enter performance notes..." required style="width:100%;height:80px;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"></textarea>
           </div>
           <div class="form-group">
-            <label for="clockout-received">Starting Amount ($)</label>
+            <label for="clockout-starting-balance">Previous Day's Remaining Balance ($)</label>
+            <input type="number" id="clockout-starting-balance" readonly placeholder="0.00" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
+          </div>
+          <div class="form-group">
+            <label for="clockout-received">Today's Starting Amount (Income) ($)</label>
             <input type="number" id="clockout-received" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
           </div>
           <div class="form-group">
-            <label for="clockout-expense">Expense Amount ($)</label>
+            <label for="clockout-expense">Today's Expense ($)</label>
             <input type="number" id="clockout-expense" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
           </div>
           <div class="form-group">
             <label for="clockout-balance">Remaining Balance ($)</label>
             <input type="number" id="clockout-balance" readonly placeholder="Calculated automatically" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
-          </div>
-          <div class="form-group" style="font-size: 0.85rem; padding: 0.5rem; background: rgba(59, 130, 246, 0.1); border-radius: 4px; display: none; align-items: center; gap: 1rem; border: 1px solid rgba(59, 130, 246, 0.2);" id="clockout-carryover-balance-info">
-            <span>💼 <strong id="clockout-label-carryover">Carried Over: $0.00</strong></span>
-            <span>💰 <strong id="clockout-label-total-received">Total Available: $0.00</strong></span>
           </div>
           <div class="form-group">
             <label for="clockout-photo">Attach Photo (Optional)</label>

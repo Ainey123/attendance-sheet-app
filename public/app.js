@@ -539,15 +539,35 @@ async function handleClockIn() {
   }
 }
 
-function openClockOutModal() {
+async function openClockOutModal() {
   document.getElementById('clockout-modal').classList.remove('hidden');
   document.getElementById('performance-notes').value = '';
+  document.getElementById('clockout-starting-balance').value = '';
   document.getElementById('clockout-received').value = '';
   document.getElementById('clockout-expense').value = '';
   document.getElementById('clockout-balance').value = '';
   resetClockOutPhoto();
   document.getElementById('performance-notes').focus();
-  updateAutoCalculatedBalance();
+  
+  // Pre-fill with today's existing values to prevent overwriting
+  if (selectedEmployee) {
+    const todayStr = getLocalDateString();
+    const currentMonthStr = getCurrentMonthString();
+    try {
+      const records = await API.getWorkRecords(selectedEmployee.id, currentMonthStr);
+      const todayRecord = records ? records.find(r => r.date === todayStr) : null;
+      if (todayRecord) {
+         if (todayRecord.receivedAmount) {
+             document.getElementById('clockout-received').value = todayRecord.receivedAmount;
+         }
+         if (todayRecord.expenseAmount) {
+             document.getElementById('clockout-expense').value = todayRecord.expenseAmount;
+         }
+      }
+    } catch (err) {}
+  }
+  
+  await updateAutoCalculatedBalance();
 }
 
 function closeClockOutModal() {
@@ -2074,26 +2094,21 @@ async function updateAutoCalculatedBalance() {
   const receivedInput = document.getElementById('clockout-received');
   const expenseInput = document.getElementById('clockout-expense');
   const balanceInput = document.getElementById('clockout-balance');
-  const carryOverInfo = document.getElementById('clockout-carryover-balance-info');
-  const labelCarryover = document.getElementById('clockout-label-carryover');
-  const labelTotalReceived = document.getElementById('clockout-label-total-received');
+  const prevBalanceInput = document.getElementById('clockout-starting-balance');
   
-  if (!receivedInput || !expenseInput || !balanceInput) return;
+  if (!receivedInput || !expenseInput || !balanceInput || !prevBalanceInput) return;
   
   const receivedVal = Number(receivedInput.value) || 0;
   const expenseVal = Number(expenseInput.value) || 0;
   
   const carryOver = await getCarryOverBalanceForDate(selectedEmployee.id, dateStr);
+  
+  prevBalanceInput.value = carryOver.toFixed(2);
+  
   const totalReceived = carryOver + receivedVal;
   const remaining = totalReceived - expenseVal;
   
   balanceInput.value = remaining.toFixed(2);
-  
-  if (carryOverInfo && labelCarryover && labelTotalReceived) {
-    labelCarryover.textContent = `Carried Over: $${carryOver.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-    labelTotalReceived.textContent = `Total Available: $${totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-    carryOverInfo.style.display = 'flex';
-  }
 }
 
 async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
