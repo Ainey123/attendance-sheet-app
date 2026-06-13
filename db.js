@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+// Reverted to fix app
 
 // Path to local fallback JSON file
 const LOCAL_DATA_PATH = path.join(__dirname, 'data.json');
