@@ -1146,7 +1146,7 @@ async function exportAttendanceLogsToPDF() {
 
       let photoCell = '<span style="color:#9ca3af; font-size:10px;">None</span>';
       if (log.image) {
-        photoCell = `<img src="${log.image}" style="max-width:70px; max-height:70px; border-radius:4px; border:1px solid #d1d5db; object-fit:cover;" />`;
+        photoCell = `<img src="${log.image}" style="max-width:180px; max-height:140px; border-radius:4px; border:1px solid #d1d5db; object-fit:contain;" />`;
       }
 
       htmlContent += `
@@ -1260,7 +1260,7 @@ async function exportMonthlyAttendanceToPDF() {
 
       let photoCell = '<span style="color:#9ca3af; font-size:9px;">None</span>';
       if (log.image) {
-        photoCell = `<img src="${log.image}" style="max-width:55px; max-height:55px; border-radius:4px; border:1px solid #d1d5db; object-fit:cover;" />`;
+        photoCell = `<img src="${log.image}" style="max-width:180px; max-height:140px; border-radius:4px; border:1px solid #d1d5db; object-fit:contain;" />`;
       }
 
       htmlContent += `
