@@ -1199,6 +1199,121 @@ async function exportAttendanceLogsToPDF() {
   }
 }
 
+// Export Monthly Attendance Logs to PDF (includes attached photos)
+async function exportMonthlyAttendanceToPDF() {
+  try {
+    const dateFilter = document.getElementById('admin-date-filter').value;
+    if (!dateFilter) {
+      showToast('Please select a date first to determine the month', 'warning');
+      return;
+    }
+    const selectedMonth = dateFilter.substring(0, 7); // "YYYY-MM"
+
+    showToast('Generating monthly PDF report...', 'info');
+    const logs = await API.getAttendanceLogs(null);
+    const monthlyLogs = logs.filter(log => log.date && log.date.startsWith(selectedMonth));
+
+    if (monthlyLogs.length === 0) {
+      showToast(`No logs found for the month of ${selectedMonth}`, 'warning');
+      return;
+    }
+
+    const dateObj = new Date(selectedMonth + '-02');
+    const monthDisplay = dateObj.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const exportTimestamp = new Date().toLocaleString();
+
+    const printContainer = document.createElement('div');
+    printContainer.className = 'pdf-report-wrapper';
+    printContainer.style.cssText = 'font-family: Arial, sans-serif; color: #1a1a2e; padding: 24px;';
+
+    let htmlContent = `
+      <div style="text-align:center; border-bottom: 2px solid #6366f1; padding-bottom: 12px; margin-bottom: 16px;">
+        <h1 style="margin:0; font-size:22px; color:#6366f1;">MONTHLY ATTENDANCE REPORT</h1>
+        <div style="font-size:14px; color:#555; margin-top:4px;">${monthDisplay}</div>
+        <div style="font-size:11px; color:#888;">Generated: ${exportTimestamp}</div>
+        <div style="font-size:11px; color:#888;">Total Records: ${monthlyLogs.length}</div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:10px;">
+        <thead>
+          <tr style="background:#6366f1; color:#fff;">
+            <th style="padding:6px 7px; text-align:left; border:1px solid #d1d5db;">Employee</th>
+            <th style="padding:6px 7px; text-align:left; border:1px solid #d1d5db;">Role</th>
+            <th style="padding:6px 7px; text-align:center; border:1px solid #d1d5db;">Date</th>
+            <th style="padding:6px 7px; text-align:center; border:1px solid #d1d5db;">Clock In</th>
+            <th style="padding:6px 7px; text-align:center; border:1px solid #d1d5db;">Clock Out</th>
+            <th style="padding:6px 7px; text-align:center; border:1px solid #d1d5db;">Duration</th>
+            <th style="padding:6px 7px; text-align:left; border:1px solid #d1d5db;">Notes</th>
+            <th style="padding:6px 7px; text-align:right; border:1px solid #d1d5db;">Spent</th>
+            <th style="padding:6px 7px; text-align:center; border:1px solid #d1d5db;">Photo</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    monthlyLogs.forEach((log, i) => {
+      const durationText = log.duration !== null
+        ? (Math.floor(log.duration / 60) > 0 ? `${Math.floor(log.duration / 60)}h ${log.duration % 60}m` : `${log.duration % 60}m`)
+        : 'Active';
+      const notes = log.performanceNotes || '\u2014';
+      const spent = log.moneySpent ? `PKR ${log.moneySpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'PKR 0.00';
+      const bg = i % 2 === 0 ? '#f9fafb' : '#fff';
+
+      let photoCell = '<span style="color:#9ca3af; font-size:9px;">None</span>';
+      if (log.image) {
+        photoCell = `<img src="${log.image}" style="max-width:55px; max-height:55px; border-radius:4px; border:1px solid #d1d5db; object-fit:cover;" />`;
+      }
+
+      htmlContent += `
+        <tr style="background:${bg};">
+          <td style="padding:5px 7px; border:1px solid #d1d5db; font-weight:600;">${log.employeeName}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; color:#555;">${log.role || 'Staff'}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; text-align:center;">${log.date}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; text-align:center; color:#059669;">${log.clockInTime ? new Date(log.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '\u2014'}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; text-align:center; color:#dc2626;">${log.clockOutTime ? new Date(log.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '<em>Active</em>'}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; text-align:center;">${durationText}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; color:#374151; max-width:130px; word-wrap:break-word;">${notes}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; text-align:right; font-weight:500;">${spent}</td>
+          <td style="padding:5px 7px; border:1px solid #d1d5db; text-align:center; vertical-align:middle;">${photoCell}</td>
+        </tr>
+      `;
+    });
+
+    htmlContent += '</tbody></table>';
+
+    const totalSpent = monthlyLogs.reduce((s, l) => s + (l.moneySpent || 0), 0);
+    htmlContent += `
+      <div style="margin-top:14px; padding:10px; background:#f3f4f6; border-radius:6px; font-size:12px; display:flex; justify-content:space-between;">
+        <span><strong>Total Spent:</strong> PKR ${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        <span><strong>Total Records:</strong> ${monthlyLogs.length}</span>
+      </div>
+    `;
+
+    printContainer.innerHTML = htmlContent;
+    document.body.appendChild(printContainer);
+
+    if (window.html2pdf) {
+      const opt = {
+        margin: [10, 10, 15, 10],
+        filename: `Monthly_Attendance_${selectedMonth}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      await html2pdf().set(opt).from(printContainer).save();
+      document.body.removeChild(printContainer);
+      showToast('Monthly PDF downloaded successfully!', 'success');
+    } else {
+      showToast('html2pdf library offline. Opening browser print dialog...', 'info');
+      window.print();
+      document.body.removeChild(printContainer);
+    }
+  } catch (err) {
+    console.error('Error generating monthly PDF:', err);
+    showToast('Failed to generate monthly PDF', 'error');
+  }
+}
+
 // Export Monthly Attendance Report to CSV
 async function exportMonthlyAttendanceToCSV() {
   const dateFilter = document.getElementById('admin-date-filter').value;
@@ -2522,6 +2637,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Export CSV
   document.getElementById('btn-export-csv').addEventListener('click', exportLogsToCSV);
   document.getElementById('btn-export-monthly-csv').addEventListener('click', exportMonthlyAttendanceToCSV);
+  document.getElementById('btn-export-monthly-pdf').addEventListener('click', exportMonthlyAttendanceToPDF);
   document.getElementById('btn-export-pdf').addEventListener('click', exportAttendanceLogsToPDF);
 
   // Add Employee Form
