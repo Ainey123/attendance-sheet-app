@@ -1049,7 +1049,7 @@ function exportLogsToCSV() {
   }
 
   const dateFilter = document.getElementById('admin-date-filter').value;
-  const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng', 'Performance Notes', 'Money Spent ($)', 'Photo Attached'];
+  const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng', 'Performance Notes', 'Money Spent (PKR)', 'Photo Attached'];
   
   const csvRows = [headers.join(',')];
 
@@ -1141,7 +1141,7 @@ async function exportAttendanceLogsToPDF() {
         ? (Math.floor(log.duration / 60) > 0 ? `${Math.floor(log.duration / 60)}h ${log.duration % 60}m` : `${log.duration % 60}m`)
         : 'Active';
       const notes = log.performanceNotes || '\u2014';
-      const spent = log.moneySpent ? `$${log.moneySpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00';
+      const spent = log.moneySpent ? `PKR ${log.moneySpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'PKR 0.00';
       const bg = i % 2 === 0 ? '#f9fafb' : '#fff';
 
       let photoCell = '<span style="color:#9ca3af; font-size:10px;">None</span>';
@@ -1168,7 +1168,7 @@ async function exportAttendanceLogsToPDF() {
     const totalSpent = logs.reduce((s, l) => s + (l.moneySpent || 0), 0);
     htmlContent += `
       <div style="margin-top:14px; padding:10px; background:#f3f4f6; border-radius:6px; font-size:12px; display:flex; justify-content:space-between;">
-        <span><strong>Total Spent:</strong> $${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        <span><strong>Total Spent:</strong> PKR ${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         <span><strong>Total Records:</strong> ${logs.length}</span>
       </div>
     `;
@@ -1221,8 +1221,8 @@ async function exportMonthlyAttendanceToCSV() {
       return;
     }
 
-    const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng', 'Performance Notes', 'Money Spent ($)', 'Photo Attached'];
-    const csvRows = [headers.join(',')];
+  const headers = ['Employee Name', 'Role', 'Date', 'Clock In', 'Clock Out', 'Duration (Minutes)', 'Clock In Lat', 'Clock In Lng', 'Clock Out Lat', 'Clock Out Lng', 'Performance Notes', 'Money Spent (PKR)', 'Photo Attached'];
+  const csvRows = [headers.join(',')];
 
     monthlyLogs.forEach(log => {
       const inLat = log.clockInLocation ? log.clockInLocation.latitude : '';
@@ -1615,7 +1615,7 @@ async function loadWorkProgress() {
     const totalHours = Math.floor(totalMinutes / 60);
 
     // Update stat cards
-    document.getElementById('progress-total-spent').textContent = `$${totalMoneySpent.toLocaleString()}`;
+    document.getElementById('progress-total-spent').textContent = `PKR ${totalMoneySpent.toLocaleString()}`;
     document.getElementById('progress-active-workers').textContent = activeWorkers;
     document.getElementById('progress-completed-today').textContent = tasksCompleted;
     document.getElementById('progress-total-hours').textContent = `${totalHours}h`;
@@ -1704,7 +1704,7 @@ function renderProgressFeed(employees, attendance, workRecords) {
     if (item.type === 'attendance') {
       const duration = item.data.duration ? `${item.data.duration}m` : 'Active';
       const notes = item.data.performanceNotes || 'No performance notes';
-      const moneySpent = item.data.moneySpent ? `$${item.data.moneySpent.toLocaleString()}` : '$0';
+      const moneySpent = item.data.moneySpent ? `PKR ${item.data.moneySpent.toLocaleString()}` : 'PKR 0';
       const photoHtml = item.data.image ? `
         <div class="progress-detail" style="margin-top: 0.5rem; display: block;">
           <span class="detail-label">Work Photo:</span>
@@ -1748,7 +1748,7 @@ function renderProgressFeed(employees, attendance, workRecords) {
         </div>
       `;
     } else {
-      const payment = item.data.paymentIssuance ? `$${item.data.paymentIssuance.toLocaleString()}` : '$0';
+      const payment = item.data.paymentIssuance ? `PKR ${item.data.paymentIssuance.toLocaleString()}` : 'PKR 0';
       const workDesc = item.data.performedWork || 'No work description';
 
       card.innerHTML = `
@@ -1824,7 +1824,7 @@ function renderCostBreakdown(employees, attendance, workRecords) {
       <td><span class="badge-role">${emp.role || 'Staff'}</span></td>
       <td>${statusBadge}</td>
       <td>${totalHours}h</td>
-      <td>$${totalMoneySpent.toLocaleString()}</td>
+      <td>PKR ${totalMoneySpent.toLocaleString()}</td>
       <td>${tasksCompleted}</td>
       <td>${lastLocation}</td>
     `;
@@ -2296,7 +2296,7 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
             <!-- Starting Balance Box -->
             <div class="pdf-box pdf-box-starting">
               <div class="pdf-box-title">STARTING</div>
-              <div class="pdf-box-value">$${fmtStarting}</div>
+              <div class="pdf-box-value">PKR ${fmtStarting}</div>
             </div>
             
             <div class="pdf-flow-arrow">
@@ -2308,8 +2308,8 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
             <!-- Amount Added Box -->
             <div class="pdf-box pdf-box-received">
               <div class="pdf-box-title">ADDED</div>
-              <div class="pdf-box-value">+$${fmtAdded}</div>
-              <div class="pdf-box-total">Total: $${fmtTotal}</div>
+              <div class="pdf-box-value">+PKR ${fmtAdded}</div>
+              <div class="pdf-box-total">Total: PKR ${fmtTotal}</div>
             </div>
             
             <div class="pdf-flow-arrow">
@@ -2321,7 +2321,7 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
             <!-- Expense Box -->
             <div class="pdf-box pdf-box-expense">
               <div class="pdf-box-title">EXPENSES</div>
-              <div class="pdf-box-value">-$${fmtExpenses}</div>
+              <div class="pdf-box-value">-PKR ${fmtExpenses}</div>
               <div class="pdf-box-desc" title="${rec.performedWork || ''}">Work: ${rec.performedWork || 'Daily task'}</div>
             </div>
             
@@ -2334,7 +2334,7 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
             <!-- Remaining Balance Box -->
             <div class="pdf-box pdf-box-balance">
               <div class="pdf-box-title">REMAINING</div>
-              <div class="pdf-box-value">$${fmtRemaining}</div>
+              <div class="pdf-box-value">PKR ${fmtRemaining}</div>
             </div>
           </div>
       `;
@@ -2365,15 +2365,15 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
         <div class="pdf-summary-grid">
           <div class="pdf-summary-card">
             <span class="pdf-card-label">Total Cash Received</span>
-            <span class="pdf-card-val text-success">$${totalReceivedSum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span class="pdf-card-val text-success">PKR ${totalReceivedSum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
           </div>
           <div class="pdf-summary-card">
             <span class="pdf-card-label">Total Expenses</span>
-            <span class="pdf-card-val text-danger">$${totalExpenseSum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span class="pdf-card-val text-danger">PKR ${totalExpenseSum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
           </div>
           <div class="pdf-summary-card">
             <span class="pdf-card-label">Ending Balance (Carried Over)</span>
-            <span class="pdf-card-val text-primary">$${endingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span class="pdf-card-val text-primary">PKR ${endingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
           </div>
         </div>
         <div class="pdf-signature-section">

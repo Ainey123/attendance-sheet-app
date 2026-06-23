@@ -236,10 +236,10 @@
                         <th>S.No</th>
                         <th>Date</th>
                         <th>Performed Work</th>
-                        <th>Starting Balance ($)</th>
-                        <th>Amount Added ($)</th>
-                        <th>Expenses ($)</th>
-                        <th>Remaining Balance ($)</th>
+                        <th>Starting Balance (PKR)</th>
+                        <th>Amount Added (PKR)</th>
+                        <th>Expenses (PKR)</th>
+                        <th>Remaining Balance (PKR)</th>
                         <th>Material Issuance</th>
                         <th>Material Balance</th>
                         <th>Other Remarks</th>
@@ -265,20 +265,20 @@
                         <textarea id="work-entry-work" rows="2" placeholder="Describe work performed..." required></textarea>
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-starting-balance">Starting Balance ($)</label>
+                        <label for="work-entry-starting-balance">Starting Balance (PKR)</label>
                         <input type="number" id="work-entry-starting-balance" readonly placeholder="Auto-calculated">
                         <small class="form-help-text">Carried over from previous entries</small>
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-payment">Amount Added ($) *</label>
+                        <label for="work-entry-payment">Amount Added (PKR) *</label>
                         <input type="number" id="work-entry-payment" min="0" step="0.01">
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-expense">Expenses ($)</label>
+                        <label for="work-entry-expense">Expenses (PKR)</label>
                         <input type="number" id="work-entry-expense" min="0" step="0.01" placeholder="0.00">
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-remaining-balance">Remaining Balance ($)</label>
+                        <label for="work-entry-remaining-balance">Remaining Balance (PKR)</label>
                         <input type="number" id="work-entry-remaining-balance" readonly placeholder="Auto-calculated">
                         <small class="form-help-text">Starting + Added - Expenses</small>
                       </div>
@@ -606,10 +606,10 @@
                       <th>S.No</th>
                       <th>Date</th>
                       <th>Performed Work</th>
-                      <th>Starting Balance ($)</th>
-                      <th>Amount Added ($)</th>
-                      <th>Expenses ($)</th>
-                      <th>Remaining Balance ($)</th>
+                      <th>Starting Balance (PKR)</th>
+                      <th>Amount Added (PKR)</th>
+                      <th>Expenses (PKR)</th>
+                      <th>Remaining Balance (PKR)</th>
                       <th>Material Issuance</th>
                       <th>Material Balance</th>
                       <th>Other Remarks</th>
@@ -638,7 +638,7 @@
                 </div>
                 <div class="stat-info">
                   <span class="stat-label">Total Money Spent</span>
-                  <span class="stat-number" id="progress-total-spent">$0</span>
+                  <span class="stat-number" id="progress-total-spent">PKR 0</span>
                 </div>
               </div>
 
@@ -807,21 +807,21 @@
             <textarea id="performance-notes" placeholder="Enter performance notes..." required style="width:100%;height:80px;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"></textarea>
           </div>
           <div class="form-group">
-            <label for="clockout-starting-balance">Starting Balance (carried over) ($)</label>
+            <label for="clockout-starting-balance">Starting Balance (carried over) (PKR)</label>
             <input type="number" id="clockout-starting-balance" readonly placeholder="0.00" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
             <small class="form-help-text">Automatically carried over from previous day's remaining balance</small>
           </div>
           <div class="form-group">
-            <label for="clockout-received">New Amount Added ($) *</label>
+            <label for="clockout-received">New Amount Added (PKR) *</label>
             <input type="number" id="clockout-received" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
             <small class="form-help-text">Income or amount received today (added to starting balance)</small>
           </div>
           <div class="form-group">
-            <label for="clockout-expense">Today's Expenses ($)</label>
+            <label for="clockout-expense">Today's Expenses (PKR)</label>
             <input type="number" id="clockout-expense" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
           </div>
           <div class="form-group">
-            <label for="clockout-balance">Remaining Balance ($)</label>
+            <label for="clockout-balance">Remaining Balance (PKR)</label>
             <input type="number" id="clockout-balance" readonly placeholder="Calculated automatically" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
             <small class="form-help-text">Starting Balance + New Amount - Expenses</small>
           </div>
