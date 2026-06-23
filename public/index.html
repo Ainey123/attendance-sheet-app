@@ -236,9 +236,10 @@
                         <th>S.No</th>
                         <th>Date</th>
                         <th>Performed Work</th>
-                        <th>Received ($)</th>
-                        <th>Expense ($)</th>
-                        <th>Balance ($)</th>
+                        <th>Starting Balance ($)</th>
+                        <th>Amount Added ($)</th>
+                        <th>Expenses ($)</th>
+                        <th>Remaining Balance ($)</th>
                         <th>Material Issuance</th>
                         <th>Material Balance</th>
                         <th>Other Remarks</th>
@@ -246,7 +247,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td colspan="10" class="table-empty">No entries for this month yet.</td></tr>
+                      <tr><td colspan="11" class="table-empty">No entries for this month yet.</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -264,12 +265,22 @@
                         <textarea id="work-entry-work" rows="2" placeholder="Describe work performed..." required></textarea>
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-payment">Payment Issuance ($)</label>
+                        <label for="work-entry-starting-balance">Starting Balance ($)</label>
+                        <input type="number" id="work-entry-starting-balance" readonly placeholder="Auto-calculated">
+                        <small class="form-help-text">Carried over from previous entries</small>
+                      </div>
+                      <div class="form-group">
+                        <label for="work-entry-payment">Amount Added ($) *</label>
                         <input type="number" id="work-entry-payment" min="0" step="0.01">
                       </div>
                       <div class="form-group">
-                        <label for="work-entry-balance-payment">Balance Payment</label>
-                        <input type="text" id="work-entry-balance-payment" placeholder="e.g. Cleared">
+                        <label for="work-entry-expense">Expenses ($)</label>
+                        <input type="number" id="work-entry-expense" min="0" step="0.01" placeholder="0.00">
+                      </div>
+                      <div class="form-group">
+                        <label for="work-entry-remaining-balance">Remaining Balance ($)</label>
+                        <input type="number" id="work-entry-remaining-balance" readonly placeholder="Auto-calculated">
+                        <small class="form-help-text">Starting + Added - Expenses</small>
                       </div>
                       <div class="form-group">
                         <label for="work-entry-material">Material Issuance</label>
@@ -451,6 +462,15 @@
                     </span>
                     Export Monthly Attendance
                   </button>
+                  <!-- Export Daily Attendance Logs as PDF -->
+                  <button id="btn-export-pdf" class="btn btn-primary">
+                    <span class="btn-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                      </svg>
+                    </span>
+                    Export PDF
+                  </button>
                 </div>
               </div>
 
@@ -586,16 +606,17 @@
                       <th>S.No</th>
                       <th>Date</th>
                       <th>Performed Work</th>
-                      <th>Received ($)</th>
-                      <th>Expense ($)</th>
-                      <th>Balance ($)</th>
+                      <th>Starting Balance ($)</th>
+                      <th>Amount Added ($)</th>
+                      <th>Expenses ($)</th>
+                      <th>Remaining Balance ($)</th>
                       <th>Material Issuance</th>
                       <th>Material Balance</th>
                       <th>Other Remarks</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr><td colspan="9" class="table-empty">Select an employee and month to view records.</td></tr>
+                    <tr><td colspan="10" class="table-empty">Select an employee and month to view records.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -786,20 +807,23 @@
             <textarea id="performance-notes" placeholder="Enter performance notes..." required style="width:100%;height:80px;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"></textarea>
           </div>
           <div class="form-group">
-            <label for="clockout-starting-balance">Previous Day's Remaining Balance ($)</label>
+            <label for="clockout-starting-balance">Starting Balance (carried over) ($)</label>
             <input type="number" id="clockout-starting-balance" readonly placeholder="0.00" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
+            <small class="form-help-text">Automatically carried over from previous day's remaining balance</small>
           </div>
           <div class="form-group">
-            <label for="clockout-received">Today's Starting Amount (Income) ($)</label>
+            <label for="clockout-received">New Amount Added ($) *</label>
             <input type="number" id="clockout-received" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
+            <small class="form-help-text">Income or amount received today (added to starting balance)</small>
           </div>
           <div class="form-group">
-            <label for="clockout-expense">Today's Expense ($)</label>
+            <label for="clockout-expense">Today's Expenses ($)</label>
             <input type="number" id="clockout-expense" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
           </div>
           <div class="form-group">
             <label for="clockout-balance">Remaining Balance ($)</label>
             <input type="number" id="clockout-balance" readonly placeholder="Calculated automatically" style="width:100%;padding:0.5rem;border-radius:var(--radius-md);border:1px solid var(--border-color);background:rgba(0,0,0,0.2);color:var(--text-primary);"/>
+            <small class="form-help-text">Starting Balance + New Amount - Expenses</small>
           </div>
           <div class="form-group">
             <label for="clockout-photo">Attach Photo (Optional)</label>
@@ -912,7 +936,7 @@
   </script>
 
   <!-- Script Load -->
-  <script src="store.js?v=6"></script>
-  <script src="app.js?v=6"></script>
+  <script src="store.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

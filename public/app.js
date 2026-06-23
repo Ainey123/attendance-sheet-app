@@ -53,10 +53,10 @@ const API = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, location })
   }).then(r => r.json()),
-  clockOut: (employeeId, location, performanceNotes, moneySpent, image) => fetch('/api/attendance/clock-out', {
+  clockOut: (employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) => fetch('/api/attendance/clock-out', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ employeeId, location, performanceNotes, moneySpent, image })
+    body: JSON.stringify({ employeeId, location, performanceNotes, receivedAmount, expenseAmount, image })
   }).then(r => r.json()),
   verifyEmployeePin: (employeeId, pin) => fetch('/api/employees/verify-pin', {
     method: 'POST',
@@ -567,7 +567,7 @@ async function openClockOutModal() {
     } catch (err) {}
   }
   
-  await updateAutoCalculatedBalance();
+  await updateAutoCalculatedBalance(getLocalDateString());
 }
 
 function closeClockOutModal() {
@@ -1089,6 +1089,116 @@ function exportLogsToCSV() {
   showToast('Attendance report exported!', 'success');
 }
 
+// Export Attendance Logs to PDF (includes attached photos)
+async function exportAttendanceLogsToPDF() {
+  try {
+    const dateFilter = document.getElementById('admin-date-filter').value;
+    if (!dateFilter) {
+      showToast('Please select a date first', 'warning');
+      return;
+    }
+    const logs = await API.getAttendanceLogs(dateFilter);
+    if (!logs || logs.length === 0) {
+      showToast('No attendance records found for the selected date', 'warning');
+      return;
+    }
+
+    showToast('Generating PDF report...', 'info');
+    const now = new Date();
+    const exportTimestamp = now.toLocaleString();
+    const dateObj = new Date(dateFilter + 'T00:00:00');
+    const dateDisplay = dateObj.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    const printContainer = document.createElement('div');
+    printContainer.className = 'pdf-report-wrapper';
+    printContainer.style.cssText = 'font-family: Arial, sans-serif; color: #1a1a2e; padding: 24px;';
+
+    let htmlContent = `
+      <div style="text-align:center; border-bottom: 2px solid #6366f1; padding-bottom: 12px; margin-bottom: 16px;">
+        <h1 style="margin:0; font-size:22px; color:#6366f1;">DAILY ATTENDANCE REPORT</h1>
+        <div style="font-size:14px; color:#555; margin-top:4px;">${dateDisplay}</div>
+        <div style="font-size:11px; color:#888;">Generated: ${exportTimestamp}</div>
+        <div style="font-size:11px; color:#888;">Total Records: ${logs.length}</div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <thead>
+          <tr style="background:#6366f1; color:#fff;">
+            <th style="padding:7px 8px; text-align:left; border:1px solid #d1d5db;">Employee</th>
+            <th style="padding:7px 8px; text-align:left; border:1px solid #d1d5db;">Role</th>
+            <th style="padding:7px 8px; text-align:center; border:1px solid #d1d5db;">Clock In</th>
+            <th style="padding:7px 8px; text-align:center; border:1px solid #d1d5db;">Clock Out</th>
+            <th style="padding:7px 8px; text-align:center; border:1px solid #d1d5db;">Duration</th>
+            <th style="padding:7px 8px; text-align:left; border:1px solid #d1d5db;">Performance Notes</th>
+            <th style="padding:7px 8px; text-align:right; border:1px solid #d1d5db;">Spent</th>
+            <th style="padding:7px 8px; text-align:center; border:1px solid #d1d5db;">Photo</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    logs.forEach((log, i) => {
+      const durationText = log.duration !== null
+        ? (Math.floor(log.duration / 60) > 0 ? `${Math.floor(log.duration / 60)}h ${log.duration % 60}m` : `${log.duration % 60}m`)
+        : 'Active';
+      const notes = log.performanceNotes || '\u2014';
+      const spent = log.moneySpent ? `$${log.moneySpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00';
+      const bg = i % 2 === 0 ? '#f9fafb' : '#fff';
+
+      let photoCell = '<span style="color:#9ca3af; font-size:10px;">None</span>';
+      if (log.image) {
+        photoCell = `<img src="${log.image}" style="max-width:70px; max-height:70px; border-radius:4px; border:1px solid #d1d5db; object-fit:cover;" />`;
+      }
+
+      htmlContent += `
+        <tr style="background:${bg};">
+          <td style="padding:6px 8px; border:1px solid #d1d5db; font-weight:600;">${log.employeeName}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; color:#555;">${log.role || 'Staff'}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; text-align:center; color:#059669;">${log.clockInTime ? new Date(log.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '\u2014'}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; text-align:center; color:#dc2626;">${log.clockOutTime ? new Date(log.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '<em>Active</em>'}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; text-align:center;">${durationText}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; color:#374151; max-width:150px;">${notes}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; text-align:right; font-weight:500;">${spent}</td>
+          <td style="padding:6px 8px; border:1px solid #d1d5db; text-align:center; vertical-align:middle;">${photoCell}</td>
+        </tr>
+      `;
+    });
+
+    htmlContent += '</tbody></table>';
+
+    const totalSpent = logs.reduce((s, l) => s + (l.moneySpent || 0), 0);
+    htmlContent += `
+      <div style="margin-top:14px; padding:10px; background:#f3f4f6; border-radius:6px; font-size:12px; display:flex; justify-content:space-between;">
+        <span><strong>Total Spent:</strong> $${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        <span><strong>Total Records:</strong> ${logs.length}</span>
+      </div>
+    `;
+
+    printContainer.innerHTML = htmlContent;
+    document.body.appendChild(printContainer);
+
+    if (window.html2pdf) {
+      const opt = {
+        margin: [10, 10, 15, 10],
+        filename: `Daily_Attendance_${dateFilter}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      await html2pdf().set(opt).from(printContainer).save();
+      document.body.removeChild(printContainer);
+      showToast('PDF downloaded successfully!', 'success');
+    } else {
+      showToast('html2pdf library offline. Opening browser print dialog...', 'info');
+      window.print();
+      document.body.removeChild(printContainer);
+    }
+  } catch (err) {
+    console.error('Error generating attendance PDF:', err);
+    showToast('Failed to generate PDF', 'error');
+  }
+}
+
 // Export Monthly Attendance Report to CSV
 async function exportMonthlyAttendanceToCSV() {
   const dateFilter = document.getElementById('admin-date-filter').value;
@@ -1184,7 +1294,7 @@ function renderWorkRecordRows(records, tbodySelector, allowDelete) {
   tbody.innerHTML = '';
 
   if (!records.length) {
-    const cols = allowDelete ? 10 : 9;
+    const cols = allowDelete ? 11 : 10;
     tbody.innerHTML = `<tr><td colspan="${cols}" class="table-empty">No entries for this month yet.</td></tr>`;
     return;
   }
@@ -1192,38 +1302,25 @@ function renderWorkRecordRows(records, tbodySelector, allowDelete) {
   records.forEach((rec, idx) => {
     const tr = document.createElement('tr');
     
-    const newReceived = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
-    const carriedOver = rec.carriedOverBalance || 0;
-    const totalReceived = rec.totalReceived !== undefined ? rec.totalReceived : (newReceived + carriedOver);
-    const expense = rec.expenseAmount || 0;
-    const balance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalReceived - expense);
+    const amountAdded = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
+    const startingBalance = rec.carriedOverBalance || 0;
+    const totalBalance = startingBalance + amountAdded;
+    const expenses = rec.expenseAmount || 0;
+    const remainingBalance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalBalance - expenses);
 
-    const fmtNewReceived = newReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    const fmtCarriedOver = carriedOver.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    const fmtTotalReceived = totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    const fmtExpense = expense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    const fmtBalance = balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-    let receivedHtml = '';
-    if (carriedOver > 0) {
-      receivedHtml = `
-        <div class="received-cell">
-          <span class="received-new">${fmtNewReceived}</span>
-          <span class="received-carryover" title="Carried over from previous day">+${fmtCarriedOver} carry</span>
-          <span class="received-total">= ${fmtTotalReceived}</span>
-        </div>
-      `;
-    } else {
-      receivedHtml = `<span class="received-new">${fmtNewReceived}</span>`;
-    }
+    const fmtStarting = startingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtAdded = amountAdded.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtExpenses = expenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtRemaining = remainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     tr.innerHTML = `
       <td class="col-sn">${idx + 1}</td>
       <td>${formatWorkDateDisplay(rec.date)}</td>
       <td class="col-work">${rec.performedWork || '—'}</td>
-      <td>${receivedHtml}</td>
-      <td class="expense-cell">${fmtExpense}</td>
-      <td class="balance-cell">${fmtBalance}</td>
+      <td class="starting-balance-cell">${fmtStarting}</td>
+      <td class="amount-added-cell">${fmtAdded}</td>
+      <td class="expense-cell">${fmtExpenses}</td>
+      <td class="balance-cell">${fmtRemaining}</td>
       <td>${rec.materialIssuance || '—'}</td>
       <td>${rec.materialBalance || '—'}</td>
       <td>${formatRemarksBadge(rec.otherRemarks)}</td>
@@ -1261,8 +1358,9 @@ async function loadEmployeeWorkRecords() {
     const dateInput = document.getElementById('work-entry-date');
     if (!dateInput.value) dateInput.value = getLocalDateString();
     
-    // Auto calculate and update balance fields in the form
-    await updateAutoCalculatedBalance();
+    // Auto calculate balance fields in both clock-out and work entry forms
+    await updateAutoCalculatedBalance(getLocalDateString());
+    await updateWorkEntryBalance();
   } catch (err) {
     showToast('Failed to load work records', 'error');
   }
@@ -1304,7 +1402,7 @@ async function handleAddWorkEntry(e) {
     date,
     performedWork,
     receivedAmount: document.getElementById('work-entry-payment').value,
-    balancePayment: document.getElementById('work-entry-balance-payment').value,
+    expenseAmount: document.getElementById('work-entry-expense').value,
     materialIssuance: document.getElementById('work-entry-material').value,
     materialBalance: document.getElementById('work-entry-mat-balance').value,
     otherRemarks: document.getElementById('work-entry-remarks').value
@@ -1316,7 +1414,9 @@ async function handleAddWorkEntry(e) {
       showToast('Entry added', 'success');
       document.getElementById('work-entry-work').value = '';
       document.getElementById('work-entry-payment').value = '';
-      document.getElementById('work-entry-balance-payment').value = '';
+      document.getElementById('work-entry-expense').value = '';
+      document.getElementById('work-entry-starting-balance').value = '';
+      document.getElementById('work-entry-remaining-balance').value = '';
       document.getElementById('work-entry-material').value = '';
       document.getElementById('work-entry-mat-balance').value = '';
       document.getElementById('work-entry-remarks').value = '';
@@ -2064,7 +2164,9 @@ function closePhotoModal() {
 
 async function getCarryOverBalanceForDate(employeeId, targetDateStr) {
   try {
-    const allRecords = await API.getWorkRecords(employeeId);
+    // Only look at records within the same month so balances don't leak across months
+    const monthStr = targetDateStr.substring(0, 7); // "YYYY-MM"
+    const allRecords = await API.getWorkRecords(employeeId, monthStr);
     if (!Array.isArray(allRecords) || allRecords.length === 0) {
       return 0;
     }
@@ -2087,10 +2189,11 @@ async function getCarryOverBalanceForDate(employeeId, targetDateStr) {
   }
 }
 
-async function updateAutoCalculatedBalance() {
+async function updateAutoCalculatedBalance(targetDate) {
   if (!selectedEmployee) return;
   
-  const dateStr = getLocalDateString();
+  // Use provided date or default to today
+  const dateStr = targetDate || getLocalDateString();
   const receivedInput = document.getElementById('clockout-received');
   const expenseInput = document.getElementById('clockout-expense');
   const balanceInput = document.getElementById('clockout-balance');
@@ -2109,6 +2212,30 @@ async function updateAutoCalculatedBalance() {
   const remaining = totalReceived - expenseVal;
   
   balanceInput.value = remaining.toFixed(2);
+}
+
+// Update starting balance and remaining balance in the "Add Daily Entry" form
+async function updateWorkEntryBalance() {
+  if (!selectedEmployee) return;
+  
+  const dateInput = document.getElementById('work-entry-date');
+  const startingInput = document.getElementById('work-entry-starting-balance');
+  const paymentInput = document.getElementById('work-entry-payment');
+  const expenseInput = document.getElementById('work-entry-expense');
+  const remainingInput = document.getElementById('work-entry-remaining-balance');
+  
+  if (!dateInput || !startingInput || !paymentInput || !expenseInput || !remainingInput) return;
+  
+  const targetDate = dateInput.value;
+  if (!targetDate) return;
+  
+  const carryOver = await getCarryOverBalanceForDate(selectedEmployee.id, targetDate);
+  const payment = Number(paymentInput.value) || 0;
+  const expense = Number(expenseInput.value) || 0;
+  const remaining = carryOver + payment - expense;
+  
+  startingInput.value = carryOver.toFixed(2);
+  remainingInput.value = remaining.toFixed(2);
 }
 
 async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
@@ -2147,17 +2274,17 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
     `;
     
     records.forEach((rec, idx) => {
-      const newReceived = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
-      const carriedOver = rec.carriedOverBalance || 0;
-      const totalReceived = rec.totalReceived !== undefined ? rec.totalReceived : (newReceived + carriedOver);
-      const expense = rec.expenseAmount || 0;
-      const balance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalReceived - expense);
+      const amountAdded = rec.receivedAmount !== undefined ? rec.receivedAmount : (rec.paymentIssuance || 0);
+      const startingBalance = rec.carriedOverBalance || 0;
+      const totalBalance = startingBalance + amountAdded;
+      const expenses = rec.expenseAmount || 0;
+      const remainingBalance = rec.remainingBalance !== undefined ? rec.remainingBalance : (totalBalance - expenses);
       
-      const fmtNewReceived = newReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      const fmtCarriedOver = carriedOver.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      const fmtTotalReceived = totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      const fmtExpense = expense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      const fmtBalance = balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtStarting = startingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtAdded = amountAdded.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtTotal = totalBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtExpenses = expenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const fmtRemaining = remainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
       
       const isLast = idx === records.length - 1;
       
@@ -2166,16 +2293,23 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
           <div class="pdf-flow-date">${formatWorkDateDisplay(rec.date)}</div>
           
           <div class="pdf-flow-boxes">
-            <!-- Received Box -->
+            <!-- Starting Balance Box -->
+            <div class="pdf-box pdf-box-starting">
+              <div class="pdf-box-title">STARTING</div>
+              <div class="pdf-box-value">$${fmtStarting}</div>
+            </div>
+            
+            <div class="pdf-flow-arrow">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            
+            <!-- Amount Added Box -->
             <div class="pdf-box pdf-box-received">
-              <div class="pdf-box-title">RECEIVED</div>
-              <div class="pdf-box-value">$${fmtNewReceived}</div>
-              ${carriedOver > 0 ? `
-                <div class="pdf-box-sub">🎒 Carry-over: $${fmtCarriedOver}</div>
-                <div class="pdf-box-total">Total: $${fmtTotalReceived}</div>
-              ` : `
-                <div class="pdf-box-total">Total: $${fmtTotalReceived}</div>
-              `}
+              <div class="pdf-box-title">ADDED</div>
+              <div class="pdf-box-value">+$${fmtAdded}</div>
+              <div class="pdf-box-total">Total: $${fmtTotal}</div>
             </div>
             
             <div class="pdf-flow-arrow">
@@ -2186,8 +2320,8 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
             
             <!-- Expense Box -->
             <div class="pdf-box pdf-box-expense">
-              <div class="pdf-box-title">EXPENSE</div>
-              <div class="pdf-box-value">$${fmtExpense}</div>
+              <div class="pdf-box-title">EXPENSES</div>
+              <div class="pdf-box-value">-$${fmtExpenses}</div>
               <div class="pdf-box-desc" title="${rec.performedWork || ''}">Work: ${rec.performedWork || 'Daily task'}</div>
             </div>
             
@@ -2197,10 +2331,10 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
               </svg>
             </div>
             
-            <!-- Balance Box -->
+            <!-- Remaining Balance Box -->
             <div class="pdf-box pdf-box-balance">
-              <div class="pdf-box-title">BALANCE</div>
-              <div class="pdf-box-value">$${fmtBalance}</div>
+              <div class="pdf-box-title">REMAINING</div>
+              <div class="pdf-box-value">$${fmtRemaining}</div>
             </div>
           </div>
       `;
@@ -2388,6 +2522,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Export CSV
   document.getElementById('btn-export-csv').addEventListener('click', exportLogsToCSV);
   document.getElementById('btn-export-monthly-csv').addEventListener('click', exportMonthlyAttendanceToCSV);
+  document.getElementById('btn-export-pdf').addEventListener('click', exportAttendanceLogsToPDF);
 
   // Add Employee Form
   document.getElementById('form-add-employee').addEventListener('submit', handleAddEmployeeSubmit);
@@ -2403,9 +2538,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-save-work-profile').addEventListener('click', handleSaveWorkProfile);
   document.getElementById('form-add-work-entry').addEventListener('submit', handleAddWorkEntry);
   
-  // Real-time balance calculations for daily entry form
-  document.getElementById('clockout-received').addEventListener('input', updateAutoCalculatedBalance);
-  document.getElementById('clockout-expense').addEventListener('input', updateAutoCalculatedBalance);
+  // Real-time balance calculations for clock-out modal
+  document.getElementById('clockout-received').addEventListener('input', () => {
+    const dateStr = getLocalDateString();
+    updateAutoCalculatedBalance(dateStr);
+  });
+  document.getElementById('clockout-expense').addEventListener('input', () => {
+    const dateStr = getLocalDateString();
+    updateAutoCalculatedBalance(dateStr);
+  });
+  
+  // Real-time balance calculations for "Add Daily Entry" form
+  document.getElementById('work-entry-date').addEventListener('change', updateWorkEntryBalance);
+  document.getElementById('work-entry-payment').addEventListener('input', updateWorkEntryBalance);
+  document.getElementById('work-entry-expense').addEventListener('input', updateWorkEntryBalance);
   
   // PDF Exports
   document.getElementById('btn-export-work-pdf').addEventListener('click', () => {
