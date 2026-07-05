@@ -135,7 +135,8 @@
             <!-- Employee sub-navigation (shown when logged in) -->
             <div id="employee-subnav" class="employee-subnav hidden">
               <button type="button" class="emp-tab-btn active" data-emp-tab="emp-pane-attendance">Attendance</button>
-              <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-workrecord">Work &amp; Payment</button>
+              <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-workrecord">Work & Payment</button>
+              <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-forms">My Forms</button>
             </div>
 
             <div id="emp-pane-attendance" class="emp-tab-pane active">
@@ -178,6 +179,55 @@
                 </span>
                 <span class="btn-text-large">CLOCK OUT</span>
               </button>
+            </div>
+
+            <div class="panel" style="margin: 1rem 0 1.25rem;">
+              <h4 class="panel-title" style="font-size: 1rem;">Apply for Leave</h4>
+              <p class="text-muted" style="margin-bottom: 0.75rem;">Submit a leave request with the date and it will be marked in attendance automatically.</p>
+              <form id="form-leave-application" class="work-entry-form">
+                <div class="work-entry-grid">
+                  <div class="form-group">
+                    <label for="leave-date">Leave Date *</label>
+                    <input type="date" id="leave-date" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="leave-type">Leave Type</label>
+                    <select id="leave-type">
+                      <option value="Sick">Sick Leave</option>
+                      <option value="Personal">Personal Leave</option>
+                      <option value="Casual">Casual Leave</option>
+                      <option value="Emergency">Emergency Leave</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div class="form-group span-2">
+                    <label for="leave-reason">Reason *</label>
+                    <input type="text" id="leave-reason" placeholder="Brief reason for leave" required>
+                  </div>
+                  <div class="form-group span-3">
+                    <label for="leave-notes">Additional Notes</label>
+                    <textarea id="leave-notes" rows="2" placeholder="Any extra details..."></textarea>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top: 0.75rem;">Submit Leave Application</button>
+              </form>
+            </div>
+
+            <div class="table-container work-record-table-wrap" style="margin-bottom: 1rem;">
+              <table id="emp-leave-table" class="work-record-table">
+                <thead>
+                  <tr>
+                    <th>S.No</th>
+                    <th>Leave Date</th>
+                    <th>Type</th>
+                    <th>Reason</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="5" class="table-empty">No leave applications submitted yet.</td></tr>
+                </tbody>
+              </table>
             </div>
 
             <!-- Active Shift Card (shows when logged in) -->
@@ -303,6 +353,60 @@
                     </div>
                     <button type="submit" class="btn btn-primary" style="margin-top: 0.75rem;">Add Entry</button>
                   </form>
+                </div>
+              </div>
+            <!-- My Forms Submission (employee submits documents) -->
+            <div id="emp-pane-forms" class="emp-tab-pane hidden">
+              <div class="work-record-sheet">
+                <h3 class="work-record-title">MY DOCUMENTS / FORMS</h3>
+                <p class="text-muted" style="margin-bottom: 1rem;">Submit and track your documents (CNIC, CV, certificates, etc.). Admin will review them.</p>
+
+                <div class="panel" style="margin-bottom: 1.5rem;">
+                  <h4 class="panel-title" style="font-size: 1rem;">Submit New Document</h4>
+                  <form id="form-add-document" class="work-entry-form">
+                    <div class="work-entry-grid">
+                      <div class="form-group">
+                        <label for="doc-type">Document Type *</label>
+                        <select id="doc-type" required>
+                          <option value="">— Select Type —</option>
+                          <option value="CNIC">CNIC / ID Card</option>
+                          <option value="CV">CV / Resume</option>
+                          <option value="Certificate">Certificate</option>
+                          <option value="Contract">Contract / Agreement</option>
+                          <option value="BankDetails">Bank Details</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div class="form-group span-2">
+                        <label for="doc-number">Document Number / Title *</label>
+                        <input type="text" id="doc-number" placeholder="e.g. CNIC Number, Certificate Title" required>
+                      </div>
+                      <div class="form-group span-3">
+                        <label for="doc-notes">Additional Notes</label>
+                        <textarea id="doc-notes" rows="2" placeholder="Any extra details..."></textarea>
+                      </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="margin-top: 0.75rem;">Save Document Record</button>
+                  </form>
+                </div>
+
+                <div class="table-container work-record-table-wrap">
+                  <table id="emp-forms-table" class="work-record-table">
+                    <thead>
+                      <tr>
+                        <th>S.No</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Number / Title</th>
+                        <th>Notes</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td colspan="7" class="table-empty">No documents submitted yet.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -766,6 +870,59 @@
                   </div>
                   <button type="submit" class="btn btn-primary">Save Settings</button>
                 </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 6: FORM SUBMISSIONS -->
+          <div id="tab-forms" class="tab-pane">
+            <h2 class="admin-tab-title">Employee Form Submissions</h2>
+            <p class="panel-subtitle" style="margin-top: -1rem; margin-bottom: 1.25rem;">Review documents submitted by employees (CNIC, CV, certificates, etc.)</p>
+
+            <div class="panel data-panel">
+              <div class="panel-header-actions">
+                <div class="table-filters">
+                  <div class="filter-group">
+                    <label for="admin-form-employee">Employee:</label>
+                    <select id="admin-form-employee">
+                      <option value="">All Employees</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label for="admin-form-type">Type:</label>
+                    <select id="admin-form-type">
+                      <option value="">All Types</option>
+                      <option value="CNIC">CNIC / ID Card</option>
+                      <option value="CV">CV / Resume</option>
+                      <option value="Certificate">Certificate</option>
+                      <option value="Contract">Contract / Agreement</option>
+                      <option value="BankDetails">Bank Details</option>
+                      <option value="Leave">Leave Application</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <button id="btn-export-forms-csv" class="btn btn-secondary">
+                  Export CSV
+                </button>
+              </div>
+
+              <div class="table-container work-record-table-wrap">
+                <table id="admin-forms-table" class="work-record-table">
+                  <thead>
+                    <tr>
+                      <th>S.No</th>
+                      <th>Employee</th>
+                      <th>Submitted Date</th>
+                      <th>Type</th>
+                      <th>Number / Title</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td colspan="6" class="table-empty">No form submissions yet.</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

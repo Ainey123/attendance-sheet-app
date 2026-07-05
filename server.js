@@ -2,7 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const os = require('os');
+const { createClient } = require('@supabase/supabase-js');
 const db = require('./db');
+
+// Initialize Supabase client for direct queries when needed
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,28 +31,8 @@ const checkAdminAuth = async (req, res, next) => {
   }
 };
 
-// Migration: ensure all employees have a token
-(async function ensureEmployeeTokens() {
-  const employees = await db.getEmployees();
-  let updated = false;
-  employees.forEach(emp => {
-    if (!emp.token) {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      let t = '';
-      for (let i = 0; i < 8; i++) t += chars.charAt(Math.floor(Math.random() * chars.length));
-      emp.token = t;
-      updated = true;
-    }
-  });
-  if (updated) {
-    const fs = require('fs');
-    const path = require('path');
-    const FILE_PATH = path.join(__dirname, 'data.json');
-    const current = JSON.parse(fs.readFileSync(FILE_PATH, 'utf8'));
-    current.employees = employees;
-    fs.writeFileSync(FILE_PATH, JSON.stringify(current, null, 2), 'utf8');
-  }
-})();
+// Migration: ensure all employees have a token (now handled by Supabase)
+// Tokens are generated at employee creation time in db.js
 
 // --- API Endpoints ---
 
@@ -136,19 +123,14 @@ app.post('/api/employees/:id/generate-token', checkAdminAuth, async (req, res) =
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    // If employee has no token, generate one and save to Supabase
     if (!employee.token || employee.token.length !== 8) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
       let token = '';
       for (let i = 0; i < 8; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
+      // Update token in Supabase
+      await supabase.from('employees').update({ token }).eq('id', id);
       employee.token = token;
-      const fs = require('fs');
-      const FILE_PATH = path.join(__dirname, 'data.json');
-      const current = JSON.parse(fs.readFileSync(FILE_PATH, 'utf8'));
-      const idx = current.employees.findIndex(e => e.id === id);
-      if (idx !== -1) {
-        current.employees[idx].token = employee.token;
-        fs.writeFileSync(FILE_PATH, JSON.stringify(current, null, 2), 'utf8');
-      }
     }
 
     const link = `${req.protocol}://${req.get('host')}/?mode=employee&token=${employee.token}`;
@@ -269,12 +251,12 @@ app.post('/api/attendance/clock-in', async (req, res) => {
 
 // Clock Out
 app.post('/api/attendance/clock-out', async (req, res) => {
-  const { employeeId, location, performanceNotes, moneySpent, image } = req.body;
+  const { employeeId, location, performanceNotes, receivedAmount, expenseAmount, image } = req.body;
   if (!employeeId) {
     return res.status(400).json({ error: 'Employee ID is required.' });
   }
   try {
-    const result = await db.clockOut(employeeId, location, performanceNotes, moneySpent, image);
+    const result = await db.clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image);
     res.json({ success: true, message: 'Clocked out successfully!', data: result });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -357,6 +339,82 @@ app.delete('/api/work-records/:id', async (req, res) => {
   }
   try {
     const success = await db.deleteWorkRecord(id, employeeId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Record not found.' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Form Submissions ---
+
+// Get form submissions (public endpoint for employee to see their own)
+app.get('/api/forms', async (req, res) => {
+  const { employeeId, type } = req.query;
+  try {
+    const submissions = await db.getFormSubmissions(employeeId || null, type || null);
+    res.json(submissions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get single form submission
+app.get('/api/forms/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const submission = await db.getFormSubmission(id);
+    if (submission) {
+      res.json({ success: true, submission });
+    } else {
+      res.status(404).json({ success: false, error: 'Form submission not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create new form submission (employee submits)
+app.post('/api/forms', async (req, res) => {
+  const { employeeId, employeeName, formType, formData } = req.body;
+  if (!employeeId || !formType || !formData) {
+    return res.status(400).json({ error: 'Employee ID, form type, and form data are required.' });
+  }
+  try {
+    const submission = await db.saveFormSubmission(employeeId, employeeName, formType, formData);
+    res.status(201).json({ success: true, submission });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update form submission (employee can update their own)
+app.put('/api/forms/:id', async (req, res) => {
+  const { id } = req.params;
+  const { employeeId, ...updates } = req.body;
+  if (!employeeId) {
+    return res.status(400).json({ error: 'Employee ID is required.' });
+  }
+  try {
+    const submission = await db.updateFormSubmission(id, employeeId, updates);
+    res.json({ success: true, submission });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Delete form submission (employee can delete their own)
+app.delete('/api/forms/:id', async (req, res) => {
+  const { id } = req.params;
+  const { employeeId } = req.body;
+  if (!employeeId) {
+    return res.status(400).json({ error: 'Employee ID is required.' });
+  }
+  try {
+    const success = await db.deleteFormSubmission(id, employeeId);
     if (success) {
       res.json({ success: true });
     } else {

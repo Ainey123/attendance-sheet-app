@@ -88,7 +88,30 @@ const API = {
     body: JSON.stringify(data)
   }).then(r => r.json()),
   deleteWorkRecord: (id, employeeId) =>
-    fetch(`/api/work-records/${id}?employeeId=${encodeURIComponent(employeeId)}`, { method: 'DELETE' }).then(r => r.json())
+    fetch(`/api/work-records/${id}?employeeId=${encodeURIComponent(employeeId)}`, { method: 'DELETE' }).then(r => r.json()),
+  getFormSubmissions: (employeeId, type) => {
+    let url = '/api/forms?';
+    const params = [];
+    if (employeeId) params.push(`employeeId=${encodeURIComponent(employeeId)}`);
+    if (type) params.push(`type=${encodeURIComponent(type)}`);
+    return fetch(url + params.join('&')).then(r => r.json());
+  },
+  saveFormSubmission: (data) => fetch('/api/forms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json()),
+  updateFormSubmission: (id, employeeId, updates) => fetch(`/api/forms/${id}?employeeId=${encodeURIComponent(employeeId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  }).then(r => r.json()),
+  deleteFormSubmission: (id, employeeId) =>
+    fetch(`/api/forms/${id}?employeeId=${encodeURIComponent(employeeId)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId })
+    }).then(r => r.json())
 };
 
 // ==========================================================================
@@ -178,6 +201,11 @@ function formatDateTime(isoString) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function isLeaveRecord(recordOrNotes) {
+  const notes = typeof recordOrNotes === 'string' ? recordOrNotes : (recordOrNotes?.performanceNotes || '');
+  return String(notes).trim().toUpperCase().startsWith('LEAVE');
+}
+
 // ==========================================================================
 // GEOLOCATION VERIFICATION
 // ==========================================================================
@@ -264,6 +292,9 @@ function updateClockButtonsDisabledState(disableAll = false) {
   if (selectedEmployee.status === 'IN') {
     btnIn.disabled = true;
     btnOut.disabled = false;
+  } else if (selectedEmployee.status === 'LEAVE') {
+    btnIn.disabled = true;
+    btnOut.disabled = true;
   } else {
     btnIn.disabled = false;
     btnOut.disabled = true;
@@ -417,6 +448,10 @@ async function selectEmployee(employee) {
   }
 
   // Load today's history logs
+  const leaveDateInput = document.getElementById('leave-date');
+  if (leaveDateInput && !leaveDateInput.value) {
+    leaveDateInput.value = getLocalDateString();
+  }
   await loadSelectedEmployeeLogs(employee.id);
 }
 
@@ -429,6 +464,11 @@ function updateEmployeeStatusBadge(status) {
     badge.innerText = 'Clocked In';
     badge.className = 'status-indicator status-in';
     activeShiftCard.classList.remove('hidden');
+  } else if (status === 'LEAVE') {
+    badge.innerText = 'On Leave';
+    badge.className = 'status-indicator status-out';
+    activeShiftCard.classList.add('hidden');
+    stopShiftTimer();
   } else {
     badge.innerText = 'Clocked Out';
     badge.className = 'status-indicator status-out';
@@ -446,8 +486,33 @@ async function loadSelectedEmployeeLogs(employeeId) {
     const res = await API.getAttendanceStatus(employeeId);
     const record = res.activeRecord;
     const isActiveShift = record && !record.clockOutTime;
+    const isLeave = record && isLeaveRecord(record);
 
-    if (isActiveShift) {
+    if (isLeave) {
+      selectedEmployee.status = 'LEAVE';
+      updateEmployeeStatusBadge('LEAVE');
+      stopShiftTimer();
+      document.getElementById('shift-start-time').innerText = '-';
+
+      timeline.innerHTML = `
+        <div class="timeline-item">
+          <div class="timeline-times">
+            <div class="time-box">
+              <span class="time-label">Leave Applied</span>
+              <span class="time-value">${record.date || '-'}</span>
+            </div>
+            <span class="time-arrow">➔</span>
+            <div class="time-box">
+              <span class="time-label">Status</span>
+              <span class="time-value" style="color: var(--color-warning);">Marked as Leave</span>
+            </div>
+          </div>
+          <div class="timeline-duration" style="background-color: rgba(245, 158, 11, 0.16); color: var(--color-warning);">
+            Leave
+          </div>
+        </div>
+      `;
+    } else if (isActiveShift) {
       selectedEmployee.status = 'IN';
       updateEmployeeStatusBadge('IN');
       document.getElementById('shift-start-time').innerText = formatDateTime(record.clockInTime);
@@ -503,10 +568,89 @@ async function loadSelectedEmployeeLogs(employeeId) {
       timeline.innerHTML = '<div class="timeline-empty">No check-ins logged today. Ready to clock in!</div>';
     }
 
+    await loadEmployeeLeaveRequests();
     updateClockButtonsDisabledState(false);
   } catch (err) {
     timeline.innerHTML = '<div class="timeline-empty">Failed to load shifts.</div>';
+    await loadEmployeeLeaveRequests();
     updateClockButtonsDisabledState(false);
+  }
+}
+
+async function handleLeaveApplicationSubmit(e) {
+  e.preventDefault();
+  if (!selectedEmployee) return;
+
+  const leaveDate = document.getElementById('leave-date').value;
+  const leaveType = document.getElementById('leave-type').value;
+  const leaveReason = document.getElementById('leave-reason').value.trim();
+  const leaveNotes = document.getElementById('leave-notes').value.trim();
+
+  if (!leaveDate || !leaveReason) {
+    showToast('Leave date and reason are required', 'error');
+    return;
+  }
+
+  try {
+    const payload = {
+      employeeId: selectedEmployee.id,
+      employeeName: selectedEmployee.name,
+      formType: 'Leave',
+      formData: {
+        leaveDate,
+        leaveType,
+        reason: leaveReason,
+        notes: leaveNotes
+      }
+    };
+
+    const res = await API.saveFormSubmission(payload);
+    if (res.success || res.submission) {
+      showToast('Leave application submitted successfully', 'success');
+      document.getElementById('form-leave-application').reset();
+      document.getElementById('leave-date').value = getLocalDateString();
+      await loadSelectedEmployeeLogs(selectedEmployee.id);
+    } else {
+      showToast(res.error || 'Failed to submit leave application', 'error');
+    }
+  } catch (err) {
+    showToast('Network error while saving leave application', 'error');
+  }
+}
+
+async function loadEmployeeLeaveRequests() {
+  if (!selectedEmployee) return;
+
+  try {
+    const submissions = await API.getFormSubmissions(selectedEmployee.id, 'Leave');
+    const tbody = document.querySelector('#emp-leave-table tbody');
+    tbody.innerHTML = '';
+
+    if (!submissions || submissions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No leave applications submitted yet.</td></tr>';
+      return;
+    }
+
+    submissions.forEach((sub, idx) => {
+      const tr = document.createElement('tr');
+      const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : '-';
+      const leaveDate = sub.formData?.leaveDate || '-';
+      const leaveType = sub.formData?.leaveType || 'Leave';
+      const leaveReason = sub.formData?.reason || '-';
+      const leaveNotes = sub.formData?.notes || '-';
+
+      tr.innerHTML = `
+        <td class="col-sn">${idx + 1}</td>
+        <td>${leaveDate}</td>
+        <td><span class="badge-role">${leaveType}</span></td>
+        <td>${leaveReason}</td>
+        <td>${leaveNotes}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error(err);
+    document.querySelector('#emp-leave-table tbody').innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load leave requests.</td></tr>';
   }
 }
 
@@ -714,6 +858,8 @@ async function switchAdminTab(tabId) {
     await loadWorkProgress();
   } else if (tabId === 'tab-settings') {
     await loadAdminSettings();
+  } else if (tabId === 'tab-forms') {
+    await loadAdminForms();
   }
 }
 
@@ -804,18 +950,22 @@ function renderAttendanceLogsTable(logs) {
       durationText = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
     }
 
+    const isLeave = isLeaveRecord(log);
+    const statusCell = isLeave ? '<span class="badge-role" style="background: rgba(245, 158, 11, 0.16); color: var(--color-warning);">Leave</span>' : (log.clockOutTime ? 'Completed' : 'Active');
+    const leaveLabel = isLeave ? 'Leave' : (log.clockOutTime ? formatDateTime(log.clockOutTime) : 'Active');
+
     tr.innerHTML = `
       <td><strong>${log.employeeName}</strong></td>
       <td><span class="badge-role">${log.role || 'Staff'}</span></td>
       <td>${log.date}</td>
-      <td style="color: var(--color-success)">${formatDateTime(log.clockInTime)}</td>
-      <td style="color: ${log.clockOutTime ? 'var(--color-danger)' : 'var(--text-muted)'}">
-        ${log.clockOutTime ? formatDateTime(log.clockOutTime) : 'Active'}
+      <td style="color: ${isLeave ? 'var(--color-warning)' : 'var(--color-success)'}">${isLeave ? '—' : formatDateTime(log.clockInTime)}</td>
+      <td style="color: ${isLeave ? 'var(--color-warning)' : (log.clockOutTime ? 'var(--color-danger)' : 'var(--text-muted)')}">
+        ${leaveLabel}
       </td>
-      <td><strong>${durationText}</strong></td>
-      <td>${renderLocationLink(log.clockInLocation)}</td>
-      <td>${renderLocationLink(log.clockOutLocation)}</td>
-      <td>${renderPhotoLink(log.image)}</td>
+      <td><strong>${isLeave ? '0m' : durationText}</strong></td>
+      <td>${isLeave ? '<span class="text-muted" style="font-size: 0.8rem">—</span>' : renderLocationLink(log.clockInLocation)}</td>
+      <td>${isLeave ? '<span class="text-muted" style="font-size: 0.8rem">—</span>' : renderLocationLink(log.clockOutLocation)}</td>
+      <td>${isLeave ? '<span class="text-muted" style="font-size: 0.8rem">Leave record</span>' : renderPhotoLink(log.image)}</td>
     `;
     
     // Bind photo click listeners
@@ -1399,6 +1549,14 @@ function switchEmployeeTab(tabId) {
   if (tabId === 'emp-pane-workrecord') {
     grid.classList.add('work-record-active');
     loadEmployeeWorkRecords();
+  } else if (tabId === 'emp-pane-forms') {
+    grid.classList.add('work-record-active');
+    loadEmployeeForms();
+  } else if (tabId === 'emp-pane-attendance') {
+    grid.classList.remove('work-record-active');
+    if (selectedEmployee) {
+      loadSelectedEmployeeLogs(selectedEmployee.id);
+    }
   } else {
     grid.classList.remove('work-record-active');
   }
@@ -1955,6 +2113,222 @@ function openAdminAuthModal() {
   document.getElementById('auth-error-msg').classList.add('hidden');
   document.getElementById('auth-passcode').value = '';
   document.getElementById('auth-passcode').focus();
+}
+
+// ==========================================================================
+// FORM SUBMISSIONS (DOCUMENTS)
+// ==========================================================================
+
+// Employee: submit new document
+async function handleAddDocumentSubmit(e) {
+  e.preventDefault();
+  if (!selectedEmployee) return;
+
+  const formType = document.getElementById('doc-type').value;
+  const docNumber = document.getElementById('doc-number').value.trim();
+  const docNotes = document.getElementById('doc-notes').value.trim();
+
+  if (!formType || !docNumber) {
+    showToast('Document type and number/title are required', 'error');
+    return;
+  }
+
+  try {
+    const payload = {
+      employeeId: selectedEmployee.id,
+      employeeName: selectedEmployee.name,
+      formType,
+      formData: {
+        documentNumber: docNumber,
+        notes: docNotes
+      }
+    };
+
+    const res = await API.saveFormSubmission(payload);
+    if (res.success || res.submission) {
+      showToast('Document saved successfully', 'success');
+      document.getElementById('form-add-document').reset();
+      loadEmployeeForms();
+    } else {
+      showToast(res.error || 'Failed to save document', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+  }
+}
+
+// Employee: load their form submissions
+async function loadEmployeeForms() {
+  if (!selectedEmployee) return;
+
+  try {
+    const submissions = await API.getFormSubmissions(selectedEmployee.id);
+    const tbody = document.querySelector('#emp-forms-table tbody');
+    tbody.innerHTML = '';
+
+    if (!submissions || submissions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No documents submitted yet.</td></tr>';
+      return;
+    }
+
+    submissions.forEach((sub, idx) => {
+      const tr = document.createElement('tr');
+      const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : '-';
+      
+      const typeLabels = {
+        CNIC: 'CNIC / ID Card',
+        CV: 'CV / Resume',
+        Certificate: 'Certificate',
+        Contract: 'Contract / Agreement',
+        BankDetails: 'Bank Details',
+        Leave: 'Leave Application',
+        Other: 'Other'
+      };
+      const typeLabel = typeLabels[sub.formType] || sub.formType;
+
+      tr.innerHTML = `
+        <td class="col-sn">${idx + 1}</td>
+        <td>${submittedDate}</td>
+        <td><span class="badge-role">${typeLabel}</span></td>
+        <td>${sub.formData?.documentNumber || '-'}</td>
+        <td>${sub.formData?.notes || '-'}</td>
+        <td><span class="status-indicator status-in" style="font-size:0.75rem;">Submitted</span></td>
+        <td>
+          <button class="btn-delete-work" data-id="${sub.id}">Delete</button>
+        </td>
+      `;
+
+      tr.querySelector('.btn-delete-work').addEventListener('click', async () => {
+        if (!confirm('Delete this document record?')) return;
+        try {
+          const delRes = await API.deleteFormSubmission(sub.id, selectedEmployee.id);
+          if (delRes.success) {
+            showToast('Document deleted', 'success');
+            loadEmployeeForms();
+          } else {
+            showToast(delRes.error || 'Failed to delete', 'error');
+          }
+        } catch (err) {
+          showToast('Connection error', 'error');
+        }
+      });
+
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    showToast('Failed to load documents', 'error');
+  }
+}
+
+// Admin: load form submissions with filters
+async function loadAdminForms() {
+  const empSelect = document.getElementById('admin-form-employee');
+  const typeSelect = document.getElementById('admin-form-type');
+
+  try {
+    const employees = await API.getEmployees();
+    const currentVal = empSelect.value;
+    empSelect.innerHTML = '<option value="">All Employees</option>';
+    employees.forEach(emp => {
+      const opt = document.createElement('option');
+      opt.value = emp.id;
+      opt.textContent = emp.name;
+      empSelect.appendChild(opt);
+    });
+    if (currentVal) empSelect.value = currentVal;
+
+    const employeeId = empSelect.value || null;
+    const formType = typeSelect.value || null;
+
+    const submissions = await API.getFormSubmissions(employeeId, formType);
+    const tbody = document.querySelector('#admin-forms-table tbody');
+    tbody.innerHTML = '';
+
+    if (!submissions || submissions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No form submissions found.</td></tr>';
+      return;
+    }
+
+    const typeLabels = {
+      CNIC: 'CNIC / ID Card',
+      CV: 'CV / Resume',
+      Certificate: 'Certificate',
+      Contract: 'Contract / Agreement',
+      BankDetails: 'Bank Details',
+      Leave: 'Leave Application',
+      Other: 'Other'
+    };
+
+    submissions.forEach((sub, idx) => {
+      const tr = document.createElement('tr');
+      const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : '-';
+      const typeLabel = typeLabels[sub.formType] || sub.formType;
+
+      tr.innerHTML = `
+        <td class="col-sn">${idx + 1}</td>
+        <td><strong>${sub.employeeName}</strong></td>
+        <td>${submittedDate}</td>
+        <td><span class="badge-role">${typeLabel}</span></td>
+        <td>${sub.formData?.documentNumber || '-'}</td>
+        <td>${sub.formData?.notes || '-'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    showToast('Failed to load form submissions', 'error');
+  }
+}
+
+// Export forms to CSV
+function exportFormsToCSV() {
+  const empSelect = document.getElementById('admin-form-employee');
+  const typeSelect = document.getElementById('admin-form-type');
+  const empValue = empSelect.value;
+  const typeValue = typeSelect.value;
+
+  // Fetch filtered data
+  API.getFormSubmissions(empValue || null, typeValue || null).then(submissions => {
+    if (!submissions || submissions.length === 0) {
+      showToast('No records to export', 'warning');
+      return;
+    }
+
+    const typeLabels = {
+      CNIC: 'CNIC / ID Card',
+      CV: 'CV / Resume',
+      Certificate: 'Certificate',
+      Contract: 'Contract / Agreement',
+      BankDetails: 'Bank Details',
+      Leave: 'Leave Application',
+      Other: 'Other'
+    };
+
+    const headers = ['S.No', 'Employee Name', 'Submitted Date', 'Type', 'Number / Title', 'Notes'];
+    const rows = [headers.join(',')];
+
+    submissions.forEach((sub, idx) => {
+      const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : '';
+      const typeLabel = typeLabels[sub.formType] || sub.formType;
+      rows.push([
+        idx + 1,
+        `"${(sub.employeeName || '').replace(/"/g, '""')}"`,
+        submittedDate,
+        typeLabel,
+        `"${(sub.formData?.documentNumber || '').replace(/"/g, '""')}"`,
+        `"${(sub.formData?.notes || '').replace(/"/g, '""')}"`
+      ].join(','));
+    });
+
+    const link = document.createElement('a');
+    link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+    link.download = `Form_Submissions_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Form submissions exported', 'success');
+  }).catch(err => {
+    showToast('Failed to export', 'error');
+  });
 }
 
 // ==========================================================================
@@ -2698,6 +3072,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Work Progress dashboard
   document.getElementById('progress-date-filter').addEventListener('change', loadWorkProgress);
   document.getElementById('btn-refresh-progress').addEventListener('click', loadWorkProgress);
+
+  // Leave applications & forms submission
+  document.getElementById('form-leave-application').addEventListener('submit', handleLeaveApplicationSubmit);
+  document.getElementById('form-add-document').addEventListener('submit', handleAddDocumentSubmit);
+  document.getElementById('btn-export-forms-csv').addEventListener('click', exportFormsToCSV);
+  document.getElementById('admin-form-employee').addEventListener('change', loadAdminForms);
+  document.getElementById('admin-form-type').addEventListener('change', loadAdminForms);
 
   // Camera upload bindings
   document.getElementById('btn-trigger-camera').addEventListener('click', () => {

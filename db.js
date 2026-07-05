@@ -43,6 +43,10 @@ function getLocalDateString(date = new Date()) {
   return adjustedDate.toISOString().split('T')[0];
 }
 
+function isLeaveAttendanceRecord(record) {
+  return Boolean(record && String(record.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+}
+
 const db = {
   // --- Employee Methods ---
   async getEmployees() {
@@ -74,15 +78,15 @@ const db = {
 
   async addEmployee(name, role) {
     try {
-      const newEmployee = {
-        id: generateId('emp'),
-        name: name.trim(),
-        role: role.trim() || 'Staff',
-        status: 'OUT',
-        pin: '1234',
-        token: generateToken(),
-        dateCreated: new Date().toISOString()
-      };
+    const newEmployee = {
+      id: generateId('emp'),
+      name: name.trim(),
+      role: role.trim() || 'Staff',
+      status: 'OUT',
+      pin: '1234',
+      token: generateToken(),
+      dateCreated: new Date().toISOString()
+    };
       const { data, error } = await supabase
         .from('employees')
         .insert([newEmployee])
@@ -124,8 +128,8 @@ const db = {
 
   async updateEmployeePin(employeeId, newPin) {
     try {
-      const cleanedPin = String(newPin).trim();
-      if (!/^\d{4}$/.test(cleanedPin)) throw new Error('PIN must be exactly 4 digits');
+    const cleanedPin = String(newPin).trim();
+    if (!/^\d{4}$/.test(cleanedPin)) throw new Error('PIN must be exactly 4 digits');
       const { data, error } = await supabase
         .from('employees')
         .update({ pin: cleanedPin })
@@ -187,7 +191,7 @@ const db = {
 
   async generateAdminToken() {
     try {
-      const token = crypto.randomBytes(16).toString('hex');
+    const token = crypto.randomBytes(16).toString('hex');
       const { data, error } = await supabase
         .from('settings')
         .update({ adminToken: token })
@@ -195,7 +199,7 @@ const db = {
         .select()
         .single();
       if (error) handleSupabaseError(error, 'generate admin token');
-      return token;
+    return token;
     } catch (error) {
       handleSupabaseError(error, 'generate admin token');
     }
@@ -209,7 +213,7 @@ const db = {
         .select('*')
         .order('clockInTime', { ascending: false });
 
-      if (filterDate) {
+    if (filterDate) {
         query = query.eq('date', filterDate);
       }
 
@@ -223,7 +227,7 @@ const db = {
 
   async getTodayAttendanceForEmployee(employeeId) {
     try {
-      const today = getLocalDateString();
+    const today = getLocalDateString();
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
@@ -234,8 +238,11 @@ const db = {
       if (error) throw error;
       if (!data || data.length === 0) return null;
 
+      const leaveRecord = data.find(isLeaveAttendanceRecord);
+      if (leaveRecord) return leaveRecord;
+
       const active = data.find(r => !r.clockOutTime);
-      if (active) return active;
+    if (active) return active;
       return data[0];
     } catch (error) {
       return null;
@@ -253,6 +260,19 @@ const db = {
 
       if (empError || !employee) throw new Error('Employee not found');
 
+      const now = new Date();
+      const today = getLocalDateString(now);
+      const { data: todayRecords, error: todayError } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employeeId', employeeId)
+        .eq('date', today);
+
+      if (todayError) throw todayError;
+      if (todayRecords?.some(isLeaveAttendanceRecord)) {
+        throw new Error('Employee has a leave request for today');
+      }
+
       // Check if already clocked in
       const { data: activeRecord, error: activeError } = await supabase
         .from('attendance')
@@ -261,21 +281,19 @@ const db = {
         .is('clockOutTime', null)
         .single();
 
-      if (activeRecord) throw new Error('Employee is already clocked in');
-
-      const now = new Date();
-      const record = {
-        id: generateId('att'),
-        employeeId: employee.id,
-        employeeName: employee.name,
-        role: employee.role,
-        date: getLocalDateString(now),
-        clockInTime: now.toISOString(),
-        clockOutTime: null,
-        clockInLocation: location || null,
-        clockOutLocation: null,
-        duration: null
-      };
+    if (activeRecord) throw new Error('Employee is already clocked in');
+    const record = {
+      id: generateId('att'),
+      employeeId: employee.id,
+      employeeName: employee.name,
+      role: employee.role,
+      date: getLocalDateString(now),
+      clockInTime: now.toISOString(),
+      clockOutTime: null,
+      clockInLocation: location || null,
+      clockOutLocation: null,
+      duration: null
+    };
 
       // Insert attendance record
       const { data: newRecord, error: insertError } = await supabase
@@ -304,9 +322,9 @@ const db = {
   // Clock Out with required performance notes and money spent and optional image
   async clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) {
     try {
-      if (performanceNotes === undefined || performanceNotes === null) {
-        throw new Error('Performance notes are required');
-      }
+    if (performanceNotes === undefined || performanceNotes === null) {
+      throw new Error('Performance notes are required');
+    }
 
       // Get employee
       const { data: employee, error: empError } = await supabase
@@ -316,6 +334,18 @@ const db = {
         .single();
 
       if (empError || !employee) throw new Error('Employee not found');
+
+      const today = getLocalDateString();
+      const { data: todayRecords, error: todayError } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employeeId', employeeId)
+        .eq('date', today);
+
+      if (todayError) throw todayError;
+      if (todayRecords?.some(isLeaveAttendanceRecord)) {
+        throw new Error('Employee has a leave request for today');
+      }
 
       // Get active attendance record
       const { data: record, error: recordError } = await supabase
@@ -409,7 +439,7 @@ const db = {
 
   async getDashboardStats() {
     try {
-      const today = getLocalDateString();
+    const today = getLocalDateString();
 
       // Get total employees and active count
       const { data: employees, error: empError } = await supabase
@@ -428,8 +458,8 @@ const db = {
       if (attError) throw attError;
 
       const todayAttendees = new Set(attendance.map(r => r.employeeId));
-      const presentToday = todayAttendees.size;
-      const absentToday = Math.max(0, totalEmployees - presentToday);
+    const presentToday = todayAttendees.size;
+    const absentToday = Math.max(0, totalEmployees - presentToday);
 
       // Get settings for office name
       const { data: settings } = await supabase
@@ -437,11 +467,11 @@ const db = {
         .select('officeName')
         .single();
 
-      return {
-        totalEmployees,
-        activePresent,
-        presentToday,
-        absentToday,
+    return {
+      totalEmployees,
+      activePresent,
+      presentToday,
+      absentToday,
         officeName: settings?.officeName || 'My Office'
       };
     } catch (error) {
@@ -660,6 +690,157 @@ const db = {
       return true;
     } catch (error) {
       handleSupabaseError(error, 'delete work record');
+    }
+  },
+
+  // --- Form Submissions Methods ---
+  async getFormSubmissions(employeeId = null, formType = null) {
+    try {
+      let query = supabase
+        .from('form_submissions')
+        .select('*')
+        .order('submittedAt', { ascending: false });
+
+      if (employeeId) {
+        query = query.eq('employeeId', employeeId);
+      }
+      if (formType) {
+        query = query.eq('formType', formType);
+      }
+
+      const { data, error } = await query;
+      if (error) handleSupabaseError(error, 'fetch form submissions');
+      return data || [];
+    } catch (error) {
+      handleSupabaseError(error, 'fetch form submissions');
+    }
+  },
+
+  async getFormSubmission(id) {
+    try {
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) return null;
+      return data;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  async saveFormSubmission(employeeId, employeeName, formType, formData) {
+    try {
+      const newSubmission = {
+        id: generateId('form'),
+        employeeId,
+        employeeName: employeeName || '',
+        formType,
+        formData: formData || {},
+        submittedAt: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .insert([newSubmission])
+        .select()
+        .single();
+
+      if (error) handleSupabaseError(error, 'save form submission');
+
+      if (formType === 'Leave' && formData?.leaveDate) {
+        const leaveDate = String(formData.leaveDate);
+        const leaveType = String(formData.leaveType || 'Leave');
+        const leaveReason = String(formData.reason || 'Leave');
+        const leaveNotes = String(formData.notes || '').trim();
+        const leaveText = `LEAVE: ${leaveType} - ${leaveReason}${leaveNotes ? ` | ${leaveNotes}` : ''}`;
+
+        const { data: employeeData, error: empError } = await supabase
+          .from('employees')
+          .select('role')
+          .eq('id', employeeId)
+          .single();
+
+        const employeeRole = empError || !employeeData ? 'Staff' : (employeeData.role || 'Staff');
+
+        const { data: existingRecords, error: lookupError } = await supabase
+          .from('attendance')
+          .select('*')
+          .eq('employeeId', employeeId)
+          .eq('date', leaveDate);
+
+        if (lookupError) handleSupabaseError(lookupError, 'lookup leave attendance');
+
+        const existingLeaveRecord = (existingRecords || []).find(isLeaveAttendanceRecord) || (existingRecords || [])[0];
+        const leavePayload = {
+          id: existingLeaveRecord?.id || generateId('att'),
+          employeeId,
+          employeeName: employeeName || '',
+          role: employeeRole,
+          date: leaveDate,
+          clockInTime: new Date(`${leaveDate}T00:00:00.000Z`).toISOString(),
+          clockOutTime: new Date(`${leaveDate}T00:00:00.000Z`).toISOString(),
+          clockInLocation: null,
+          clockOutLocation: null,
+          duration: 0,
+          performanceNotes: leaveText,
+          receivedAmount: 0,
+          expenseAmount: 0,
+          moneySpent: 0,
+          image: null
+        };
+
+        if (existingLeaveRecord) {
+          const { error: updateError } = await supabase
+            .from('attendance')
+            .update(leavePayload)
+            .eq('id', existingLeaveRecord.id);
+          if (updateError) handleSupabaseError(updateError, 'save leave attendance');
+        } else {
+          const { error: insertError } = await supabase
+            .from('attendance')
+            .insert([leavePayload]);
+          if (insertError) handleSupabaseError(insertError, 'save leave attendance');
+        }
+      }
+
+      return data;
+    } catch (error) {
+      handleSupabaseError(error, 'save form submission');
+    }
+  },
+
+  async updateFormSubmission(id, employeeId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .update(updates)
+        .eq('id', id)
+        .eq('employeeId', employeeId)
+        .select()
+        .single();
+
+      if (error) handleSupabaseError(error, 'update form submission');
+      return data;
+    } catch (error) {
+      handleSupabaseError(error, 'update form submission');
+    }
+  },
+
+  async deleteFormSubmission(id, employeeId) {
+    try {
+      const { error } = await supabase
+        .from('form_submissions')
+        .delete()
+        .eq('id', id)
+        .eq('employeeId', employeeId);
+
+      if (error) handleSupabaseError(error, 'delete form submission');
+      return true;
+    } catch (error) {
+      handleSupabaseError(error, 'delete form submission');
     }
   }
 };
