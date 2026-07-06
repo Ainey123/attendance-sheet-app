@@ -8,66 +8,77 @@ let adminPasscode = '';
 let currentView = 'employee'; // 'employee' or 'admin'
 let activeShiftTimer = null;
 let currentAdminTab = 'tab-dashboard';
+let selectedDocumentImageBase64 = null;
 let settings = {
   organizationName: 'Company Name',
   clockInRadius: 500
 };
 
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const payload = await response.json().catch(() => null);
+  if (response.ok) return payload;
+  const errorMessage = payload?.error || payload?.message || `${response.status} ${response.statusText}`;
+  const error = new Error(errorMessage);
+  error.payload = payload;
+  throw error;
+}
+
 // Base API endpoints
 const API = {
-  getSettings: () => fetch('/api/settings').then(r => r.json()),
-  getEmployees: () => fetch('/api/employees', {
+  getSettings: () => fetchJson('/api/settings'),
+  getEmployees: () => fetchJson('/api/employees', {
     headers: { 'X-Admin-Passcode': adminPasscode }
-  }).then(r => r.json()),
-  verifyPasscode: (passcode) => fetch('/api/settings/verify', {
+  }),
+  verifyPasscode: (passcode) => fetchJson('/api/settings/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ passcode })
-  }).then(r => r.json()),
-  updateSettings: (data) => fetch('/api/settings/update', {
+  }),
+  updateSettings: (data) => fetchJson('/api/settings/update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify(data)
-  }).then(r => r.json()),
-  getEmployeeByToken: (token) => fetch(`/api/employees/token/${token}`).then(r => r.json()),
-  addEmployee: (name, role) => fetch('/api/employees', {
+  }),
+  getEmployeeByToken: (token) => fetchJson(`/api/employees/token/${token}`),
+  addEmployee: (name, role) => fetchJson('/api/employees', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify({ name, role })
-  }).then(r => r.json()),
-  deleteEmployee: (id) => fetch(`/api/employees/${id}`, {
+  }),
+  deleteEmployee: (id) => fetchJson(`/api/employees/${id}`, {
     method: 'DELETE',
     headers: { 'X-Admin-Passcode': adminPasscode }
-  }).then(r => r.json()),
-  getStats: () => fetch('/api/stats').then(r => r.json()),
-  getAttendanceStatus: (employeeId) => fetch(`/api/attendance/status/${employeeId}`).then(r => r.json()),
+  }),
+  getStats: () => fetchJson('/api/stats'),
+  getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
   getAttendanceLogs: (date) => {
     let url = '/api/attendance';
     if (date) url += `?date=${date}`;
-    return fetch(url, {
+    return fetchJson(url, {
       headers: { 'X-Admin-Passcode': adminPasscode }
-    }).then(r => r.json());
+    });
   },
-  clockIn: (employeeId, location) => fetch('/api/attendance/clock-in', {
+  clockIn: (employeeId, location) => fetchJson('/api/attendance/clock-in', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, location })
-  }).then(r => r.json()),
-  clockOut: (employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) => fetch('/api/attendance/clock-out', {
+  }),
+  clockOut: (employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) => fetchJson('/api/attendance/clock-out', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, location, performanceNotes, receivedAmount, expenseAmount, image })
-  }).then(r => r.json()),
-  verifyEmployeePin: (employeeId, pin) => fetch('/api/employees/verify-pin', {
+  }),
+  verifyEmployeePin: (employeeId, pin) => fetchJson('/api/employees/verify-pin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, pin })
-  }).then(r => r.json()),
-  updateEmployeePin: (employeeId, oldPin, newPin) => fetch('/api/employees/update-pin', {
+  }),
+  updateEmployeePin: (employeeId, oldPin, newPin) => fetchJson('/api/employees/update-pin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId, oldPin, newPin })
-  }).then(r => r.json()),
+  }),
   getWorkRecords: (employeeId, month) => {
     let url = '/api/work-records?';
     const params = [];
@@ -94,24 +105,24 @@ const API = {
     const params = [];
     if (employeeId) params.push(`employeeId=${encodeURIComponent(employeeId)}`);
     if (type) params.push(`type=${encodeURIComponent(type)}`);
-    return fetch(url + params.join('&')).then(r => r.json());
+    return fetchJson(url + params.join('&'));
   },
-  saveFormSubmission: (data) => fetch('/api/forms', {
+  saveFormSubmission: (data) => fetchJson('/api/forms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
-  }).then(r => r.json()),
-  updateFormSubmission: (id, employeeId, updates) => fetch(`/api/forms/${id}?employeeId=${encodeURIComponent(employeeId)}`, {
+  }),
+  updateFormSubmission: (id, employeeId, updates) => fetchJson(`/api/forms/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates)
-  }).then(r => r.json()),
+    body: JSON.stringify({ employeeId, ...updates })
+  }),
   deleteFormSubmission: (id, employeeId) =>
-    fetch(`/api/forms/${id}?employeeId=${encodeURIComponent(employeeId)}`, {
+    fetchJson(`/api/forms/${id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ employeeId })
-    }).then(r => r.json())
+    })
 };
 
 // ==========================================================================
@@ -614,7 +625,8 @@ async function handleLeaveApplicationSubmit(e) {
       showToast(res.error || 'Failed to submit leave application', 'error');
     }
   } catch (err) {
-    showToast('Network error while saving leave application', 'error');
+    console.error('Leave submission error:', err);
+    showToast(err.message || 'Network error while saving leave application', 'error');
   }
 }
 
@@ -622,11 +634,12 @@ async function loadEmployeeLeaveRequests() {
   if (!selectedEmployee) return;
 
   try {
-    const submissions = await API.getFormSubmissions(selectedEmployee.id, 'Leave');
+    const response = await API.getFormSubmissions(selectedEmployee.id, 'Leave');
+    const submissions = Array.isArray(response) ? response : [];
     const tbody = document.querySelector('#emp-leave-table tbody');
     tbody.innerHTML = '';
 
-    if (!submissions || submissions.length === 0) {
+    if (submissions.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No leave applications submitted yet.</td></tr>';
       return;
     }
@@ -650,7 +663,8 @@ async function loadEmployeeLeaveRequests() {
     });
   } catch (err) {
     console.error(err);
-    document.querySelector('#emp-leave-table tbody').innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load leave requests.</td></tr>';
+    const tbody = document.querySelector('#emp-leave-table tbody');
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load leave requests.</td></tr>';
   }
 }
 
@@ -2134,23 +2148,35 @@ async function handleAddDocumentSubmit(e) {
   }
 
   try {
+    const existingSubmissions = await API.getFormSubmissions(selectedEmployee.id);
+    const hasDocumentSubmission = Array.isArray(existingSubmissions)
+      ? existingSubmissions.some(sub => sub.formType !== 'Leave')
+      : false;
+
+    if (hasDocumentSubmission) {
+      showToast('Document submission already completed. Please contact admin for changes.', 'warning');
+      return;
+    }
+
     const payload = {
       employeeId: selectedEmployee.id,
       employeeName: selectedEmployee.name,
       formType,
       formData: {
         documentNumber: docNumber,
-        notes: docNotes
+        notes: docNotes,
+        documentImage: selectedDocumentImageBase64 || null
       }
     };
 
     const res = await API.saveFormSubmission(payload);
     if (res.success || res.submission) {
-      showToast('Document saved successfully', 'success');
+      showToast('Document submitted successfully', 'success');
       document.getElementById('form-add-document').reset();
-      loadEmployeeForms();
+      resetDocumentUpload();
+      await loadEmployeeForms();
     } else {
-      showToast(res.error || 'Failed to save document', 'error');
+      showToast(res.error || 'Failed to submit documents', 'error');
     }
   } catch (err) {
     showToast('Connection error', 'error');
@@ -2162,16 +2188,29 @@ async function loadEmployeeForms() {
   if (!selectedEmployee) return;
 
   try {
-    const submissions = await API.getFormSubmissions(selectedEmployee.id);
-    const tbody = document.querySelector('#emp-forms-table tbody');
-    tbody.innerHTML = '';
+    const response = await API.getFormSubmissions(selectedEmployee.id);
+    const submissions = Array.isArray(response) ? response : [];
+    const documentSubmissions = submissions.filter(sub => sub.formType !== 'Leave');
 
-    if (!submissions || submissions.length === 0) {
+    const formContainer = document.getElementById('emp-doc-form-container');
+    const submittedMessage = document.getElementById('emp-doc-submitted-message');
+    const tableWrapper = document.getElementById('emp-doc-table-wrapper');
+    const tbody = document.querySelector('#emp-forms-table tbody');
+
+    if (documentSubmissions.length === 0) {
+      if (formContainer) formContainer.classList.remove('hidden');
+      if (submittedMessage) submittedMessage.classList.add('hidden');
+      if (tableWrapper) tableWrapper.classList.remove('hidden');
       tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No documents submitted yet.</td></tr>';
       return;
     }
 
-    submissions.forEach((sub, idx) => {
+    if (formContainer) formContainer.classList.add('hidden');
+    if (submittedMessage) submittedMessage.classList.remove('hidden');
+    if (tableWrapper) tableWrapper.classList.add('hidden');
+
+    tbody.innerHTML = '';
+    documentSubmissions.forEach((sub, idx) => {
       const tr = document.createElement('tr');
       const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : '-';
       
@@ -2193,30 +2232,15 @@ async function loadEmployeeForms() {
         <td>${sub.formData?.documentNumber || '-'}</td>
         <td>${sub.formData?.notes || '-'}</td>
         <td><span class="status-indicator status-in" style="font-size:0.75rem;">Submitted</span></td>
-        <td>
-          <button class="btn-delete-work" data-id="${sub.id}">Delete</button>
-        </td>
+        <td>-</td>
       `;
-
-      tr.querySelector('.btn-delete-work').addEventListener('click', async () => {
-        if (!confirm('Delete this document record?')) return;
-        try {
-          const delRes = await API.deleteFormSubmission(sub.id, selectedEmployee.id);
-          if (delRes.success) {
-            showToast('Document deleted', 'success');
-            loadEmployeeForms();
-          } else {
-            showToast(delRes.error || 'Failed to delete', 'error');
-          }
-        } catch (err) {
-          showToast('Connection error', 'error');
-        }
-      });
-
       tbody.appendChild(tr);
     });
   } catch (err) {
+    console.error('Failed to load documents:', err);
     showToast('Failed to load documents', 'error');
+    const tbody = document.querySelector('#emp-forms-table tbody');
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Failed to load documents.</td></tr>';
   }
 }
 
@@ -2240,11 +2264,12 @@ async function loadAdminForms() {
     const employeeId = empSelect.value || null;
     const formType = typeSelect.value || null;
 
-    const submissions = await API.getFormSubmissions(employeeId, formType);
+    const response = await API.getFormSubmissions(employeeId, formType);
+    const submissions = Array.isArray(response) ? response : [];
     const tbody = document.querySelector('#admin-forms-table tbody');
     tbody.innerHTML = '';
 
-    if (!submissions || submissions.length === 0) {
+    if (submissions.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No form submissions found.</td></tr>';
       return;
     }
@@ -2263,6 +2288,9 @@ async function loadAdminForms() {
       const tr = document.createElement('tr');
       const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : '-';
       const typeLabel = typeLabels[sub.formType] || sub.formType;
+      const filePreviewButton = sub.formData?.documentImage
+        ? `<button class="btn btn-secondary btn-view-doc" data-img="${sub.formData.documentImage}">View</button>`
+        : '<span class="text-muted" style="font-size:0.85rem;">No file</span>';
 
       tr.innerHTML = `
         <td class="col-sn">${idx + 1}</td>
@@ -2271,8 +2299,12 @@ async function loadAdminForms() {
         <td><span class="badge-role">${typeLabel}</span></td>
         <td>${sub.formData?.documentNumber || '-'}</td>
         <td>${sub.formData?.notes || '-'}</td>
+        <td>${filePreviewButton}</td>
       `;
       tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.btn-view-doc').forEach(btn => {
+      btn.addEventListener('click', () => openPhotoModal(btn.getAttribute('data-img')));
     });
   } catch (err) {
     showToast('Failed to load form submissions', 'error');
@@ -2335,39 +2367,48 @@ function exportFormsToCSV() {
 // PWA INSTALLATION LOGIC
 // ==========================================================================
 let deferredPrompt;
-const installBtn = document.getElementById('btn-install-app');
+
+function showInstallButton() {
+  const installBtn = document.getElementById('btn-install-app');
+  if (installBtn) {
+    installBtn.style.display = 'flex';
+  }
+}
+
+function hideInstallButton() {
+  const installBtn = document.getElementById('btn-install-app');
+  if (installBtn) {
+    installBtn.style.display = 'none';
+  }
+}
 
 window.addEventListener('beforeinstallprompt', (e) => {
   // Prevent the mini-infobar from appearing on mobile
   e.preventDefault();
-  // Stash the event so it can be triggered later.
   deferredPrompt = e;
-  // Update UI to notify the user they can install the PWA
-  if (installBtn) {
-    installBtn.style.display = 'flex';
-  }
+  showInstallButton();
 });
 
-if (installBtn) {
-  installBtn.addEventListener('click', async () => {
-    if (deferredPrompt) {
-      // Show the install prompt
-      deferredPrompt.prompt();
-      // Wait for the user to respond to the prompt
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`User response to the install prompt: ${outcome}`);
-      // We've used the prompt, and can't use it again, throw it away
-      deferredPrompt = null;
-      // Hide the install button
-      installBtn.style.display = 'none';
-    }
+function handleInstallClick() {
+  const installBtn = document.getElementById('btn-install-app');
+  if (!deferredPrompt) {
+    showToast('Install prompt is not available yet. Please try again later.', 'warning');
+    return;
+  }
+
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(({ outcome }) => {
+    console.log(`User response to the install prompt: ${outcome}`);
+    deferredPrompt = null;
+    hideInstallButton();
+  }).catch((err) => {
+    console.error('Install prompt error:', err);
+    showToast('Unable to show install prompt.', 'error');
   });
 }
 
 window.addEventListener('appinstalled', () => {
-  // Hide the app-provided install promotion
-  if (installBtn) installBtn.style.display = 'none';
-  // Clear the deferredPrompt so it can be garbage collected
+  hideInstallButton();
   deferredPrompt = null;
   console.log('PWA was installed');
 });
@@ -2624,6 +2665,16 @@ function resetClockOutPhoto() {
   const previewContainer = document.getElementById('photo-preview-container');
   if (previewContainer) previewContainer.classList.add('hidden');
   const previewImg = document.getElementById('photo-preview');
+  if (previewImg) previewImg.src = '';
+}
+
+function resetDocumentUpload() {
+  selectedDocumentImageBase64 = null;
+  const fileInput = document.getElementById('doc-file');
+  if (fileInput) fileInput.value = '';
+  const previewContainer = document.getElementById('doc-file-preview-container');
+  if (previewContainer) previewContainer.classList.add('hidden');
+  const previewImg = document.getElementById('doc-file-preview');
   if (previewImg) previewImg.src = '';
 }
 
@@ -2919,6 +2970,12 @@ document.addEventListener('DOMContentLoaded', () => {
       .catch(err => console.error('Service Worker Registry Failed', err));
   }
   
+  // Install button handler
+  const installBtn = document.getElementById('btn-install-app');
+  if (installBtn) {
+    installBtn.addEventListener('click', handleInstallClick);
+  }
+  
   // 2. Fetch configurations
   API.getSettings().then(res => {
     if (res.officeName) {
@@ -3076,6 +3133,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Leave applications & forms submission
   document.getElementById('form-leave-application').addEventListener('submit', handleLeaveApplicationSubmit);
   document.getElementById('form-add-document').addEventListener('submit', handleAddDocumentSubmit);
+  document.getElementById('doc-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    compressImage(file, 800, 800, 0.7, (compressedBase64) => {
+      selectedDocumentImageBase64 = compressedBase64;
+      document.getElementById('doc-file-preview').src = compressedBase64;
+      document.getElementById('doc-file-preview-container').classList.remove('hidden');
+    });
+  });
+  document.getElementById('btn-remove-doc-photo').addEventListener('click', () => {
+    resetDocumentUpload();
+  });
   document.getElementById('btn-export-forms-csv').addEventListener('click', exportFormsToCSV);
   document.getElementById('admin-form-employee').addEventListener('change', loadAdminForms);
   document.getElementById('admin-form-type').addEventListener('change', loadAdminForms);

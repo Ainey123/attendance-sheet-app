@@ -227,6 +227,52 @@ module.exports = async (req, res) => {
       return res.json({ success: true, data: result });
     }
 
+    // ── GET /api/forms ──────────────────────────────────────────────────────
+    if (path === 'forms' && method === 'GET') {
+      const employeeId = query.employeeId || null;
+      const formType = query.type || null;
+      const submissions = await db.getFormSubmissions(employeeId, formType);
+      return res.json(submissions);
+    }
+
+    // ── GET /api/forms/:id ───────────────────────────────────────────────────
+    if (path.startsWith('forms/') && method === 'GET') {
+      const id = path.replace('forms/', '');
+      const submission = await db.getFormSubmission(id);
+      return res.json({ success: Boolean(submission), submission });
+    }
+
+    // ── POST /api/forms ─────────────────────────────────────────────────────
+    if (path === 'forms' && method === 'POST') {
+      const body = await parseBody(req);
+      const { employeeId, employeeName, formType, formData } = body;
+      if (!employeeId || !formType || !formData) {
+        return res.status(400).json({ error: 'Employee ID, form type, and form data are required.' });
+      }
+      const submission = await db.saveFormSubmission(employeeId, employeeName, formType, formData);
+      return res.status(201).json({ success: true, submission });
+    }
+
+    // ── PUT /api/forms/:id ────────────────────────────────────────────────────
+    if (path.startsWith('forms/') && method === 'PUT') {
+      const id = path.replace('forms/', '');
+      const body = await parseBody(req);
+      const { employeeId, ...updates } = body;
+      if (!employeeId) return res.status(400).json({ error: 'Employee ID is required.' });
+      const submission = await db.updateFormSubmission(id, employeeId, updates);
+      return res.json({ success: true, submission });
+    }
+
+    // ── DELETE /api/forms/:id ─────────────────────────────────────────────────
+    if (path.startsWith('forms/') && method === 'DELETE') {
+      const id = path.replace('forms/', '');
+      const body = await parseBody(req);
+      const employeeId = body.employeeId;
+      if (!employeeId) return res.status(400).json({ error: 'Employee ID is required.' });
+      const success = await db.deleteFormSubmission(id, employeeId);
+      return success ? res.json({ success: true }) : res.status(404).json({ error: 'Record not found.' });
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
 
