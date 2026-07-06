@@ -709,7 +709,17 @@ const db = {
       }
 
       const { data, error } = await query;
-      if (error) handleSupabaseError(error, 'fetch form submissions');
+      // If the table doesn't exist in the connected database, return an empty
+      // array instead of failing the entire API. This makes the deployed
+      // frontend resilient when the DB schema hasn't been provisioned yet.
+      if (error) {
+        const msg = String(error?.message || error || '');
+        if (msg.includes("Could not find the table") || msg.includes('does not exist')) {
+          console.warn('Supabase schema missing: form_submissions table not found. Returning empty list.');
+          return [];
+        }
+        handleSupabaseError(error, 'fetch form submissions');
+      }
       return data || [];
     } catch (error) {
       handleSupabaseError(error, 'fetch form submissions');
@@ -733,6 +743,20 @@ const db = {
 
   async saveFormSubmission(employeeId, employeeName, formType, formData) {
     try {
+      if (formType !== 'Leave') {
+        const { data: existing, error: existingError } = await supabase
+          .from('form_submissions')
+          .select('id')
+          .eq('employeeId', employeeId)
+          .neq('formType', 'Leave')
+          .limit(1);
+
+        if (existingError) handleSupabaseError(existingError, 'check existing document submissions');
+        if (existing && existing.length > 0) {
+          throw new Error('Document submission already completed for this employee.');
+        }
+      }
+
       const newSubmission = {
         id: generateId('form'),
         employeeId,
