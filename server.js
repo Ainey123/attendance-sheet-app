@@ -2,6 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const os = require('os');
+
+// Load environment variables
+require('dotenv').config({ path: path.join(__dirname, '.env.local') });
+require('dotenv').config();
+
 const db = require('./db');
 
 // Initialize Supabase client only if credentials exist

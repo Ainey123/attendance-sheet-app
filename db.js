@@ -3,6 +3,10 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
+// Load environment variables
+require('dotenv').config({ path: path.join(__dirname, '.env.local') });
+require('dotenv').config();
+
 // ─── Supabase Configuration ────────────────────────────────────────────────
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
