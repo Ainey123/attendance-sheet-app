@@ -4,9 +4,11 @@
   "description": "Simple shareable office attendance sheet with location tracking",
   "main": "server.js",
   "scripts": {
+    "dump:supabase": "node ./scripts/dump_supabase_data.js",
     "start": "node server.js"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "@supabase/supabase-js": "^2.39.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",

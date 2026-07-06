@@ -1,3 +1,8 @@
+// ⚠️  SAFE MIGRATE SCRIPT — PROTECTED AGAINST DATA LOSS
+// This script runs the schema SQL file to add NEW tables/columns.
+// It will REFUSE to run if any DROP TABLE or DROP DATABASE
+// statement is found in the schema file.
+
 const fs = require('fs');
 const { Client } = require('pg');
 
@@ -21,14 +26,32 @@ async function run() {
     process.exit(1);
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // 🔒 SAFETY GUARD — NEVER REMOVE THIS CHECK
+  // This prevents any DROP TABLE or DROP DATABASE from running.
+  // These commands DELETE ALL DATA permanently with no recovery.
+  // ══════════════════════════════════════════════════════════════
+  const dangerousPattern = /\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i;
+  if (dangerousPattern.test(sql)) {
+    console.error('');
+    console.error('╔══════════════════════════════════════════════════════╗');
+    console.error('║  🚨 SAFETY BLOCK — MIGRATION ABORTED                 ║');
+    console.error('║                                                        ║');
+    console.error('║  The schema file contains a DROP TABLE / DROP DATABASE ║');
+    console.error('║  statement. Running this would DELETE ALL DATA in     ║');
+    console.error('║  your live database with NO WAY TO RECOVER.           ║');
+    console.error('║                                                        ║');
+    console.error('║  Remove the DROP statements from the SQL file first.  ║');
+    console.error('╚══════════════════════════════════════════════════════╝');
+    console.error('');
+    process.exit(1);
+  }
+
   const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
     console.log('Connected to Postgres. Running schema...');
 
-    // Split statements by semicolon and execute sequentially to avoid issues
-    // with very large single-query executions. This naive split works for
-    // straightforward schema files that end statements with semicolons.
     const statements = sql
       .split(/;\s*\n/)
       .map(s => s.trim())
@@ -43,7 +66,7 @@ async function run() {
       }
     }
 
-    console.log('Schema migration finished.');
+    console.log('Schema migration finished safely.');
   } catch (err) {
     console.error('Migration error:', err.message);
   } finally {

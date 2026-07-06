@@ -2149,12 +2149,12 @@ async function handleAddDocumentSubmit(e) {
 
   try {
     const existingSubmissions = await API.getFormSubmissions(selectedEmployee.id);
-    const hasDocumentSubmission = Array.isArray(existingSubmissions)
-      ? existingSubmissions.some(sub => sub.formType !== 'Leave')
+    const hasSameDocument = Array.isArray(existingSubmissions)
+      ? existingSubmissions.some(sub => sub.formType === formType)
       : false;
 
-    if (hasDocumentSubmission) {
-      showToast('Document submission already completed. Please contact admin for changes.', 'warning');
+    if (hasSameDocument) {
+      showToast(`You have already submitted a ${formType} document.`, 'warning');
       return;
     }
 
@@ -2193,21 +2193,39 @@ async function loadEmployeeForms() {
     const documentSubmissions = submissions.filter(sub => sub.formType !== 'Leave');
 
     const formContainer = document.getElementById('emp-doc-form-container');
-    const submittedMessage = document.getElementById('emp-doc-submitted-message');
     const tableWrapper = document.getElementById('emp-doc-table-wrapper');
     const tbody = document.querySelector('#emp-forms-table tbody');
 
+    // Always show form container and table wrapper so they can submit multiple types
+    if (formContainer) formContainer.classList.remove('hidden');
+    if (tableWrapper) tableWrapper.classList.remove('hidden');
+
+    // Hide the submitted message panel (it's no longer a one-time block)
+    const submittedMessage = document.getElementById('emp-doc-submitted-message');
+    if (submittedMessage) submittedMessage.classList.add('hidden');
+
+    // Disable already submitted document types in the dropdown
+    const docTypeSelect = document.getElementById('doc-type');
+    if (docTypeSelect) {
+      const submittedTypes = documentSubmissions.map(sub => sub.formType);
+      Array.from(docTypeSelect.options).forEach(opt => {
+        if (opt.value && opt.value !== '') {
+          const isSubmitted = submittedTypes.includes(opt.value);
+          opt.disabled = isSubmitted;
+          if (isSubmitted) {
+            opt.text = opt.text.replace(' (Submitted)', '') + ' (Submitted)';
+          } else {
+            opt.text = opt.text.replace(' (Submitted)', '');
+          }
+        }
+      });
+      docTypeSelect.value = '';
+    }
+
     if (documentSubmissions.length === 0) {
-      if (formContainer) formContainer.classList.remove('hidden');
-      if (submittedMessage) submittedMessage.classList.add('hidden');
-      if (tableWrapper) tableWrapper.classList.remove('hidden');
       tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No documents submitted yet.</td></tr>';
       return;
     }
-
-    if (formContainer) formContainer.classList.add('hidden');
-    if (submittedMessage) submittedMessage.classList.remove('hidden');
-    if (tableWrapper) tableWrapper.classList.add('hidden');
 
     tbody.innerHTML = '';
     documentSubmissions.forEach((sub, idx) => {
@@ -2240,7 +2258,9 @@ async function loadEmployeeForms() {
     console.error('Failed to load documents:', err);
     showToast('Failed to load documents', 'error');
     const tbody = document.querySelector('#emp-forms-table tbody');
-    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Failed to load documents.</td></tr>';
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Failed to load documents.</td></tr>';
+    }
   }
 }
 

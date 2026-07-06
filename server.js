@@ -2,14 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const os = require('os');
-const { createClient } = require('@supabase/supabase-js');
 const db = require('./db');
 
-// Initialize Supabase client for direct queries when needed
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
+// Initialize Supabase client only if credentials exist
+let supabase = null;
+if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+  const { createClient } = require('@supabase/supabase-js');
+  supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -123,20 +123,29 @@ app.post('/api/employees/:id/generate-token', checkAdminAuth, async (req, res) =
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
-    // If employee has no token, generate one and save to Supabase
+    // If employee has no valid token, generate one
     if (!employee.token || employee.token.length !== 8) {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
       let token = '';
       for (let i = 0; i < 8; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
-      // Update token in Supabase
-      await supabase.from('employees').update({ token }).eq('id', id);
       employee.token = token;
+      // Update using db module (handles both Supabase and local)
+      await db.updateEmployeeToken(id, token);
     }
 
     const link = `${req.protocol}://${req.get('host')}/?mode=employee&token=${employee.token}`;
     res.json({ success: true, link });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Token generation error:', err);
+    // Return existing employee link anyway
+    const employees = await db.getEmployees();
+    const employee = employees.find(e => e.id === id);
+    if (employee && employee.token) {
+      const link = `${req.protocol}://${req.get('host')}/?mode=employee&token=${employee.token}`;
+      res.json({ success: true, link });
+    } else {
+      res.status(500).json({ success: false, error: err.message });
+    }
   }
 });
 
