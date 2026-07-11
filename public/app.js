@@ -874,6 +874,8 @@ async function switchAdminTab(tabId) {
     await loadAdminSettings();
   } else if (tabId === 'tab-forms') {
     await loadAdminForms();
+  } else if (tabId === 'tab-evaluations') {
+    await loadEvaluations();
   }
 }
 
@@ -2368,19 +2370,163 @@ function exportFormsToCSV() {
         typeLabel,
         `"${(sub.formData?.documentNumber || '').replace(/"/g, '""')}"`,
         `"${(sub.formData?.notes || '').replace(/"/g, '""')}"`
-      ].join(','));
+      ]);
     });
 
-    const link = document.createElement('a');
-    link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
-    link.download = `Form_Submissions_${new Date().toISOString().split('T')[0]}.csv`;
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Form_Submissions_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     showToast('Form submissions exported', 'success');
   }).catch(err => {
+    console.error('Export error:', err);
     showToast('Failed to export', 'error');
   });
+}
+
+// Export forms to PDF
+function exportFormsToPDF() {
+  const tableContainer = document.getElementById('admin-forms-table');
+  if (!tableContainer) return;
+
+  const opt = {
+    margin: 0.5,
+    filename: `Form_Submissions_${new Date().toISOString().split('T')[0]}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+  };
+
+  showToast('Generating PDF...', 'info');
+  html2pdf().set(opt).from(tableContainer).save().then(() => {
+    showToast('PDF Exported Successfully', 'success');
+  });
+}
+
+// ==========================================================================
+// EVALUATIONS LOGIC (AUTOMATIC)
+// ==========================================================================
+function initEvaluationsTab() {
+  const monthInput = document.getElementById('eval-month');
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  
+  if (!monthInput.value) {
+    monthInput.value = currentMonth;
+  }
+
+  monthInput.addEventListener('change', loadEvaluations);
+  loadEvaluations();
+}
+
+async function loadEvaluations() {
+  const month = document.getElementById('eval-month').value;
+  if (!month) return;
+  
+  const tbody = document.querySelector('#evaluations-table tbody');
+  tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Calculating...</td></tr>';
+  
+  try {
+    // Fetch all required data for calculation
+    const [employees, allAttendance, workRecords] = await Promise.all([
+      API.getEmployees(),
+      API.getAttendanceLogs(),
+      API.getWorkRecords()
+    ]);
+    
+    // Filter attendance and work records by the selected month
+    const monthAttendance = allAttendance.filter(a => a.date && a.date.startsWith(month));
+    const monthWorkRecords = workRecords.filter(w => w.date && w.date.startsWith(month));
+
+    const stats = {};
+
+    // Initialize stats
+    employees.forEach(emp => {
+      stats[emp.id] = {
+        name: emp.name,
+        totalDays: 0,
+        totalHours: 0,
+        workCount: 0,
+        score: 0
+      };
+    });
+
+    // Process Attendance
+    monthAttendance.forEach(a => {
+      if (stats[a.employeeId]) {
+        stats[a.employeeId].totalDays += 1;
+        if (a.duration) {
+          stats[a.employeeId].totalHours += (a.duration / 60); // minutes to hours
+        }
+      }
+    });
+
+    // Process Work Records
+    monthWorkRecords.forEach(w => {
+      if (stats[w.employeeId]) {
+        stats[w.employeeId].workCount += 1;
+      }
+    });
+
+    const evaluations = [];
+    
+    // Calculate Score (Max ~100)
+    for (const id in stats) {
+      const s = stats[id];
+      // Include all employees, even if they haven't worked this month
+      let rawScore = (s.totalDays * 2) + (s.totalHours * 0.2) + (s.workCount * 1);
+      s.score = Math.min(100, Math.round(rawScore));
+      evaluations.push(s);
+    }
+
+    if (evaluations.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No employees found.</td></tr>';
+      document.getElementById('best-employee-card').innerHTML = 'No employees available';
+      return;
+    }
+    
+    // Sort by score descending
+    evaluations.sort((a, b) => b.score - a.score);
+    
+    const bestEval = evaluations[0];
+    
+    if (bestEval.score > 0) {
+      document.getElementById('best-employee-card').innerHTML = `
+        <div style="font-size: 2rem;">🌟 ${bestEval.name} 🌟</div>
+        <div style="font-size: 1.2rem; margin-top: 0.5rem; font-weight: normal; color: var(--text-muted);">
+          Auto-Score: <strong>${bestEval.score}</strong> / 100
+        </div>
+      `;
+    } else {
+      document.getElementById('best-employee-card').innerHTML = `
+        <div style="font-size: 1.2rem; color: var(--text-muted); margin-top: 0.5rem;">
+          No work recorded yet for this month.
+        </div>
+      `;
+    }
+
+    tbody.innerHTML = '';
+    evaluations.forEach((ev, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td><strong>${ev.name}</strong></td>
+        <td>${ev.totalHours.toFixed(1)} hrs</td>
+        <td>${ev.totalDays} days</td>
+        <td>${ev.workCount}</td>
+        <td><span class="badge ${ev.score >= 50 ? 'badge-in' : (ev.score > 0 ? 'badge-out' : '')}">${ev.score}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Error calculating evaluations.</td></tr>';
+  }
 }
 
 // ==========================================================================
@@ -3165,9 +3311,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-remove-doc-photo').addEventListener('click', () => {
     resetDocumentUpload();
   });
-  document.getElementById('btn-export-forms-csv').addEventListener('click', exportFormsToCSV);
   document.getElementById('admin-form-employee').addEventListener('change', loadAdminForms);
   document.getElementById('admin-form-type').addEventListener('change', loadAdminForms);
+  document.getElementById('btn-export-forms-csv').addEventListener('click', exportFormsToCSV);
+  document.getElementById('btn-export-forms-pdf').addEventListener('click', exportFormsToPDF);
+
+  // Initialize Evaluations Tab
+  initEvaluationsTab();
 
   // Camera upload bindings
   document.getElementById('btn-trigger-camera').addEventListener('click', () => {
