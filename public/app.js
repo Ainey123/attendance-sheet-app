@@ -279,8 +279,8 @@ function fetchLocation() {
         errMsg = 'Request to get location timed out. Please try again.';
       }
       
-      locTitle.innerText = 'GPS Unavailable';
-      locText.innerText = `${errMsg} You can still clock in/out without location.`;
+      locTitle.innerText = '📍 Location Required';
+      locText.innerText = `${errMsg} Please turn on your location to clock in.`;
       
       updateClockButtonsDisabledState(false);
     },
@@ -288,7 +288,7 @@ function fetchLocation() {
   );
 }
 
-// Enable/disable clock buttons from employee selection and shift status (GPS is optional)
+// Enable/disable clock buttons from employee selection, shift status, and GPS location
 function updateClockButtonsDisabledState(disableAll = false) {
   const btnIn = document.getElementById('btn-clock-in');
   const btnOut = document.getElementById('btn-clock-out');
@@ -300,6 +300,9 @@ function updateClockButtonsDisabledState(disableAll = false) {
     return;
   }
 
+  // Location is required for clock-in
+  const locationReady = !!userLocation;
+
   if (selectedEmployee.status === 'IN') {
     btnIn.disabled = true;
     btnOut.disabled = false;
@@ -307,8 +310,16 @@ function updateClockButtonsDisabledState(disableAll = false) {
     btnIn.disabled = true;
     btnOut.disabled = true;
   } else {
-    btnIn.disabled = false;
+    // Only enable clock-in when GPS location is available
+    btnIn.disabled = !locationReady;
     btnOut.disabled = true;
+  }
+
+  // Update clock-in button tooltip/title to guide the user
+  if (!locationReady && selectedEmployee.status !== 'IN' && selectedEmployee.status !== 'LEAVE') {
+    btnIn.title = 'Please turn on your location to clock in';
+  } else {
+    btnIn.title = '';
   }
 }
 
@@ -671,6 +682,16 @@ async function loadEmployeeLeaveRequests() {
 // Clock In trigger
 async function handleClockIn() {
   if (!selectedEmployee) return;
+
+  // Block clock-in if location is not available
+  if (!userLocation) {
+    showToast('📍 Please turn on your location first to clock in', 'error');
+    // Scroll to location card so user can see the issue
+    const locCard = document.getElementById('location-card');
+    if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
   const originalBtn = document.getElementById('btn-clock-in');
   const btnText = originalBtn.querySelector('.btn-text-large');
   
