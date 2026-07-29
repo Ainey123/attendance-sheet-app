@@ -255,6 +255,9 @@ app.post('/api/attendance/clock-in', async (req, res) => {
   if (!employeeId) {
     return res.status(400).json({ error: 'Employee ID is required.' });
   }
+  if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
+    return res.status(400).json({ success: false, error: 'Please turn on location first' });
+  }
   try {
     const result = await db.clockIn(employeeId, location);
     res.json({ success: true, message: 'Clocked in successfully!', data: result });

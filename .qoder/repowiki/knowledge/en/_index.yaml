@@ -1,0 +1,48 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+exported_at: "2026-06-13T15:12:06Z"
+modules:
+    "":
+        dir_name: Office Attendance & Work Record Management
+        title: Office Attendance & Work Record Management
+        scope:
+            - .gitignore
+            - .vercelignore
+            - DEPLOYMENT_GUIDE.md
+            - Dockerfile
+            - README.md
+            - SETUP_ENV.txt
+            - Start_Attendance_App.bat
+            - attendance_sheet.csv
+            - data.json
+            - db.js
+            - migrate.js
+            - package-lock.json
+            - package.json
+            - render.yaml
+            - schema.sql
+            - server.js
+            - supabase-schema.sql
+            - vercel.json
+            - api/
+            - public/
+            - .env.example
+            - .env.local
+            - .vercel\README.txt
+            - .vercel\project.json
+            - api\_helpers.js
+            - api\_middleware.js
+            - api\index.js
+            - public\app.js
+            - public\icon.svg
+            - public\index.html
+            - public\manifest.json
+            - public\store.js
+            - public\style.css
+            - public\sw.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

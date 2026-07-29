@@ -59,11 +59,16 @@ const API = {
       headers: { 'X-Admin-Passcode': adminPasscode }
     });
   },
-  clockIn: (employeeId, location) => fetchJson('/api/attendance/clock-in', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ employeeId, location })
-  }),
+  clockIn: (employeeId, location) => {
+    if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
+      return Promise.reject(new Error('Please turn on your location first to clock in'));
+    }
+    return fetchJson('/api/attendance/clock-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId, location })
+    });
+  },
   clockOut: (employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) => fetchJson('/api/attendance/clock-out', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -309,8 +314,8 @@ function updateClockButtonsDisabledState(disableAll = false) {
     return;
   }
 
-  // Location is required for clock-in
-  const locationReady = !!userLocation;
+  // Location is required for clock-in (must have valid coordinates)
+  const locationReady = !!(userLocation && typeof userLocation.latitude === 'number' && typeof userLocation.longitude === 'number');
 
   if (selectedEmployee.status === 'IN') {
     btnIn.disabled = true;

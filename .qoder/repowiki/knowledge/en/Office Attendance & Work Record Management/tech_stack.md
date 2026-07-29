@@ -1,0 +1,3 @@
+- Supabase PostgreSQL via `@supabase/supabase-js` for persistent relational data storage.
+- Vercel Serverless Functions (`@vercel/node`) for production API hosting, configured via `vercel.json`.
+- Express.js for local server emulation and static asset serving.

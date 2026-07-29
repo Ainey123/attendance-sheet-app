@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS form_submissions (
   "submittedAt"      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 7. Employee Evaluations Table
+CREATE TABLE IF NOT EXISTS employee_evaluations (
+  "id"               TEXT PRIMARY KEY,
+  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeName"     TEXT NOT NULL,
+  "month"            TEXT NOT NULL,
+  "score"            INTEGER NOT NULL CHECK (score >= 0 AND score <= 100),
+  "remarks"          TEXT,
+  "createdAt"        TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- ── Indexes for fast lookups (IF NOT EXISTS prevents duplicate errors) ─
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id  ON attendance("employeeId");
 CREATE INDEX IF NOT EXISTS idx_attendance_date         ON attendance("date");
@@ -106,6 +117,7 @@ ALTER TABLE attendance     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_records   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_profiles  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE form_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employee_evaluations ENABLE ROW LEVEL SECURITY;
 
 -- Policies (DO NOTHING if they already exist — avoids errors on re-run)
 DO $$ BEGIN
@@ -126,6 +138,9 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='form_submissions' AND policyname='Allow all access for form_submissions') THEN
     CREATE POLICY "Allow all access for form_submissions" ON form_submissions FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='employee_evaluations' AND policyname='Allow all access for employee_evaluations') THEN
+    CREATE POLICY "Allow all access for employee_evaluations" ON employee_evaluations FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 

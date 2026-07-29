@@ -1,0 +1,4 @@
+- The module follows a client-server architecture with a static frontend (`public/`) and a backend API that supports both Express.js (`server.js`) and Vercel Serverless (`api/index.js`).
+- Data persistence is handled by a dedicated Supabase adapter (`db.js`), which abstracts all SQL interactions for employees, attendance logs, and work profiles.
+- The API layer implements a shared routing logic where `api/index.js` acts as a serverless entry point, while `server.js` provides a local development environment with identical endpoint definitions.
+- Security is enforced via header-based admin passcode verification (`x-admin-passcode`) and unique employee share tokens for public-facing clock-in links.

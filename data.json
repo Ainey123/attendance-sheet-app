@@ -1,337 +1,163 @@
 {
   "employees": [
     {
-      "id": "emp_demo2",
-      "name": "Jane Smith",
+      "id": "emp_mr8uwems_g8rol",
+      "name": "alia",
+      "role": "operator",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "qF3qaQwS",
+      "dateCreated": "2026-07-06T06:46:03.028+00:00"
+    },
+    {
+      "id": "emp_mr8xe598_kexu1",
+      "name": "Muhammad Danish",
+      "role": "Supervisor",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "EZ0VXWfo",
+      "dateCreated": "2026-07-06T07:55:49.916+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_wv6cc",
+      "name": "Muhammad Ibrahim",
+      "role": "Marketing coordinator",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "LZEuSqvH",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_u3jmd",
+      "name": "Muhammad Asif",
+      "role": "Senior Tech",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "2ZT1NFhQ",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_wwt9c",
+      "name": "Muhammad Faisal",
+      "role": "Tech",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "qYIb6fGX",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_05phw",
+      "name": "Muhammad Ali",
+      "role": "Tech",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "YEajgUFu",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_k8a6j",
+      "name": "Faisal Bashir",
+      "role": "Supervisor",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "63iw7aYc",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_rtefg",
+      "name": "Ali Shezad",
+      "role": "Complaint coordinator",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "TGxkBwqR",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_3btb8",
+      "name": "Asif Rashid",
+      "role": "Tech",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "UUkn5oym",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_jj2mr",
+      "name": "Naeem Abbas",
+      "role": "Data operator",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "AQ1HCPSZ",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_lg3sx",
+      "name": "Shazaib",
+      "role": "Data operator",
+      "status": "OUT",
+      "pin": "1234",
+      "token": "JlXla2BE",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+    },
+    {
+      "id": "emp_mr8xe59q_09g8f",
+      "name": "hamza",
       "role": "Designer",
       "status": "OUT",
-      "dateCreated": "2026-06-04T07:14:06.706Z",
       "pin": "1234",
-      "token": "fcb9c97093b06c0e2e8c4ed15d6c43c2"
+      "token": "eZq8z0Pe",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
     },
     {
-      "id": "emp_mpz706o9_6rawr",
+      "id": "emp_mr8xe59q_t73jb",
       "name": "fatma",
-      "role": "employee",
-      "status": "OUT",
-      "dateCreated": "2026-06-04T07:47:30.633Z",
-      "pin": "1234",
-      "token": "e8194b00ff9490c0f4ed96039a6fc500"
-    },
-    {
-      "id": "emp_mq0hvo3d_5m21u",
-      "name": "sana",
-      "role": "employee",
-      "status": "OUT",
-      "pin": "2345",
-      "dateCreated": "2026-06-05T05:39:41.881Z",
-      "token": "ea09936074d921edb534cfe4afc740e3"
-    },
-    {
-      "id": "emp_mq681sd6_rhbgb",
-      "name": "Auto Test",
-      "role": "QA",
+      "role": "Operator",
       "status": "OUT",
       "pin": "1234",
-      "token": "JzdxLcDU",
-      "dateCreated": "2026-06-09T05:51:08.250Z"
-    },
-    {
-      "id": "emp_mq68nb3s_c7bga",
-      "name": "sana",
-      "role": "employee",
-      "status": "OUT",
-      "pin": "1234",
-      "token": "0Vha5baD",
-      "dateCreated": "2026-06-09T06:07:52.312Z"
-    },
-    {
-      "id": "emp_mq6hcjzy_lchrf",
-      "name": "alina",
-      "role": "engineer",
-      "status": "OUT",
-      "pin": "1234",
-      "token": "vNPu8xml",
-      "dateCreated": "2026-06-09T10:11:27.166Z"
+      "token": "Ag4nhbA0",
+      "dateCreated": "2026-07-06T07:55:49.934+00:00"
     }
   ],
   "attendance": [
     {
-      "id": "att_mpz5u2t3_z78ij",
-      "employeeId": "emp_demo1",
-      "employeeName": "John Doe",
-      "role": "Developer",
-      "date": "2026-06-04",
-      "clockInTime": "2026-06-04T07:14:46.071Z",
-      "clockOutTime": "2026-06-04T07:14:46.077Z",
-      "clockInLocation": {
-        "latitude": 40.7128,
-        "longitude": -74.006,
-        "accuracy": 10
-      },
-      "clockOutLocation": {
-        "latitude": 40.713,
-        "longitude": -74.0062,
-        "accuracy": 12
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mpz68j8k_shuz5",
-      "employeeId": "emp_demo1",
-      "employeeName": "John Doe",
-      "role": "Developer",
-      "date": "2026-06-04",
-      "clockInTime": "2026-06-04T07:26:00.548Z",
-      "clockOutTime": "2026-06-04T07:26:10.373Z",
-      "clockInLocation": {
-        "latitude": 31.431986,
-        "longitude": 74.221228,
-        "accuracy": 147
-      },
-      "clockOutLocation": {
-        "latitude": 31.431986,
-        "longitude": 74.221228,
-        "accuracy": 147
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mpz6ojqj_hnvku",
-      "employeeId": "emp_demo1",
-      "employeeName": "John Doe",
-      "role": "Developer",
-      "date": "2026-06-04",
-      "clockInTime": "2026-06-04T07:38:27.690Z",
-      "clockOutTime": "2026-06-04T07:38:27.714Z",
-      "clockInLocation": {
-        "latitude": 40.7128,
-        "longitude": -74.006,
-        "accuracy": 10
-      },
-      "clockOutLocation": {
-        "latitude": 40.713,
-        "longitude": -74.0062,
-        "accuracy": 12
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mpz711mc_rmlwn",
-      "employeeId": "emp_mpz706o9_6rawr",
-      "employeeName": "fatma",
-      "role": "employee",
-      "date": "2026-06-04",
-      "clockInTime": "2026-06-04T07:48:10.740Z",
-      "clockOutTime": "2026-06-04T07:48:13.790Z",
-      "clockInLocation": {
-        "latitude": 31.431986,
-        "longitude": 74.221228,
-        "accuracy": 147
-      },
-      "clockOutLocation": {
-        "latitude": 31.431986,
-        "longitude": 74.221228,
-        "accuracy": 147
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mq0hw9y8_27mtm",
-      "employeeId": "emp_mq0hvo3d_5m21u",
-      "employeeName": "sana",
-      "role": "employee",
-      "date": "2026-06-05",
-      "clockInTime": "2026-06-05T05:40:10.208Z",
-      "clockOutTime": "2026-06-05T05:40:37.119Z",
-      "clockInLocation": {
-        "latitude": 31.431929,
-        "longitude": 74.221222,
-        "accuracy": 41
-      },
-      "clockOutLocation": {
-        "latitude": 31.431929,
-        "longitude": 74.221222,
-        "accuracy": 41
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mq0i2t1b_clrhe",
-      "employeeId": "emp_mq0hvo3d_5m21u",
-      "employeeName": "sana",
-      "role": "employee",
-      "date": "2026-06-05",
-      "clockInTime": "2026-06-05T05:45:14.879Z",
-      "clockOutTime": "2026-06-05T05:45:16.866Z",
-      "clockInLocation": {
-        "latitude": 31.43201,
-        "longitude": 74.221218,
-        "accuracy": 213
-      },
-      "clockOutLocation": {
-        "latitude": 31.43201,
-        "longitude": 74.221218,
-        "accuracy": 213
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mq0i6pf9_xb44b",
-      "employeeId": "emp_mpz706o9_6rawr",
-      "employeeName": "fatma",
-      "role": "employee",
-      "date": "2026-06-05",
-      "clockInTime": "2026-06-05T05:48:16.821Z",
-      "clockOutTime": "2026-06-05T05:48:18.566Z",
-      "clockInLocation": {
-        "latitude": 31.43201,
-        "longitude": 74.221218,
-        "accuracy": 213
-      },
-      "clockOutLocation": {
-        "latitude": 31.43201,
-        "longitude": 74.221218,
-        "accuracy": 213
-      },
-      "duration": 0
-    },
-    {
-      "id": "att_mq687zzp_fmtom",
-      "employeeId": "emp_mpz706o9_6rawr",
-      "employeeName": "fatma",
-      "role": "employee",
-      "date": "2026-06-09",
-      "clockInTime": "2026-06-09T05:55:58.069Z",
-      "clockOutTime": "2026-06-09T05:57:05.658Z",
-      "clockInLocation": null,
-      "clockOutLocation": null,
-      "duration": 1,
-      "performanceNotes": "sir aj meny jan sa march tak ki recouncilation ki hai",
-      "moneySpent": 2000
-    },
-    {
-      "id": "att_mq68pud8_m8fbc",
-      "employeeId": "emp_demo2",
-      "employeeName": "Jane Smith",
-      "role": "Designer",
-      "date": "2026-06-09",
-      "clockInTime": "2026-06-09T06:09:50.588Z",
-      "clockOutTime": "2026-06-09T06:10:16.248Z",
+      "id": "att_mr8ux6yx_ugmzp",
+      "employeeId": "emp_mr8uwems_g8rol",
+      "employeeName": "alia",
+      "role": "operator",
+      "date": "2026-07-06",
+      "clockInTime": "2026-07-06T00:00:00+00:00",
+      "clockOutTime": "2026-07-06T00:00:00+00:00",
       "clockInLocation": null,
       "clockOutLocation": null,
       "duration": 0,
-      "performanceNotes": "today i wok on excel sheet",
-      "moneySpent": 0
-    },
-    {
-      "id": "att_mq6bra9y_nva1s",
-      "employeeId": "emp_mpz706o9_6rawr",
-      "employeeName": "fatma",
-      "role": "employee",
-      "date": "2026-06-09",
-      "clockInTime": "2026-06-09T07:34:56.710Z",
-      "clockOutTime": "2026-06-09T07:36:39.632Z",
-      "clockInLocation": null,
-      "clockOutLocation": null,
-      "duration": 2,
-      "performanceNotes": "i do mis entry of 3 sheets",
-      "moneySpent": 3000
-    },
-    {
-      "id": "att_mq6hh3bz_32wbn",
-      "employeeId": "emp_demo2",
-      "employeeName": "Jane Smith",
-      "role": "Designer",
-      "date": "2026-06-09",
-      "clockInTime": "2026-06-09T10:14:58.847Z",
-      "clockOutTime": "2026-06-09T10:15:27.183Z",
-      "clockInLocation": null,
-      "clockOutLocation": null,
-      "duration": 0,
-      "performanceNotes": "mis sheet",
-      "moneySpent": 0
+      "performanceNotes": "LEAVE: Sick - sick leave",
+      "receivedAmount": 0,
+      "expenseAmount": 0,
+      "moneySpent": 0,
+      "image": null
     }
   ],
-  "workRecords": [
-    {
-      "id": "wr_mq68kx2m_z2ymg",
-      "employeeId": "emp_mpz706o9_6rawr",
-      "employeeName": "fatma",
-      "month": "2026-06",
-      "date": "2026-06-09",
-      "performedWork": "Door installation at site",
-      "paymentIssuance": 3000,
-      "balancePayment": "2460",
-      "materialIssuance": "MDF Sheet",
-      "materialBalance": "26FT",
-      "otherRemarks": "COMPLETE",
-      "createdAt": "2026-06-09T06:06:00.814Z"
-    },
-    {
-      "id": "wr_mq68pn3r_2j5d4",
-      "employeeId": "emp_demo2",
-      "employeeName": "Jane Smith",
-      "month": "2026-06",
-      "date": "2026-06-09",
-      "performedWork": "today i work on bank building",
-      "paymentIssuance": 25677,
-      "balancePayment": "30000",
-      "materialIssuance": "",
-      "materialBalance": "234",
-      "otherRemarks": "COMPLETE",
-      "createdAt": "2026-06-09T06:09:41.175Z"
-    },
-    {
-      "id": "wr_mq6bkf1i_obgxq",
-      "employeeId": "emp_mq0hvo3d_5m21u",
-      "employeeName": "sana",
-      "month": "2026-06",
-      "date": "2026-06-09",
-      "performedWork": "glass work",
-      "paymentIssuance": 50000,
-      "balancePayment": "40000",
-      "materialIssuance": "glass, steal",
-      "materialBalance": "10000,30000",
-      "otherRemarks": "COMPLETE",
-      "createdAt": "2026-06-09T07:29:36.294Z"
-    },
-    {
-      "id": "wr_mq6bsik2_mztbd",
-      "employeeId": "emp_mpz706o9_6rawr",
-      "employeeName": "fatma",
-      "month": "2026-06",
-      "date": "2026-06-09",
-      "performedWork": "mis sheet 4,5",
-      "paymentIssuance": 0,
-      "balancePayment": "40000",
-      "materialIssuance": "glass, steal",
-      "materialBalance": "10000,30000",
-      "otherRemarks": "COMPLETE",
-      "createdAt": "2026-06-09T07:35:54.098Z"
-    },
-    {
-      "id": "wr_mq6hfhhb_ewumm",
-      "employeeId": "emp_mq6hcjzy_lchrf",
-      "employeeName": "alina",
-      "month": "2026-06",
-      "date": "2026-06-09",
-      "performedWork": "glass",
-      "paymentIssuance": 50000,
-      "balancePayment": "40000",
-      "materialIssuance": "glass,steal",
-      "materialBalance": "16ft",
-      "otherRemarks": "COMPLETE",
-      "createdAt": "2026-06-09T10:13:43.871Z"
-    }
-  ],
-  "workProfiles": {
-    "emp_mq0hvo3d_5m21u:2026-06": {
-      "fatherName": "khalil"
-    }
-  },
+  "workRecords": [],
+  "workProfiles": {},
   "settings": {
-    "adminPasscode": "1234",
-    "officeName": "My Office"
-  }
+    "id": "default",
+    "adminPasscode": "1289",
+    "officeName": "My Office",
+    "adminToken": null
+  },
+  "formSubmissions": [
+    {
+      "id": "form_mr8ux5tt_1sbc4",
+      "employeeId": "emp_mr8uwems_g8rol",
+      "employeeName": "alia",
+      "formType": "Leave",
+      "formData": {
+        "notes": "",
+        "reason": "sick leave",
+        "leaveDate": "2026-07-06",
+        "leaveType": "Sick"
+      },
+      "submittedAt": "2026-07-06T06:46:38.273+00:00"
+    }
+  ]
 }

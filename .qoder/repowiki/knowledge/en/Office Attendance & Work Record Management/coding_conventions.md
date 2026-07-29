@@ -1,0 +1,3 @@
+- API endpoints consistently use a custom `X-Admin-Passcode` header for administrative authorization instead of standard session cookies or JWTs.
+- Database operations in `db.js` uniformly utilize try-catch blocks with a centralized `handleSupabaseError` helper for consistent error reporting.
+- Frontend state management relies on a centralized `Store` utility (`public/store.js`) to persist employee lists and admin credentials in `localStorage`.

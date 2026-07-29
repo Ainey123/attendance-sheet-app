@@ -1,0 +1,1 @@
+A dual-mode web application for tracking employee attendance, location, and daily work records with admin roster management.

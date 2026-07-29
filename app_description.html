@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Office Attendance Sheet App - Product Overview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: #ffffff;
+            padding: 40px 60px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #1e40af;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+
+        .header .subtitle {
+            font-size: 14px;
+            color: #64748b;
+            font-weight: 400;
+        }
+
+        .section {
+            margin-bottom: 25px;
+        }
+
+        .section h2 {
+            font-size: 18px;
+            color: #1e40af;
+            margin-bottom: 10px;
+            font-weight: 600;
+            border-left: 4px solid #2563eb;
+            padding-left: 12px;
+        }
+
+        .section p {
+            font-size: 14px;
+            color: #334155;
+            margin-bottom: 10px;
+            line-height: 1.7;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .feature-item {
+            padding: 12px;
+            background: #f8fafc;
+            border-radius: 6px;
+            border-left: 3px solid #2563eb;
+        }
+
+        .feature-item h3 {
+            font-size: 13px;
+            color: #1e40af;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .feature-item p {
+            font-size: 12px;
+            color: #475569;
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        .tech-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+
+        .tech-table th {
+            background: #f1f5f9;
+            color: #1e40af;
+            text-align: left;
+            padding: 10px 12px;
+            font-weight: 600;
+            border-bottom: 2px solid #cbd5e1;
+        }
+
+        .tech-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+
+        .tech-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .highlight-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .highlight-box h3 {
+            color: #1e40af;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .highlight-box p {
+            font-size: 13px;
+            color: #334155;
+            margin: 0;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #dcfce7;
+            color: #166534;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 5px;
+            margin-top: 5px;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        @media print {
+            body {
+                padding: 20px 30px;
+            }
+            .feature-item {
+                break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Office Attendance Sheet App</h1>
+        <div class="subtitle">Professional Attendance Tracking & Financial Management System</div>
+        <div style="margin-top: 8px;">
+            <span class="badge">Cloud-Hosted</span>
+            <span class="badge">GPS-Verified</span>
+            <span class="badge">Zero-Installation</span>
+            <span class="badge">Professional Reports</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Product Overview</h2>
+        <p>The Office Attendance Sheet App is a modern, cloud-based workforce management solution designed for offices and workshops that require accurate attendance tracking, GPS-verified clock-in/out, and automated financial balance management. Built with enterprise-grade reliability, it eliminates paper-based attendance systems and manual calculations while providing professional reporting capabilities.</p>
+    </div>
+
+    <div class="section">
+        <h2>Key Features</h2>
+        <div class="features-grid">
+            <div class="feature-item">
+                <h3>📍 GPS Location Tracking</h3>
+                <p>Every clock-in/out captures real-time GPS coordinates with reverse geocoding to display human-readable addresses.</p>
+            </div>
+            <div class="feature-item">
+                <h3>🔗 Permanent Login Links</h3>
+                <p>Each employee receives a unique, permanent URL for instant one-click access — no passwords to remember or reset.</p>
+            </div>
+            <div class="feature-item">
+                <h3>💰 Auto Financial Carry-Over</h3>
+                <p>Remaining balances automatically roll over to the next day. Starting balances calculate in real-time as amounts are entered.</p>
+            </div>
+            <div class="feature-item">
+                <h3>📊 Live Dashboard</h3>
+                <p>Admin panel displays real-time statistics: total employees, currently clocked in, attendance records, and office settings.</p>
+            </div>
+            <div class="feature-item">
+                <h3>📄 Professional PDF Reports</h3>
+                <p>Generate individual employee monthly reports or comprehensive company-wide attendance and financial summaries.</p>
+            </div>
+            <div class="feature-item">
+                <h3>📱 Installable (PWA)</h3>
+                <p>Employees can install the app on their phone's home screen like a native app — works across all modern browsers.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>User Roles & Capabilities</h2>
+        <table class="tech-table">
+            <thead>
+                <tr>
+                    <th style="width: 30%;">Role</th>
+                    <th>Capabilities</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Employee</strong></td>
+                    <td>Clock in/out with GPS • View personal log • Add daily work entries • Track financial balances (starting, added, expenses, remaining) • Export personal monthly PDF reports</td>
+                </tr>
+                <tr>
+                    <td><strong>Administrator</strong></td>
+                    <td>View live dashboard stats • Manage employee roster • Add/delete employees • View all attendance logs • Monitor financial records across all employees • Generate company-wide PDF reports • Configure office settings</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Technical Architecture</h2>
+        <table class="tech-table">
+            <thead>
+                <tr>
+                    <th style="width: 25%;">Component</th>
+                    <th>Technology</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Frontend</td>
+                    <td>HTML5, CSS3 (Glass-Morphism UI), Vanilla JavaScript, PWA Support</td>
+                </tr>
+                <tr>
+                    <td>Backend (Production)</td>
+                    <td>Vercel Serverless Functions (Node.js/Express)</td>
+                </tr>
+                <tr>
+                    <td>Database</td>
+                    <td>Supabase PostgreSQL (Cloud-hosted, 500MB free tier, Row-Level Security)</td>
+                </tr>
+                <tr>
+                    <td>Hosting</td>
+                    <td>Vercel (Automatic HTTPS, Global CDN, Zero Downtime Deployments)</td>
+                </tr>
+                <tr>
+                    <td>PDF Generation</td>
+                    <td>html2pdf.js (Client-side, no server dependencies)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="highlight-box">
+        <h3>✅ Security & Reliability Benefits</h3>
+        <p>• <strong>Persistent Cloud Storage:</strong> Data never disappears — stored in Supabase PostgreSQL, not local files<br>
+        • <strong>Automatic HTTPS:</strong> All traffic encrypted in transit via Vercel's SSL certificates<br>
+        • <strong>GPS Verification:</strong> Prevents false clock-ins by capturing exact location data<br>
+        • <strong>Row-Level Security:</strong> Database-level access controls protect employee data<br>
+        • <strong>Zero Maintenance:</strong> Fully managed cloud infrastructure — no servers to maintain<br>
+        • <strong>99.9% Uptime:</strong> Enterprise-grade hosting with automatic failover and global CDN</p>
+    </div>
+
+    <div class="section">
+        <h2>Financial Balance Flow</h2>
+        <p>The app implements an automated daily balance carry-over system:</p>
+        <table class="tech-table">
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th>Starting Balance</th>
+                    <th>Amount Added</th>
+                    <th>Expenses</th>
+                    <th>Remaining Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Day 1</strong></td>
+                    <td>$0.00</td>
+                    <td>+$5,000.00</td>
+                    <td>-$3,000.00</td>
+                    <td><strong>$2,000.00</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Day 2</strong></td>
+                    <td>$2,000.00</td>
+                    <td>+$2,000.00</td>
+                    <td>-$1,500.00</td>
+                    <td><strong>$2,500.00</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Day 3</strong></td>
+                    <td>$2,500.00</td>
+                    <td>+$1,000.00</td>
+                    <td>-$800.00</td>
+                    <td><strong>$2,700.00</strong></td>
+                </tr>
+            </tbody>
+        </table>
+        <p style="margin-top: 10px; font-size: 12px; color: #64748b;"><em>Formula: Starting Balance + Amount Added - Expenses = Remaining Balance (carries to next day automatically)</em></p>
+    </div>
+
+    <div class="section">
+        <h2>Deployment Information</h2>
+        <table class="tech-table">
+            <tbody>
+                <tr>
+                    <td><strong>Live URL</strong></td>
+                    <td><a href="https://attendence-sheet-app.vercel.app" style="color: #2563eb; text-decoration: none;">https://attendence-sheet-app.vercel.app</a></td>
+                </tr>
+                <tr>
+                    <td><strong>Hosting Provider</strong></td>
+                    <td>Vercel (Free Tier)</td>
+                </tr>
+                <tr>
+                    <td><strong>Database</strong></td>
+                    <td>Supabase PostgreSQL (Free Tier, 500MB)</td>
+                </tr>
+                <tr>
+                    <td><strong>Access Model</strong></td>
+                    <td>Zero-installation web app — works on any device with a modern browser</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        <p>Office Attendance Sheet App — Product Overview Document</p>
+        <p>Generated on June 13, 2026 | Version 1.0</p>
+    </div>
+
+</body>
+</html>

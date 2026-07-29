@@ -35,11 +35,12 @@ function loadLocalData() {
         workRecords: file.workRecords || [],
         workProfiles: file.workProfiles || {},
         settings: file.settings || { adminPasscode: '1234', officeName: 'My Office' },
-        formSubmissions: file.formSubmissions || []
+        formSubmissions: file.formSubmissions || [],
+        employeeEvaluations: file.employeeEvaluations || []
       };
     }
   } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [] };
+  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [] };
 }
 
 function saveLocalData(data) {
@@ -377,6 +378,9 @@ const db = {
   },
 
   async clockIn(employeeId, location) {
+    if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
+      throw new Error('Please turn on location first');
+    }
     if (useLocalFallback) {
       const data = loadLocalData();
       const employee = data.employees.find(e => e.id === employeeId);

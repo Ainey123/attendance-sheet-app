@@ -149,6 +149,9 @@ module.exports = async (req, res) => {
     // ── POST /api/attendance/clock-in ─────────────────────────────────────────
     if (path === 'attendance/clock-in' && method === 'POST') {
       const body = await parseBody(req);
+      if (!body.location || typeof body.location.latitude !== 'number' || typeof body.location.longitude !== 'number') {
+        return res.status(400).json({ success: false, error: 'Please turn on location first' });
+      }
       const result = await db.clockIn(body.employeeId, body.location);
       return res.json({ success: true, data: result });
     }
