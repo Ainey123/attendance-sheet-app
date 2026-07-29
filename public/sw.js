@@ -1,10 +1,10 @@
-const CACHE_NAME = 'attendance-portal-v10';
+const CACHE_NAME = 'attendance-portal-v11';
 const ASSETS = [
   '/',
   '/index.html',
   '/style.css',
   '/app.js',
-  '/app.js?v=10',
+  '/app.js?v=11',
   '/icon.svg',
   '/manifest.json'
 ];

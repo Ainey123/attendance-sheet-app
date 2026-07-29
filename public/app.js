@@ -227,24 +227,31 @@ function fetchLocation() {
   const locIcon = document.getElementById('loc-icon-indicator');
   const btnRetry = document.getElementById('btn-retry-location');
   const mapContainer = document.getElementById('map-container');
-  
+
+  // ⚠️ ALWAYS clear cached location at the start so stale data never allows clock-in
+  userLocation = null;
+
   locCard.className = 'location-status-card';
   locIcon.className = 'loc-icon spinner';
   locTitle.innerText = 'Detecting GPS Location...';
-  locText.innerText = 'Attendance registry requires location permissions.';
+  locText.innerText = 'Location is required to clock in. Please wait...';
   btnRetry.classList.add('hidden');
   if (mapContainer) mapContainer.classList.add('hidden');
+
+  // Immediately disable clock-in while GPS is being fetched
+  updateClockButtonsDisabledState(false);
 
   if (!navigator.geolocation) {
     locCard.classList.add('error');
     locIcon.className = 'loc-icon';
-    locTitle.innerText = 'GPS Not Available';
-    locText.innerText = 'Clock in/out will work without GPS. Location will not be recorded.';
+    locTitle.innerText = '📍 Location Required';
+    locText.innerText = 'Your device or browser does not support GPS. Location is required to clock in.';
     btnRetry.classList.add('hidden');
+    // userLocation stays null — clock-in remains disabled
     updateClockButtonsDisabledState(false);
     return;
   }
-  
+
   navigator.geolocation.getCurrentPosition(
     (position) => {
       userLocation = {
@@ -252,39 +259,41 @@ function fetchLocation() {
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy
       };
-      
+
       locCard.classList.add('success');
       locIcon.className = 'loc-icon';
-      locTitle.innerText = 'GPS Location Secured';
+      locTitle.innerText = '✅ GPS Location Secured';
       locText.innerText = `Coordinates: ${userLocation.latitude.toFixed(5)}, ${userLocation.longitude.toFixed(5)} (±${Math.round(userLocation.accuracy)}m)`;
-      
+
       if (mapContainer) {
         mapContainer.innerHTML = `<iframe width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="https://www.openstreetmap.org/export/embed.html?bbox=${userLocation.longitude-0.005},${userLocation.latitude-0.005},${userLocation.longitude+0.005},${userLocation.latitude+0.005}&layer=mapnik&marker=${userLocation.latitude},${userLocation.longitude}"></iframe>`;
         mapContainer.classList.remove('hidden');
       }
 
+      // Location confirmed — now enable clock-in
       updateClockButtonsDisabledState(false);
     },
     (error) => {
-      userLocation = null;
+      userLocation = null; // ensure it stays null
       locCard.classList.add('error');
       locIcon.className = 'loc-icon';
       btnRetry.classList.remove('hidden');
       if (mapContainer) mapContainer.classList.add('hidden');
-      
-      let errMsg = 'Location permission denied. Please allow GPS to verify check-in location.';
+
+      let errMsg = 'Location permission denied. Please enable GPS/Location in your device settings.';
       if (error.code === error.POSITION_UNAVAILABLE) {
-        errMsg = 'Location information is unavailable. Please try again.';
+        errMsg = 'Location unavailable. Please enable GPS and try again.';
       } else if (error.code === error.TIMEOUT) {
-        errMsg = 'Request to get location timed out. Please try again.';
+        errMsg = 'Location request timed out. Please enable GPS and tap Retry.';
       }
-      
+
       locTitle.innerText = '📍 Location Required';
-      locText.innerText = `${errMsg} Please turn on your location to clock in.`;
-      
+      locText.innerText = `${errMsg} Clock In is blocked until location is enabled.`;
+
+      // Location failed — clock-in must stay disabled
       updateClockButtonsDisabledState(false);
     },
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
 }
 
@@ -679,22 +688,53 @@ async function loadEmployeeLeaveRequests() {
   }
 }
 
-// Clock In trigger
+// Clock In trigger — always gets FRESH location at click time
 async function handleClockIn() {
   if (!selectedEmployee) return;
 
-  // Block clock-in if location is not available
+  const originalBtn = document.getElementById('btn-clock-in');
+  const btnText = originalBtn.querySelector('.btn-text-large');
+
+  // Hard block: no location = no clock-in, period
   if (!userLocation) {
     showToast('📍 Please turn on your location first to clock in', 'error');
-    // Scroll to location card so user can see the issue
     const locCard = document.getElementById('location-card');
     if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
-  const originalBtn = document.getElementById('btn-clock-in');
-  const btnText = originalBtn.querySelector('.btn-text-large');
-  
+  // Re-verify location is STILL active right now (not stale from earlier)
+  btnText.innerText = 'VERIFYING LOCATION...';
+  originalBtn.disabled = true;
+
+  const freshLocation = await new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+
+  if (!freshLocation) {
+    // Location was turned off between page load and clicking clock-in
+    userLocation = null;
+    updateClockButtonsDisabledState(false);
+    btnText.innerText = 'CLOCK IN';
+    showToast('📍 Location is OFF. Please turn on your location to clock in', 'error');
+    const locCard = document.getElementById('location-card');
+    if (locCard) {
+      locCard.className = 'location-status-card error';
+      document.getElementById('loc-status-title').innerText = '📍 Location Required';
+      document.getElementById('loc-status-text').innerText = 'Location was turned off. Please enable GPS and tap Retry.';
+      document.getElementById('btn-retry-location').classList.remove('hidden');
+      locCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+
+  // ✅ Fresh location confirmed — proceed with clock-in
+  userLocation = freshLocation;
   btnText.innerText = 'CLOCKING IN...';
   updateClockButtonsDisabledState(true);
 
