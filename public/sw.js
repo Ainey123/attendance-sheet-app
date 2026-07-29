@@ -1,59 +1,32 @@
-const CACHE_NAME = 'attendance-portal-v12';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/app.js?v=12',
-  '/icon.svg',
-  '/manifest.json'
-];
+const CACHE_NAME = 'attendance-portal-v100';
 
-// Install Event
+// Install Event - skip waiting immediately
 self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
-    }).then(() => self.skipWaiting())
-  );
+  self.skipWaiting();
 });
 
-// Activate Event (Clean up old caches)
+// Activate Event - PURGE ALL OLD CACHES IMMEDIATELY
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
+      return Promise.all(keys.map((key) => caches.delete(key)));
     }).then(() => self.clients.claim())
   );
 });
 
-// Fetch Event (Network-first falling back to cache)
+// Fetch Event - ALWAYS go to network for JS/HTML/API
 self.addEventListener('fetch', (e) => {
-  // Only intercept HTTP/S requests, bypass chrome-extension:// etc.
   if (!e.request.url.startsWith('http')) return;
-
-  // For API calls, always go to network and don't cache
-  if (e.request.url.includes('/api/')) {
-    e.respondWith(fetch(e.request));
+  
+  // Always fetch directly from network without caching app.js or HTML
+  if (e.request.url.includes('/app.js') || e.request.url.includes('/api/') || e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(e.request))
+    );
     return;
   }
 
   e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        // Clone and save to cache
-        const resClone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, resClone);
-        });
-        return res;
-      })
-      .catch(() => caches.match(e.request).then((cached) => cached || caches.match('/index.html')))
+    fetch(e.request).catch(() => caches.match(e.request))
   );
 });
