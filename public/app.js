@@ -52,6 +52,7 @@ const API = {
   }),
   getStats: () => fetchJson('/api/stats'),
   getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
+  getMonthlySummary: (month) => fetchJson(`/api/attendance/monthly-summary?month=${encodeURIComponent(month || '')}`),
   getAttendanceLogs: (date) => {
     let url = '/api/attendance';
     if (date) url += `?date=${date}`;
@@ -942,6 +943,8 @@ async function switchAdminTab(tabId) {
     await loadAdminForms();
   } else if (tabId === 'tab-evaluations') {
     await loadEvaluations();
+  } else if (tabId === 'tab-monthly-summary') {
+    await loadAndRenderMonthlySummary();
   }
 }
 
@@ -3385,6 +3388,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Evaluations Tab
   initEvaluationsTab();
 
+  // Initialize Monthly Summary & PDF Batch Upload Tab
+  initMonthlySummaryTab();
+
   // Camera upload bindings
   document.getElementById('btn-trigger-camera').addEventListener('click', () => {
     document.getElementById('clockout-photo').click();
@@ -3428,3 +3434,402 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+// ==========================================================================
+// MONTHLY ATTENDANCE SUMMARY & BATCH PDF ANALYSIS ENGINE
+// ==========================================================================
+let selectedPDFBatchFiles = [];
+let parsedPDFTextData = [];
+let currentMonthlySummaryResults = null;
+
+function initMonthlySummaryTab() {
+  const monthInput = document.getElementById('summary-month-input');
+  if (monthInput && !monthInput.value) {
+    monthInput.value = getCurrentMonthString();
+  }
+
+  const btnTriggerUpload = document.getElementById('btn-trigger-pdf-upload');
+  const fileInput = document.getElementById('summary-pdf-upload');
+  const dropzone = document.getElementById('pdf-upload-dropzone');
+  const btnGenerate = document.getElementById('btn-generate-monthly-summary');
+  const btnExportPDF = document.getElementById('btn-export-summary-pdf');
+  const btnExportCSV = document.getElementById('btn-export-summary-csv');
+
+  if (btnTriggerUpload && fileInput) {
+    btnTriggerUpload.addEventListener('click', () => fileInput.click());
+  }
+
+  if (dropzone && fileInput) {
+    dropzone.addEventListener('click', (e) => {
+      if (e.target !== btnTriggerUpload && !e.target.closest('.btn')) {
+        fileInput.click();
+      }
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--color-primary)';
+      dropzone.style.background = 'rgba(99, 102, 241, 0.08)';
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.style.borderColor = 'var(--border-color)';
+      dropzone.style.background = 'rgba(255,255,255,0.02)';
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--border-color)';
+      dropzone.style.background = 'rgba(255,255,255,0.02)';
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handlePDFFilesSelection(Array.from(e.dataTransfer.files));
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handlePDFFilesSelection(Array.from(e.target.files));
+      }
+    });
+  }
+
+  if (monthInput) {
+    monthInput.addEventListener('change', () => {
+      loadAndRenderMonthlySummary();
+    });
+  }
+
+  if (btnGenerate) {
+    btnGenerate.addEventListener('click', () => loadAndRenderMonthlySummary());
+  }
+
+  if (btnExportPDF) {
+    btnExportPDF.addEventListener('click', () => exportMonthlySummaryToPDF());
+  }
+
+  if (btnExportCSV) {
+    btnExportCSV.addEventListener('click', () => exportMonthlySummaryToCSV());
+  }
+}
+
+async function handlePDFFilesSelection(files) {
+  const pdfFiles = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  if (pdfFiles.length === 0) {
+    showToast('Please select valid PDF files (.pdf)', 'warning');
+    return;
+  }
+
+  selectedPDFBatchFiles = pdfFiles;
+  renderPDFFileListTags();
+  showToast(`Loaded ${pdfFiles.length} PDF file(s). Extracting text...`, 'info');
+  await extractTextFromPDFs(pdfFiles);
+  await loadAndRenderMonthlySummary();
+}
+
+function renderPDFFileListTags() {
+  const listContainer = document.getElementById('pdf-file-list');
+  if (!listContainer) return;
+
+  if (selectedPDFBatchFiles.length === 0) {
+    listContainer.innerHTML = '';
+    return;
+  }
+
+  listContainer.innerHTML = selectedPDFBatchFiles.map((file, idx) => `
+    <span class="badge-role" style="background: rgba(99, 102, 241, 0.16); color: var(--color-primary); padding: 0.35rem 0.65rem; border-radius: 6px; font-size: 0.825rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+      📄 ${file.name}
+      <button type="button" onclick="removeSelectedPDFFile(${idx})" style="background: none; border: none; color: #f87171; cursor: pointer; font-size: 0.9rem; padding: 0; margin-left: 0.25rem;">✕</button>
+    </span>
+  `).join('');
+}
+
+function removeSelectedPDFFile(index) {
+  if (index >= 0 && index < selectedPDFBatchFiles.length) {
+    selectedPDFBatchFiles.splice(index, 1);
+    renderPDFFileListTags();
+    loadAndRenderMonthlySummary();
+  }
+}
+
+async function extractTextFromPDFs(files) {
+  parsedPDFTextData = [];
+  if (!window.pdfjsLib) {
+    console.warn('pdf.js library not loaded yet');
+    return;
+  }
+
+  for (const file of files) {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+
+      parsedPDFTextData.push({
+        filename: file.name,
+        text: fullText
+      });
+    } catch (err) {
+      console.error(`Error reading PDF file ${file.name}:`, err);
+    }
+  }
+}
+
+async function loadAndRenderMonthlySummary() {
+  const monthInput = document.getElementById('summary-month-input');
+  const selectedMonth = (monthInput && monthInput.value) ? monthInput.value : getCurrentMonthString();
+  const tbody = document.querySelector('#monthly-summary-table tbody');
+  
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading and analyzing monthly attendance data...</td></tr>';
+  }
+
+  try {
+    const res = await API.getMonthlySummary(selectedMonth);
+    let summaryData = (res && res.summaries) ? res.summaries : [];
+    const daysInMonth = res.daysInMonth || 31;
+    const daysEvaluated = res.daysEvaluated || 31;
+
+    // Merge text extracted from uploaded PDFs into summary metrics
+    if (parsedPDFTextData.length > 0) {
+      summaryData = mergePDFTextIntoSummaryData(summaryData, parsedPDFTextData, selectedMonth, daysEvaluated);
+    }
+
+    currentMonthlySummaryResults = {
+      month: selectedMonth,
+      daysInMonth,
+      daysEvaluated,
+      summaries: summaryData
+    };
+
+    // Update Summary Header Title
+    const titleEl = document.getElementById('summary-month-title');
+    if (titleEl) {
+      const dateObj = new Date(`${selectedMonth}-01T00:00:00`);
+      const monthName = isNaN(dateObj.getTime()) ? selectedMonth : dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' });
+      titleEl.innerText = `Monthly Employee Attendance Summary — ${monthName} (${daysEvaluated} Days Evaluated)`;
+    }
+
+    // Calculate Totals for Stats Grid
+    const totalStaffCount = summaryData.length;
+    let totalPresentDays = 0;
+    let totalMissingDays = 0;
+    let totalExpensesSum = 0;
+
+    summaryData.forEach(item => {
+      totalPresentDays += item.totalAttendance || 0;
+      totalMissingDays += item.missingAttendance || 0;
+      totalExpensesSum += item.totalExpensesAdded || 0;
+    });
+
+    // Update Stat Cards
+    const elStaff = document.getElementById('sum-stat-staff');
+    const elPresent = document.getElementById('sum-stat-present');
+    const elMissing = document.getElementById('sum-stat-missing');
+    const elExpenses = document.getElementById('sum-stat-expenses');
+
+    if (elStaff) elStaff.innerText = totalStaffCount;
+    if (elPresent) elPresent.innerText = `${totalPresentDays} Days`;
+    if (elMissing) elMissing.innerText = `${totalMissingDays} Days`;
+    if (elExpenses) elExpenses.innerText = `PKR ${totalExpensesSum.toLocaleString()}`;
+
+    // Render Summary Table
+    if (!tbody) return;
+    if (summaryData.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No attendance records or staff entries found for the selected month.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    summaryData.forEach((row, idx) => {
+      const tr = document.createElement('tr');
+      const presentCount = row.totalAttendance || 0;
+      const missingCount = row.missingAttendance || 0;
+      const evalDays = row.daysEvaluated || 30;
+      const ratePct = evalDays > 0 ? Math.round((presentCount / evalDays) * 100) : 0;
+
+      let rateClass = 'remarks-complete';
+      if (ratePct < 50) rateClass = 'remarks-complications';
+      else if (ratePct < 80) rateClass = 'remarks-visit';
+
+      const archivedBadge = row.isArchived ? '<span class="badge-role" style="background: rgba(239, 68, 68, 0.16); color: #f87171; margin-left: 0.4rem; font-size: 0.75rem;">Archived</span>' : '';
+      const workDoneText = row.totalWorkDone || (row.totalWorkDoneCount ? `${row.totalWorkDoneCount} Work Items` : '0 Work Items');
+      const expenseFmt = (row.totalExpensesAdded || 0).toLocaleString();
+
+      tr.innerHTML = `
+        <td class="col-sn">${idx + 1}</td>
+        <td style="font-weight: 600;">${row.employeeName}${archivedBadge}</td>
+        <td><span class="badge-role">${row.role || 'Staff'}</span></td>
+        <td style="color: var(--color-success); font-weight: 600;">${presentCount} Days</td>
+        <td style="color: ${missingCount > 0 ? 'var(--color-danger)' : 'var(--text-muted)'}; font-weight: 600;">${missingCount} Days</td>
+        <td title="${row.workDoneSummary || ''}">${workDoneText}</td>
+        <td style="font-weight: 600; color: var(--color-primary);">PKR ${expenseFmt}</td>
+        <td><span class="remarks-badge ${rateClass}">${ratePct}% Present</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+  } catch (err) {
+    console.error('Error loading monthly summary:', err);
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load monthly summary report.</td></tr>';
+    }
+  }
+}
+
+function mergePDFTextIntoSummaryData(existingSummaries, pdfTextList, selectedMonth, daysEvaluated) {
+  const map = new Map();
+  existingSummaries.forEach(s => map.set(s.employeeName.toLowerCase().trim(), { ...s }));
+
+  pdfTextList.forEach(pdf => {
+    const text = pdf.text;
+    map.forEach((item, nameKey) => {
+      if (text.toLowerCase().includes(nameKey)) {
+        const presentMatches = (text.match(/clocked in|present|clock in/gi) || []).length;
+        if (presentMatches > 0 && item.totalAttendance === 0) {
+          item.totalAttendance = Math.min(daysEvaluated, presentMatches);
+          item.missingAttendance = Math.max(0, daysEvaluated - item.totalAttendance);
+        }
+
+        const expenseMatches = text.match(/PKR\s*([0-9,]+)/gi);
+        if (expenseMatches) {
+          expenseMatches.forEach(m => {
+            const num = parseInt(m.replace(/[^0-9]/g, ''), 10);
+            if (!isNaN(num) && num > 0 && item.totalExpensesAdded === 0) {
+              item.totalExpensesAdded += num;
+            }
+          });
+        }
+      }
+    });
+  });
+
+  return Array.from(map.values());
+}
+
+async function exportMonthlySummaryToPDF() {
+  if (!currentMonthlySummaryResults || !currentMonthlySummaryResults.summaries) {
+    showToast('Please generate a monthly summary first', 'warning');
+    return;
+  }
+
+  showToast('Generating Monthly Summary PDF Report...', 'info');
+  const monthStr = currentMonthlySummaryResults.month;
+  const dateObj = new Date(`${monthStr}-01T00:00:00`);
+  const monthDisplay = isNaN(dateObj.getTime()) ? monthStr : dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' });
+
+  const printContainer = document.createElement('div');
+  printContainer.className = 'pdf-report-wrapper';
+
+  const rowsHtml = currentMonthlySummaryResults.summaries.map((s, idx) => {
+    const ratePct = s.daysEvaluated > 0 ? Math.round((s.totalAttendance / s.daysEvaluated) * 100) : 0;
+    return `
+      <tr>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; text-align: center;">${idx + 1}</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; font-weight: bold;">${s.employeeName} ${s.isArchived ? '(Archived)' : ''}</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; text-align: center;">${s.role || 'Staff'}</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; text-align: center; color: #059669; font-weight: bold;">${s.totalAttendance} Days</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; text-align: center; color: #dc2626; font-weight: bold;">${s.missingAttendance} Days</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db;">${s.totalWorkDone || '0 Work Items'}</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; text-align: right; font-weight: bold; color: #4f46e5;">PKR ${(s.totalExpensesAdded || 0).toLocaleString()}</td>
+        <td style="padding: 6px 8px; border: 1px solid #d1d5db; text-align: center; font-weight: bold;">${ratePct}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  printContainer.innerHTML = `
+    <div style="padding: 20px; font-family: 'Inter', sans-serif; color: #111827; background: #ffffff;">
+      <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px;">
+        <h1 style="font-size: 20px; margin: 0; color: #4f46e5; text-transform: uppercase; font-weight: 800;">MONTHLY ATTENDANCE & EXPENSE SUMMARY</h1>
+        <div style="font-size: 14px; color: #4b5563; margin-top: 4px;">Month: <strong>${monthDisplay}</strong> (${currentMonthlySummaryResults.daysEvaluated} Days Evaluated)</div>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px;">
+        <thead>
+          <tr style="background-color: #f3f4f6; color: #1f2937;">
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">S.No</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: left;">Employee Name</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Role</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Total Attendance</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Missing Days</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: left;">Total Work Done</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: right;">Expenses Added (PKR)</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Attendance Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      <div style="margin-top: 24px; font-size: 10px; color: #6b7280; text-align: right;">
+        Report Generated: ${new Date().toLocaleString()} | Office Attendance Portal
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(printContainer);
+
+  if (window.html2pdf) {
+    const opt = {
+      margin: 8,
+      filename: `Monthly_Attendance_Summary_${monthStr}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+    };
+
+    try {
+      await html2pdf().set(opt).from(printContainer).save();
+      showToast('Monthly Summary PDF downloaded successfully!', 'success');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      showToast('Failed to export summary PDF', 'error');
+    } finally {
+      printContainer.remove();
+    }
+  } else {
+    window.print();
+    printContainer.remove();
+  }
+}
+
+function exportMonthlySummaryToCSV() {
+  if (!currentMonthlySummaryResults || !currentMonthlySummaryResults.summaries) {
+    showToast('Please generate a monthly summary first', 'warning');
+    return;
+  }
+
+  const monthStr = currentMonthlySummaryResults.month;
+  const headers = ['S.No', 'Employee Name', 'Role', 'Status', 'Total Attendance (Days Present)', 'Missing Attendance (Days Absent)', 'Total Work Done', 'Total Expenses Added (PKR)', 'Attendance Rate (%)'];
+  const rows = currentMonthlySummaryResults.summaries.map((s, idx) => {
+    const ratePct = s.daysEvaluated > 0 ? Math.round((s.totalAttendance / s.daysEvaluated) * 100) : 0;
+    return [
+      idx + 1,
+      `"${s.employeeName.replace(/"/g, '""')}"`,
+      `"${(s.role || 'Staff').replace(/"/g, '""')}"`,
+      s.isArchived ? 'Archived' : 'Active',
+      s.totalAttendance,
+      s.missingAttendance,
+      `"${(s.totalWorkDone || '0 Work Items').replace(/"/g, '""')}"`,
+      s.totalExpensesAdded || 0,
+      `${ratePct}%`
+    ];
+  });
+
+  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `Monthly_Attendance_Summary_${monthStr}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast('Monthly Summary CSV exported successfully!', 'success');
+}

@@ -249,6 +249,17 @@ app.get('/api/attendance/status/:employeeId', async (req, res) => {
   }
 });
 
+// Get monthly attendance summary across all active & archived staff
+app.get('/api/attendance/monthly-summary', async (req, res) => {
+  const { month } = req.query;
+  try {
+    const summary = await db.getMonthlySummary(month || null);
+    res.json({ success: true, ...summary });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Clock In
 app.post('/api/attendance/clock-in', async (req, res) => {
   const { employeeId, location } = req.body;

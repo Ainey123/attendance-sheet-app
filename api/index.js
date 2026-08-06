@@ -146,6 +146,12 @@ module.exports = async (req, res) => {
       return res.json({ activeRecord: record });
     }
 
+    // ── GET /api/attendance/monthly-summary ──────────────────────────────────
+    if (path === 'attendance/monthly-summary' && method === 'GET') {
+      const summary = await db.getMonthlySummary(query.month || null);
+      return res.json({ success: true, ...summary });
+    }
+
     // ── POST /api/attendance/clock-in ─────────────────────────────────────────
     if (path === 'attendance/clock-in' && method === 'POST') {
       const body = await parseBody(req);

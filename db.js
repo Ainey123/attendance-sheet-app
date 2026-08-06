@@ -80,18 +80,26 @@ function handleSupabaseError(error, operation) {
 
 const db = {
   // --- Employee Methods ---
-  async getEmployees() {
+  async getEmployees(includeArchived = false) {
     if (useLocalFallback) {
       const data = loadLocalData();
-      return data.employees || [];
+      const emps = data.employees || [];
+      return includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived);
     }
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('employees')
         .select('*')
         .order('dateCreated', { ascending: false });
+      
+      if (!includeArchived) {
+        query = query.neq('status', 'DELETED');
+      }
+      
+      const { data, error } = await query;
       if (error) handleSupabaseError(error, 'fetch employees');
-      return data || [];
+      const list = data || [];
+      return includeArchived ? list : list.filter(e => !e.isArchived);
     } catch (error) {
       handleSupabaseError(error, 'fetch employees');
     }
@@ -100,7 +108,9 @@ const db = {
   async getEmployeeByToken(token) {
     if (useLocalFallback) {
       const data = loadLocalData();
-      return data.employees.find(e => e.token === token) || null;
+      const emp = data.employees.find(e => e.token === token) || null;
+      if (emp && (emp.status === 'DELETED' || emp.isArchived)) return null;
+      return emp;
     }
     try {
       const { data, error } = await supabase
@@ -108,7 +118,7 @@ const db = {
         .select('*')
         .eq('token', token)
         .single();
-      if (error) return null;
+      if (error || !data || data.status === 'DELETED' || data.isArchived) return null;
       return data;
     } catch (error) {
       return null;
@@ -154,18 +164,23 @@ const db = {
   },
 
   async deleteEmployee(id) {
+    // SOFT DELETE: Preserve past attendance, work, and expense records forever!
     if (useLocalFallback) {
       const data = loadLocalData();
-      data.employees = data.employees.filter(e => e.id !== id);
-      data.attendance = data.attendance.filter(a => a.employeeId !== id);
-      data.workRecords = data.workRecords.filter(w => w.employeeId !== id);
-      saveLocalData(data);
+      const emp = data.employees.find(e => e.id === id);
+      if (emp) {
+        emp.status = 'DELETED';
+        emp.isArchived = true;
+        emp.token = 'EXPIRED_' + Date.now();
+        saveLocalData(data);
+      }
       return true;
     }
     try {
+      // Soft-delete employee row by marking status as DELETED & invalidating token
       const { error } = await supabase
         .from('employees')
-        .delete()
+        .update({ status: 'DELETED', token: 'EXPIRED_' + Date.now() })
         .eq('id', id);
       if (error) handleSupabaseError(error, 'delete employee');
       return true;
@@ -1044,6 +1059,138 @@ const db = {
     } catch (error) {
       handleSupabaseError(error, 'delete form submission');
     }
+  },
+
+  async getMonthlySummary(monthStr) {
+    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+      const now = new Date();
+      monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    const [yearStr, mStr] = monthStr.split('-');
+    const year = parseInt(yearStr, 10);
+    const monthNum = parseInt(mStr, 10);
+    const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
+
+    const now = new Date();
+    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let daysToEvaluate = totalDaysInMonth;
+    if (monthStr === currentMonthStr) {
+      daysToEvaluate = now.getDate();
+    }
+
+    const allEmployees = await this.getEmployees(true);
+    const allAttendance = await this.getAttendance();
+    const monthLogs = (allAttendance || []).filter(a => a.date && a.date.startsWith(monthStr));
+    
+    let workRecords = [];
+    try {
+      workRecords = await this.getWorkRecords(null, monthStr);
+    } catch (e) {
+      workRecords = [];
+    }
+
+    const summaryMap = new Map();
+
+    (allEmployees || []).forEach(emp => {
+      summaryMap.set(emp.id, {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        role: emp.role || 'Staff',
+        isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
+        presentDates: new Set(),
+        leaveDates: new Set(),
+        workDoneDetails: [],
+        totalExpensesAdded: 0
+      });
+    });
+
+    monthLogs.forEach(log => {
+      let empSummary = summaryMap.get(log.employeeId);
+      if (!empSummary) {
+        empSummary = {
+          employeeId: log.employeeId || 'emp_' + String(log.employeeName).toLowerCase().replace(/\s+/g, ''),
+          employeeName: log.employeeName || 'Staff Member',
+          role: log.role || 'Staff',
+          isArchived: true,
+          presentDates: new Set(),
+          leaveDates: new Set(),
+          workDoneDetails: [],
+          totalExpensesAdded: 0
+        };
+        summaryMap.set(empSummary.employeeId, empSummary);
+      }
+
+      const isLeave = isLeaveAttendanceRecord(log);
+      if (isLeave) {
+        empSummary.leaveDates.add(log.date);
+      } else {
+        empSummary.presentDates.add(log.date);
+      }
+
+      if (log.expenseAmount && !isNaN(Number(log.expenseAmount))) {
+        empSummary.totalExpensesAdded += Number(log.expenseAmount);
+      }
+      if (log.performanceNotes && !isLeave) {
+        empSummary.workDoneDetails.push(log.performanceNotes.trim());
+      }
+    });
+
+    (workRecords || []).forEach(wr => {
+      let empSummary = summaryMap.get(wr.employeeId);
+      if (!empSummary) {
+        empSummary = {
+          employeeId: wr.employeeId || 'emp_' + String(wr.employeeName).toLowerCase().replace(/\s+/g, ''),
+          employeeName: wr.employeeName || 'Staff Member',
+          role: 'Staff',
+          isArchived: true,
+          presentDates: new Set(),
+          leaveDates: new Set(),
+          workDoneDetails: [],
+          totalExpensesAdded: 0
+        };
+        summaryMap.set(empSummary.employeeId, empSummary);
+      }
+
+      if (wr.performedWork && wr.performedWork.trim() !== '') {
+        empSummary.workDoneDetails.push(wr.performedWork.trim());
+      }
+      if (wr.expenseAmount && !isNaN(Number(wr.expenseAmount))) {
+        empSummary.totalExpensesAdded += Number(wr.expenseAmount);
+      }
+    });
+
+    const summaries = [];
+    summaryMap.forEach(emp => {
+      const totalAttendance = emp.presentDates.size;
+      const leaveDays = emp.leaveDates.size;
+      const missingAttendance = Math.max(0, daysToEvaluate - totalAttendance - leaveDays);
+      const workDoneCount = emp.workDoneDetails.length;
+
+      if (!emp.isArchived || totalAttendance > 0 || workDoneCount > 0 || emp.totalExpensesAdded > 0) {
+        summaries.push({
+          employeeId: emp.employeeId,
+          employeeName: emp.employeeName,
+          role: emp.role,
+          isArchived: emp.isArchived,
+          totalDaysInMonth,
+          daysEvaluated: daysToEvaluate,
+          totalAttendance,
+          missingAttendance,
+          leaveDays,
+          totalWorkDone: workDoneCount > 0 ? `${workDoneCount} Work Items` : '0 Work Items',
+          totalWorkDoneCount: workDoneCount,
+          workDoneSummary: emp.workDoneDetails.length > 0 ? emp.workDoneDetails.slice(0, 3).join('; ') : 'None',
+          totalExpensesAdded: Math.round(emp.totalExpensesAdded)
+        });
+      }
+    });
+
+    return {
+      month: monthStr,
+      daysInMonth: totalDaysInMonth,
+      daysEvaluated: daysToEvaluate,
+      summaries
+    };
   }
 };
 
