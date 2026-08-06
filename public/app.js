@@ -3613,7 +3613,8 @@ async function loadAndRenderMonthlySummary() {
     if (titleEl) {
       const dateObj = new Date(`${selectedMonth}-01T00:00:00`);
       const monthName = isNaN(dateObj.getTime()) ? selectedMonth : dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' });
-      titleEl.innerText = `Monthly Employee Attendance Summary — ${monthName} (${daysEvaluated} Days Evaluated)`;
+      const workDays = res.workingDaysToEvaluate || daysEvaluated;
+      titleEl.innerText = `Monthly Employee Attendance Summary — ${monthName} (${workDays} Working Days Evaluated, Sundays Off)`;
     }
 
     // Calculate Totals for Stats Grid
@@ -3651,14 +3652,15 @@ async function loadAndRenderMonthlySummary() {
       const tr = document.createElement('tr');
       const presentCount = row.totalAttendance || 0;
       const missingCount = row.missingAttendance || 0;
-      const evalDays = row.daysEvaluated || 30;
-      const ratePct = evalDays > 0 ? Math.round((presentCount / evalDays) * 100) : 0;
+      const evalWorkingDays = row.workingDaysToEvaluate || (row.daysEvaluated || 30);
+      const ratePct = evalWorkingDays > 0 ? Math.min(100, Math.round((presentCount / evalWorkingDays) * 100)) : 0;
 
       let rateClass = 'remarks-complete';
       if (ratePct < 50) rateClass = 'remarks-complications';
       else if (ratePct < 80) rateClass = 'remarks-visit';
 
       const archivedBadge = row.isArchived ? '<span class="badge-role" style="background: rgba(239, 68, 68, 0.16); color: #f87171; margin-left: 0.4rem; font-size: 0.75rem;">Archived</span>' : '';
+      const sundayBadge = row.sundayPresentCount > 0 ? `<span class="badge-role" style="background: rgba(16, 185, 129, 0.16); color: #34d399; margin-left: 0.35rem; font-size: 0.75rem;" title="${row.sundayPresentCount} Sunday(s) worked">+${row.sundayPresentCount} Sun</span>` : '';
       const workDoneText = row.totalWorkDone || (row.totalWorkDoneCount ? `${row.totalWorkDoneCount} Work Items` : '0 Work Items');
       const expenseFmt = (row.totalExpensesAdded || 0).toLocaleString();
 
@@ -3666,7 +3668,7 @@ async function loadAndRenderMonthlySummary() {
         <td class="col-sn">${idx + 1}</td>
         <td style="font-weight: 600;">${row.employeeName}${archivedBadge}</td>
         <td><span class="badge-role">${row.role || 'Staff'}</span></td>
-        <td style="color: var(--color-success); font-weight: 600;">${presentCount} Days</td>
+        <td style="color: var(--color-success); font-weight: 600;">${presentCount} Days${sundayBadge}</td>
         <td style="color: ${missingCount > 0 ? 'var(--color-danger)' : 'var(--text-muted)'}; font-weight: 600;">${missingCount} Days</td>
         <td title="${row.workDoneSummary || ''}">${workDoneText}</td>
         <td style="font-weight: 600; color: var(--color-primary);">PKR ${expenseFmt}</td>

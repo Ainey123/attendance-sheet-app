@@ -1078,6 +1078,14 @@ const db = {
       daysToEvaluate = now.getDate();
     }
 
+    // Count Sundays in evaluated period
+    let sundaysInEvaluatedPeriod = 0;
+    for (let d = 1; d <= daysToEvaluate; d++) {
+      const dt = new Date(year, monthNum - 1, d);
+      if (dt.getDay() === 0) sundaysInEvaluatedPeriod++;
+    }
+    const workingDaysToEvaluate = Math.max(0, daysToEvaluate - sundaysInEvaluatedPeriod);
+
     const allEmployees = await this.getEmployees(true);
     const allAttendance = await this.getAttendance();
     const monthLogs = (allAttendance || []).filter(a => a.date && a.date.startsWith(monthStr));
@@ -1161,9 +1169,25 @@ const db = {
 
     const summaries = [];
     summaryMap.forEach(emp => {
-      const totalAttendance = emp.presentDates.size;
-      const leaveDays = emp.leaveDates.size;
-      const missingAttendance = Math.max(0, daysToEvaluate - totalAttendance - leaveDays);
+      let regularPresentCount = 0;
+      let sundayPresentCount = 0;
+      emp.presentDates.forEach(dateStr => {
+        const parts = dateStr.split('-');
+        const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        if (dt.getDay() === 0) sundayPresentCount++;
+        else regularPresentCount++;
+      });
+
+      let regularLeaveCount = 0;
+      emp.leaveDates.forEach(dateStr => {
+        const parts = dateStr.split('-');
+        const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        if (dt.getDay() !== 0) regularLeaveCount++;
+      });
+
+      const totalAttendance = regularPresentCount + sundayPresentCount;
+      const leaveDays = regularLeaveCount;
+      const missingAttendance = Math.max(0, workingDaysToEvaluate - regularPresentCount - regularLeaveCount);
       const workDoneCount = emp.workDoneDetails.length;
 
       if (!emp.isArchived || totalAttendance > 0 || workDoneCount > 0 || emp.totalExpensesAdded > 0) {
@@ -1173,8 +1197,11 @@ const db = {
           role: emp.role,
           isArchived: emp.isArchived,
           totalDaysInMonth,
-          daysEvaluated: daysToEvaluate,
+          daysEvaluated,
+          sundaysInEvaluatedPeriod,
+          workingDaysToEvaluate,
           totalAttendance,
+          sundayPresentCount,
           missingAttendance,
           leaveDays,
           totalWorkDone: workDoneCount > 0 ? `${workDoneCount} Work Items` : '0 Work Items',
@@ -1188,7 +1215,9 @@ const db = {
     return {
       month: monthStr,
       daysInMonth: totalDaysInMonth,
-      daysEvaluated: daysToEvaluate,
+      daysEvaluated,
+      sundaysInEvaluatedPeriod,
+      workingDaysToEvaluate,
       summaries
     };
   }
