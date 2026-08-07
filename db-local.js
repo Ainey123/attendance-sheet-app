@@ -385,6 +385,7 @@ const db = {
     if (monthStr === currentMonthStr) {
       daysToEvaluate = now.getDate();
     }
+    const daysEvaluated = daysToEvaluate;
 
     // Count Sundays in evaluated period
     let sundaysInEvaluatedPeriod = 0;
