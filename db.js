@@ -1197,6 +1197,8 @@ const db = {
           employeeName: emp.employeeName,
           role: emp.role,
           isArchived: emp.isArchived,
+          presentDatesList: Array.from(emp.presentDates || []),
+          leaveDatesList: Array.from(emp.leaveDates || []),
           totalDaysInMonth,
           daysEvaluated,
           sundaysInEvaluatedPeriod,

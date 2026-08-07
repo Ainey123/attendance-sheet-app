@@ -3686,33 +3686,125 @@ async function loadAndRenderMonthlySummary() {
 }
 
 function mergePDFTextIntoSummaryData(existingSummaries, pdfTextList, selectedMonth, daysEvaluated) {
-  const map = new Map();
-  existingSummaries.forEach(s => map.set(s.employeeName.toLowerCase().trim(), { ...s }));
+  const summaryMap = new Map();
+
+  // Initialize from existing DB summary entries
+  existingSummaries.forEach(s => {
+    const key = s.employeeName.toLowerCase().trim();
+    summaryMap.set(key, {
+      ...s,
+      presentDates: new Set(s.presentDatesList || []),
+      leaveDates: new Set(s.leaveDatesList || []),
+      workDoneDetails: s.workDoneSummary && s.workDoneSummary !== 'None' ? [s.workDoneSummary] : [],
+      totalExpensesAdded: s.totalExpensesAdded || 0
+    });
+  });
 
   pdfTextList.forEach(pdf => {
-    const text = pdf.text;
-    map.forEach((item, nameKey) => {
-      if (text.toLowerCase().includes(nameKey)) {
-        const presentMatches = (text.match(/clocked in|present|clock in/gi) || []).length;
-        if (presentMatches > 0 && item.totalAttendance === 0) {
-          item.totalAttendance = Math.min(daysEvaluated, presentMatches);
-          item.missingAttendance = Math.max(0, daysEvaluated - item.totalAttendance);
-        }
+    const text = pdf.text || '';
+    const lines = text.split(/\r?\n/);
 
-        const expenseMatches = text.match(/PKR\s*([0-9,]+)/gi);
-        if (expenseMatches) {
-          expenseMatches.forEach(m => {
-            const num = parseInt(m.replace(/[^0-9]/g, ''), 10);
-            if (!isNaN(num) && num > 0 && item.totalExpensesAdded === 0) {
-              item.totalExpensesAdded += num;
+    lines.forEach(line => {
+      const dateMatch = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+      if (!dateMatch) return;
+
+      const dateStr = dateMatch[1];
+      if (!dateStr.startsWith(selectedMonth)) return;
+
+      summaryMap.forEach((empEntry, nameKey) => {
+        const nameParts = nameKey.split(/\s+/).filter(p => p.length >= 3);
+        const matchesFull = line.toLowerCase().includes(nameKey);
+        const matchesParts = nameParts.length > 1 && nameParts.every(part => line.toLowerCase().includes(part));
+
+        if (matchesFull || matchesParts) {
+          empEntry.presentDates.add(dateStr);
+
+          const pkrMatch = line.match(/PKR\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+          if (pkrMatch) {
+            const amt = parseFloat(pkrMatch[1].replace(/,/g, ''));
+            if (!isNaN(amt) && amt > 0) {
+              if (!empEntry.expensesByDate) empEntry.expensesByDate = new Map();
+              if (!empEntry.expensesByDate.has(dateStr)) {
+                empEntry.expensesByDate.set(dateStr, amt);
+              }
             }
-          });
+          }
+        }
+      });
+    });
+
+    summaryMap.forEach((empEntry, nameKey) => {
+      const escapedName = nameKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`${escapedName}[\\s\\S]*?\\b(${selectedMonth}-\\d{2})\\b`, 'gi');
+      let m;
+      while ((m = pattern.exec(text)) !== null) {
+        if (m[1]) {
+          empEntry.presentDates.add(m[1]);
         }
       }
     });
   });
 
-  return Array.from(map.values());
+  const [yearStr, mStr] = selectedMonth.split('-');
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(mStr, 10);
+
+  let sundaysInEvaluatedPeriod = 0;
+  for (let d = 1; d <= daysEvaluated; d++) {
+    const dt = new Date(year, monthNum - 1, d);
+    if (dt.getDay() === 0) sundaysInEvaluatedPeriod++;
+  }
+  const workingDaysToEvaluate = Math.max(0, daysEvaluated - sundaysInEvaluatedPeriod);
+
+  const results = [];
+  summaryMap.forEach(emp => {
+    let regularPresentCount = 0;
+    let sundayPresentCount = 0;
+    emp.presentDates.forEach(dateStr => {
+      const parts = dateStr.split('-');
+      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      if (dt.getDay() === 0) sundayPresentCount++;
+      else regularPresentCount++;
+    });
+
+    let regularLeaveCount = 0;
+    emp.leaveDates.forEach(dateStr => {
+      const parts = dateStr.split('-');
+      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      if (dt.getDay() !== 0) regularLeaveCount++;
+    });
+
+    const totalAttendance = regularPresentCount + sundayPresentCount;
+    const leaveDays = regularLeaveCount;
+    const missingAttendance = Math.max(0, workingDaysToEvaluate - regularPresentCount - regularLeaveCount);
+
+    let totalExpensesSum = emp.totalExpensesAdded || 0;
+    if (emp.expensesByDate && emp.expensesByDate.size > 0) {
+      let pdfExpensesSum = 0;
+      emp.expensesByDate.forEach(amt => pdfExpensesSum += amt);
+      totalExpensesSum = Math.max(totalExpensesSum, pdfExpensesSum);
+    }
+
+    results.push({
+      employeeId: emp.employeeId,
+      employeeName: emp.employeeName,
+      role: emp.role || 'Staff',
+      isArchived: Boolean(emp.isArchived),
+      daysEvaluated,
+      sundaysInEvaluatedPeriod,
+      workingDaysToEvaluate,
+      totalAttendance,
+      sundayPresentCount,
+      missingAttendance,
+      leaveDays,
+      totalWorkDone: emp.presentDates.size > 0 ? `${emp.presentDates.size} Work Days` : '0 Work Items',
+      totalWorkDoneCount: emp.presentDates.size,
+      workDoneSummary: emp.workDoneDetails && emp.workDoneDetails.length > 0 ? emp.workDoneDetails.slice(0, 3).join('; ') : 'Parsed from PDF/DB',
+      totalExpensesAdded: Math.round(totalExpensesSum)
+    });
+  });
+
+  return results;
 }
 
 async function exportMonthlySummaryToPDF() {
