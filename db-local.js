@@ -233,8 +233,9 @@ const db = {
 
   async getDashboardStats() {
     const today = getLocalDateString();
-    const employees = data.employees || [];
-    const attendance = data.attendance || [];
+    const employees = (data.employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived);
+    const activeEmpIds = new Set(employees.map(e => e.id));
+    const attendance = (data.attendance || []).filter(a => activeEmpIds.has(a.employeeId));
 
     const totalEmployees = employees.length;
     const activePresent = employees.filter(e => e.status === 'IN').length;

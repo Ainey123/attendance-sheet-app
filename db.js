@@ -772,41 +772,42 @@ const db = {
   },
 
   async getDashboardStats() {
+    const today = getLocalDateString();
+    const activeEmployees = await this.getEmployees(false);
+    const activeEmpIds = new Set(activeEmployees.map(e => e.id));
+
+    let attendanceLogs = [];
+    let officeName = 'My Office';
+
     if (useLocalFallback) {
       const data = loadLocalData();
-      const today = getLocalDateString();
-      const employees = data.employees || [];
-      const attendance = data.attendance || [];
-
-      return {
-        totalEmployees: employees.length,
-        activePresent: employees.filter(e => e.status === 'IN').length,
-        presentToday: new Set(attendance.filter(a => a.date === today).map(r => r.employeeId)).size,
-        absentToday: Math.max(0, employees.length - new Set(attendance.filter(a => a.date === today).map(r => r.employeeId)).size),
-        officeName: data.settings?.officeName || 'My Office'
-      };
+      attendanceLogs = (data.attendance || []).filter(a => a.date === today && activeEmpIds.has(a.employeeId));
+      officeName = data.settings?.officeName || 'My Office';
+    } else {
+      try {
+        const { data: attendance } = await supabase.from('attendance').select('employeeId').eq('date', today);
+        if (attendance) {
+          attendanceLogs = attendance.filter(a => activeEmpIds.has(a.employeeId));
+        }
+        const { data: settings } = await supabase.from('settings').select('officeName').single();
+        if (settings && settings.officeName) officeName = settings.officeName;
+      } catch (error) {
+        console.warn('Error fetching Supabase dashboard stats details:', error.message);
+      }
     }
-    try {
-      const today = getLocalDateString();
-      const { data: employees } = await supabase.from('employees').select('*');
-      const { data: attendance } = await supabase.from('attendance').select('employeeId').eq('date', today);
-      const { data: settings } = await supabase.from('settings').select('officeName').single();
 
-      const totalEmployees = employees?.length || 0;
-      const activePresent = employees?.filter(e => e.status === 'IN').length || 0;
-      const presentToday = attendance?.length || 0;
-      const absentToday = Math.max(0, totalEmployees - presentToday);
+    const totalEmployees = activeEmployees.length;
+    const activePresent = activeEmployees.filter(e => e.status === 'IN').length;
+    const presentToday = new Set(attendanceLogs.map(r => r.employeeId)).size;
+    const absentToday = Math.max(0, totalEmployees - presentToday);
 
-      return {
-        totalEmployees,
-        activePresent,
-        presentToday,
-        absentToday,
-        officeName: settings?.officeName || 'My Office'
-      };
-    } catch (error) {
-      handleSupabaseError(error, 'fetch dashboard stats');
-    }
+    return {
+      totalEmployees,
+      activePresent,
+      presentToday,
+      absentToday,
+      officeName
+    };
   },
 
   // --- Work Records ---
