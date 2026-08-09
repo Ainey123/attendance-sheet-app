@@ -50,6 +50,10 @@ const API = {
     method: 'DELETE',
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
+  resetEmployeeToken: (id) => fetchJson(`/api/employees/${id}/reset-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode }
+  }),
   getStats: () => fetchJson('/api/stats'),
   getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
   getMonthlySummary: (month) => fetchJson(`/api/attendance/monthly-summary?month=${encodeURIComponent(month || '')}`),
@@ -1156,11 +1160,8 @@ async function loadAdminRoster() {
         const id = e.currentTarget.getAttribute('data-id');
         if (!confirm(`Generate a NEW login link for ${emp.name}?\n\n✅ Their old link will be replaced with a brand-new one.\n✅ ALL their attendance history will be KEPT.\n\nThe new link will be copied to your clipboard so you can send it to them.`)) return;
         try {
-          const res = await fetch(`/api/employees/${id}/reset-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode }
-          }).then(r => r.json());
-          if (res.success) {
+          const res = await API.resetEmployeeToken(id);
+          if (res && res.success) {
             emp.token = res.token;
             const newUrl = `${window.location.origin}/?mode=employee&token=${res.token}`;
             navigator.clipboard.writeText(newUrl).then(() => {
@@ -1169,10 +1170,10 @@ async function loadAdminRoster() {
               prompt(`New link for ${emp.name} (copy this):`, newUrl);
             });
           } else {
-            showToast(res.error || 'Failed to generate new link', 'error');
+            showToast((res && res.error) || 'Failed to generate new link', 'error');
           }
         } catch (err) {
-          showToast('Connection error generating new link', 'error');
+          showToast(err.message || 'Connection error generating new link', 'error');
         }
       });
 

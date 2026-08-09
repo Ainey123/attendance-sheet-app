@@ -18,15 +18,28 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (!e.request.url.startsWith('http')) return;
   
-  // Always fetch directly from network without caching app.js or HTML
+  // Always fetch directly from network without caching app.js or HTML or API
   if (e.request.url.includes('/app.js') || e.request.url.includes('/api/') || e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request).catch(() => caches.match(e.request))
+      fetch(e.request).catch(async () => {
+        const cached = await caches.match(e.request);
+        if (cached) return cached;
+        if (e.request.url.includes('/api/')) {
+          return new Response(JSON.stringify({ success: false, error: 'Network error' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response('Network error', { status: 503 });
+      })
     );
     return;
   }
 
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    fetch(e.request).catch(async () => {
+      const cached = await caches.match(e.request);
+      return cached || new Response('Offline', { status: 503 });
+    })
   );
 });

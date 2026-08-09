@@ -251,7 +251,16 @@ const db = {
         .from('employees')
         .update({ token: newToken, tokenCreatedAt: nowIso })
         .eq('id', id);
-      if (error) handleSupabaseError(error, 'reset employee token');
+
+      if (error) {
+        // Fallback update if tokenCreatedAt column doesn't exist in Supabase schema
+        console.warn('Supabase update with tokenCreatedAt failed, retrying token-only:', error.message);
+        const { error: err2 } = await supabase
+          .from('employees')
+          .update({ token: newToken })
+          .eq('id', id);
+        if (err2) handleSupabaseError(err2, 'reset employee token');
+      }
       return { token: newToken, tokenCreatedAt: nowIso };
     } catch (error) {
       handleSupabaseError(error, 'reset employee token');

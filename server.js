@@ -154,6 +154,19 @@ app.post('/api/employees/:id/generate-token', checkAdminAuth, async (req, res) =
   }
 });
 
+// Reset employee token (admin only)
+app.post('/api/employees/:id/reset-token', checkAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.resetEmployeeToken(id);
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const link = `${origin}/?mode=employee&token=${result.token}`;
+    res.json({ success: true, link, token: result.token });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Delete employee (admin only)
 app.delete('/api/employees/:id', checkAdminAuth, async (req, res) => {
   const { id } = req.params;
