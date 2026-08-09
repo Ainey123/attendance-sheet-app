@@ -296,6 +296,31 @@ module.exports = async (req, res) => {
       return success ? res.json({ success: true }) : res.status(404).json({ error: 'Record not found.' });
     }
 
+    // ── GET /api/comments ───────────────────────────────────────────────────
+    if (path === 'comments' && method === 'GET') {
+      const comments = await db.getComments(query.employeeId || null);
+      return res.json(comments);
+    }
+
+    // ── POST /api/comments ──────────────────────────────────────────────────
+    if (path === 'comments' && method === 'POST') {
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.message) {
+        return res.status(400).json({ error: 'employeeId and message are required' });
+      }
+      const comment = await db.addComment(body);
+      return res.status(201).json({ success: true, comment });
+    }
+
+    // ── DELETE /api/comments/:id ────────────────────────────────────────────
+    if (path.startsWith('comments/') && method === 'DELETE') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const id = path.replace('comments/', '');
+      const success = await db.deleteComment(id);
+      return res.json({ success });
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
 

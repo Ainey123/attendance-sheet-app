@@ -54,6 +54,20 @@ const API = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode }
   }),
+  getComments: (employeeId = null) => {
+    let url = '/api/comments';
+    if (employeeId) url += `?employeeId=${encodeURIComponent(employeeId)}`;
+    return fetchJson(url, { headers: { 'X-Admin-Passcode': adminPasscode } });
+  },
+  addComment: (data) => fetchJson('/api/comments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  deleteComment: (id) => fetchJson(`/api/comments/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
   getStats: () => fetchJson('/api/stats'),
   getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
   getMonthlySummary: (month) => fetchJson(`/api/attendance/monthly-summary?month=${encodeURIComponent(month || '')}`),
@@ -950,6 +964,8 @@ async function switchAdminTab(tabId) {
     await loadEvaluations();
   } else if (tabId === 'tab-monthly-summary') {
     await loadAndRenderMonthlySummary();
+  } else if (tabId === 'tab-comments') {
+    await loadAdminComments();
   }
 }
 
@@ -1675,6 +1691,9 @@ function switchEmployeeTab(tabId) {
     if (selectedEmployee) {
       loadSelectedEmployeeLogs(selectedEmployee.id);
     }
+  } else if (tabId === 'emp-pane-comments') {
+    grid.classList.remove('work-record-active');
+    if (selectedEmployee) loadEmployeeComments();
   } else {
     grid.classList.remove('work-record-active');
   }
@@ -3425,6 +3444,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Monthly Summary & PDF Batch Upload Tab
   initMonthlySummaryTab();
 
+  // --- COMMENTS / MESSAGES BINDINGS ---
+  const btnRefreshEmpComments = document.getElementById('btn-refresh-emp-comments');
+  if (btnRefreshEmpComments) {
+    btnRefreshEmpComments.addEventListener('click', loadEmployeeComments);
+  }
+
+  const formEmpComment = document.getElementById('form-emp-comment');
+  if (formEmpComment) {
+    formEmpComment.addEventListener('submit', handleEmpCommentSubmit);
+  }
+
+  const btnRefreshAdminComments = document.getElementById('btn-refresh-admin-comments');
+  if (btnRefreshAdminComments) {
+    btnRefreshAdminComments.addEventListener('click', loadAdminComments);
+  }
+
+  const formAdminComment = document.getElementById('form-admin-comment');
+  if (formAdminComment) {
+    formAdminComment.addEventListener('submit', handleAdminCommentSubmit);
+  }
+
   // Camera upload bindings
   document.getElementById('btn-trigger-camera').addEventListener('click', () => {
     document.getElementById('clockout-photo').click();
@@ -4247,3 +4287,246 @@ async function renderMonthlyGridSheetUI(monthStr) {
 }
 
 
+// ==========================================================================
+// MESSAGES & COMMENTS SYSTEM
+// ==========================================================================
+
+let adminCommentSelectedEmployeeId = null;
+let adminCommentSelectedEmployeeName = null;
+
+// ---- EMPLOYEE SIDE --------------------------------------------------------
+
+async function loadEmployeeComments() {
+  if (!selectedEmployee) return;
+  const feed = document.getElementById('emp-comments-feed');
+  if (!feed) return;
+  feed.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Loading...</p>';
+  try {
+    const data = await API.getComments(selectedEmployee.id);
+    const comments = data.comments || data || [];
+    if (!comments.length) {
+      feed.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;">No messages yet. Send one below!</p>';
+      return;
+    }
+    feed.innerHTML = '';
+    comments.forEach(c => {
+      feed.insertAdjacentHTML('beforeend', buildCommentBubble(c, false));
+    });
+    feed.scrollTop = feed.scrollHeight;
+  } catch (err) {
+    feed.innerHTML = '<p style="color:var(--color-danger);font-size:0.85rem;">Failed to load messages.</p>';
+    console.error('loadEmployeeComments error:', err);
+  }
+}
+
+async function handleEmpCommentSubmit(e) {
+  e.preventDefault();
+  if (!selectedEmployee) return;
+  const input = document.getElementById('emp-comment-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    await API.addComment({
+      employeeId: selectedEmployee.id,
+      employeeName: selectedEmployee.name,
+      sender: 'employee',
+      senderName: selectedEmployee.name,
+      message: msg
+    });
+    input.value = '';
+    await loadEmployeeComments();
+    showToast('Message sent!', 'success');
+  } catch (err) {
+    showToast('Failed to send message.', 'error');
+    console.error('handleEmpCommentSubmit error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Comment 🚀';
+  }
+}
+
+// ---- ADMIN SIDE -----------------------------------------------------------
+
+async function loadAdminComments() {
+  // Build staff list on the left
+  await renderAdminCommentStaffList();
+  // If someone was previously selected, reload their thread
+  if (adminCommentSelectedEmployeeId) {
+    await loadAdminCommentThread(adminCommentSelectedEmployeeId, adminCommentSelectedEmployeeName);
+  } else {
+    const feed = document.getElementById('admin-comments-feed');
+    if (feed) feed.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;">Select a staff member on the left to view their messages.</p>';
+  }
+}
+
+async function renderAdminCommentStaffList() {
+  const list = document.getElementById('admin-comment-staff-list');
+  if (!list) return;
+  list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem;">Loading...</p>';
+  try {
+    const data = await API.getComments();
+    const comments = data.comments || data || [];
+    // Group by employeeId
+    const empMap = {};
+    comments.forEach(c => {
+      if (!empMap[c.employeeId]) {
+        empMap[c.employeeId] = { name: c.employeeName, count: 0, latest: c.createdAt };
+      }
+      empMap[c.employeeId].count++;
+      if (c.createdAt > empMap[c.employeeId].latest) empMap[c.employeeId].latest = c.createdAt;
+    });
+    const employees = await API.getEmployees();
+    const roster = (employees.employees || employees || []);
+    if (!roster.length) {
+      list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem;">No staff found.</p>';
+      return;
+    }
+    list.innerHTML = '';
+    roster.forEach(emp => {
+      const info = empMap[emp.id];
+      const msgCount = info ? info.count : 0;
+      const badge = msgCount > 0 ? `<span style="background:var(--color-indigo);color:#fff;font-size:0.72rem;padding:0.1rem 0.45rem;border-radius:12px;font-weight:700;">${msgCount}</span>` : '';
+      const isActive = emp.id === adminCommentSelectedEmployeeId;
+      const item = document.createElement('div');
+      item.className = 'clickable-list-item' + (isActive ? ' active' : '');
+      item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:0.5rem;padding:0.55rem 0.75rem;cursor:pointer;border-radius:8px;transition:background 0.15s;' + (isActive ? 'background:rgba(99,102,241,0.18);' : '');
+      item.innerHTML = `<span style="font-weight:600;font-size:0.9rem;">${escapeHtml(emp.name)}</span>${badge}`;
+      item.addEventListener('click', () => loadAdminCommentThread(emp.id, emp.name));
+      item.addEventListener('mouseenter', () => { if (emp.id !== adminCommentSelectedEmployeeId) item.style.background = 'rgba(255,255,255,0.06)'; });
+      item.addEventListener('mouseleave', () => { if (emp.id !== adminCommentSelectedEmployeeId) item.style.background = ''; });
+      list.appendChild(item);
+    });
+  } catch (err) {
+    list.innerHTML = '<p style="color:var(--color-danger);font-size:0.85rem;padding:0.5rem;">Failed to load staff.</p>';
+    console.error('renderAdminCommentStaffList error:', err);
+  }
+}
+
+async function loadAdminCommentThread(empId, empName) {
+  adminCommentSelectedEmployeeId = empId;
+  adminCommentSelectedEmployeeName = empName;
+
+  // Update thread header
+  const title = document.getElementById('admin-comment-thread-title');
+  const subtitle = document.getElementById('admin-comment-thread-subtitle');
+  if (title) title.textContent = `💬 Conversation with ${empName}`;
+  if (subtitle) subtitle.textContent = 'All messages between admin and this staff member.';
+
+  // Show the reply form
+  const form = document.getElementById('form-admin-comment');
+  if (form) form.style.display = 'flex';
+
+  const feed = document.getElementById('admin-comments-feed');
+  if (!feed) return;
+  feed.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Loading...</p>';
+
+  try {
+    const data = await API.getComments(empId);
+    const comments = data.comments || data || [];
+    if (!comments.length) {
+      feed.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;">No messages yet for this employee.</p>';
+    } else {
+      feed.innerHTML = '';
+      comments.forEach(c => {
+        feed.insertAdjacentHTML('beforeend', buildCommentBubble(c, true));
+      });
+      feed.scrollTop = feed.scrollHeight;
+    }
+  } catch (err) {
+    feed.innerHTML = '<p style="color:var(--color-danger);font-size:0.85rem;">Failed to load messages.</p>';
+    console.error('loadAdminCommentThread error:', err);
+  }
+
+  // Highlight selected in list
+  document.querySelectorAll('#admin-comment-staff-list .clickable-list-item').forEach(el => {
+    el.style.background = '';
+  });
+  await renderAdminCommentStaffList();
+}
+
+async function handleAdminCommentSubmit(e) {
+  e.preventDefault();
+  if (!adminCommentSelectedEmployeeId) {
+    showToast('Please select a staff member first.', 'warning');
+    return;
+  }
+  const input = document.getElementById('admin-comment-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    await API.addComment({
+      employeeId: adminCommentSelectedEmployeeId,
+      employeeName: adminCommentSelectedEmployeeName,
+      sender: 'admin',
+      senderName: 'Admin',
+      message: msg
+    });
+    input.value = '';
+    await loadAdminCommentThread(adminCommentSelectedEmployeeId, adminCommentSelectedEmployeeName);
+    showToast('Reply sent!', 'success');
+  } catch (err) {
+    showToast('Failed to send reply.', 'error');
+    console.error('handleAdminCommentSubmit error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Reply 📨';
+  }
+}
+
+async function handleDeleteComment(commentId) {
+  if (!confirm('Delete this message?')) return;
+  try {
+    await API.deleteComment(commentId);
+    showToast('Message deleted.', 'success');
+    // Reload whichever side is active
+    if (adminCommentSelectedEmployeeId) {
+      await loadAdminCommentThread(adminCommentSelectedEmployeeId, adminCommentSelectedEmployeeName);
+    } else if (selectedEmployee) {
+      await loadEmployeeComments();
+    }
+  } catch (err) {
+    showToast('Failed to delete message.', 'error');
+    console.error('handleDeleteComment error:', err);
+  }
+}
+
+// ---- SHARED HELPERS -------------------------------------------------------
+
+function buildCommentBubble(c, isAdminView) {
+  const isAdminSender = c.sender === 'admin';
+  const bubbleClass = isAdminSender ? 'comment-bubble-admin' : 'comment-bubble-employee';
+  const badgeClass = isAdminSender ? 'badge-sender-admin' : 'badge-sender-employee';
+  const label = isAdminSender ? '🛡 Admin' : '👤 ' + escapeHtml(c.senderName || c.employeeName);
+  const timeStr = c.createdAt ? new Date(c.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const canDelete = isAdminView; // Only admin can delete from admin view
+  const deleteBtn = canDelete
+    ? `<div class="comment-actions"><button class="btn-delete-comment" onclick="handleDeleteComment('${escapeHtml(String(c.id))}')">🗑 Delete</button></div>`
+    : '';
+  const wrapStyle = isAdminSender ? 'align-items:flex-start;' : 'align-items:flex-end;';
+  return `
+    <div style="display:flex;flex-direction:column;${wrapStyle}">
+      <div class="comment-bubble ${bubbleClass}">
+        <div class="comment-header">
+          <span class="comment-sender-badge ${badgeClass}">${label}</span>
+          <span class="comment-time">${timeStr}</span>
+        </div>
+        <div class="comment-body">${escapeHtml(c.message)}</div>
+        ${deleteBtn}
+      </div>
+    </div>`;
+}
+
+function escapeHtml(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}

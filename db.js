@@ -36,6 +36,15 @@ if (supabaseUrl && supabaseKey) {
           ALTER TABLE employees ADD COLUMN IF NOT EXISTS "tokenCreatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW();
           ALTER TABLE employees ADD COLUMN IF NOT EXISTS "linkExpireCount" INTEGER DEFAULT 0;
           ALTER TABLE employees ADD COLUMN IF NOT EXISTS "minusScore" INTEGER DEFAULT 0;
+          CREATE TABLE IF NOT EXISTS comments (
+            "id"           TEXT PRIMARY KEY,
+            "employeeId"   TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+            "employeeName" TEXT NOT NULL,
+            "sender"       TEXT NOT NULL,
+            "senderName"   TEXT NOT NULL,
+            "message"      TEXT NOT NULL,
+            "createdAt"    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
         `
       });
       if (rpcError) {
@@ -1400,6 +1409,106 @@ const db = {
       workingDaysToEvaluate,
       summaries
     };
+  },
+
+  // --- Comments / Messaging Methods ---
+  async getComments(employeeId = null) {
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      let list = data.comments || [];
+      if (employeeId) list = list.filter(c => c.employeeId === employeeId);
+      return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    }
+    try {
+      let query = supabase.from('comments').select('*').order('createdAt', { ascending: true });
+      if (employeeId) query = query.eq('employeeId', employeeId);
+      const { data, error } = await query;
+      if (error) {
+        console.warn('Supabase fetch comments error, falling back to local:', error.message);
+        const dataLocal = loadLocalData();
+        let list = dataLocal.comments || [];
+        if (employeeId) list = list.filter(c => c.employeeId === employeeId);
+        return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      }
+      return data || [];
+    } catch (error) {
+      console.warn('getComments error:', error.message);
+      const dataLocal = loadLocalData();
+      let list = dataLocal.comments || [];
+      if (employeeId) list = list.filter(c => c.employeeId === employeeId);
+      return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    }
+  },
+
+  async addComment({ employeeId, employeeName, sender, senderName, message }) {
+    const newComment = {
+      id: generateId('comm'),
+      employeeId,
+      employeeName: employeeName || 'Employee',
+      sender: sender || 'EMPLOYEE',
+      senderName: senderName || (sender === 'ADMIN' ? 'Admin' : 'Employee'),
+      message: message.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      if (!data.comments) data.comments = [];
+      data.comments.push(newComment);
+      saveLocalData(data);
+      return newComment;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .insert([newComment])
+        .select()
+        .single();
+      if (error) {
+        console.warn('Supabase insert comment failed, using local fallback:', error.message);
+        const localData = loadLocalData();
+        if (!localData.comments) localData.comments = [];
+        localData.comments.push(newComment);
+        saveLocalData(localData);
+        return newComment;
+      }
+      return data || newComment;
+    } catch (error) {
+      const localData = loadLocalData();
+      if (!localData.comments) localData.comments = [];
+      localData.comments.push(newComment);
+      saveLocalData(localData);
+      return newComment;
+    }
+  },
+
+  async deleteComment(id) {
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      if (data.comments) {
+        data.comments = data.comments.filter(c => c.id !== id);
+        saveLocalData(data);
+      }
+      return true;
+    }
+    try {
+      const { error } = await supabase.from('comments').delete().eq('id', id);
+      if (error) {
+        const data = loadLocalData();
+        if (data.comments) {
+          data.comments = data.comments.filter(c => c.id !== id);
+          saveLocalData(data);
+        }
+      }
+      return true;
+    } catch (error) {
+      const data = loadLocalData();
+      if (data.comments) {
+        data.comments = data.comments.filter(c => c.id !== id);
+        saveLocalData(data);
+      }
+      return true;
+    }
   }
 };
 

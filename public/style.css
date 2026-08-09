@@ -2171,3 +2171,90 @@ tr:hover td {
   margin-bottom: 6px;
   height: 24px;
 }
+
+/* ==========================================================================
+   MESSAGES & COMMENTS CHAT SYSTEM
+   ========================================================================== */
+.comment-bubble {
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  max-width: 85%;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  position: relative;
+  word-break: break-word;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.comment-bubble-admin {
+  align-self: flex-start;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: #e0e7ff;
+  border-top-left-radius: 2px;
+}
+
+.comment-bubble-employee {
+  align-self: flex-end;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #d1fae5;
+  border-top-right-radius: 2px;
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.comment-sender-badge {
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+}
+
+.badge-sender-admin {
+  background: var(--color-indigo);
+  color: #ffffff;
+}
+
+.badge-sender-employee {
+  background: var(--color-success);
+  color: #ffffff;
+}
+
+.comment-time {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.comment-body {
+  white-space: pre-wrap;
+}
+
+.comment-actions {
+  margin-top: 0.35rem;
+  text-align: right;
+}
+
+.btn-delete-comment {
+  background: none;
+  border: none;
+  color: var(--color-danger);
+  font-size: 0.72rem;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.btn-delete-comment:hover {
+  opacity: 1;
+  text-decoration: underline;
+}

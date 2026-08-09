@@ -543,6 +543,37 @@ const db = {
       workingDaysToEvaluate,
       summaries
     };
+  },
+
+  // --- Comments / Messaging Methods ---
+  async getComments(employeeId = null) {
+    let list = data.comments || [];
+    if (employeeId) list = list.filter(c => c.employeeId === employeeId);
+    return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  },
+
+  async addComment({ employeeId, employeeName, sender, senderName, message }) {
+    if (!data.comments) data.comments = [];
+    const newComment = {
+      id: generateId('comm'),
+      employeeId,
+      employeeName: employeeName || 'Employee',
+      sender: sender || 'EMPLOYEE',
+      senderName: senderName || (sender === 'ADMIN' ? 'Admin' : 'Employee'),
+      message: message.trim(),
+      createdAt: new Date().toISOString()
+    };
+    data.comments.push(newComment);
+    saveData();
+    return newComment;
+  },
+
+  async deleteComment(id) {
+    if (data.comments) {
+      data.comments = data.comments.filter(c => c.id !== id);
+      saveData();
+    }
+    return true;
   }
 };
 

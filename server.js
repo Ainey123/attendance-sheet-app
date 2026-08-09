@@ -466,6 +466,38 @@ app.delete('/api/forms/:id', async (req, res) => {
   }
 });
 
+// --- Comments API ---
+app.get('/api/comments', async (req, res) => {
+  try {
+    const comments = await db.getComments(req.query.employeeId || null);
+    res.json(comments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/comments', async (req, res) => {
+  const { employeeId, employeeName, sender, senderName, message } = req.body;
+  if (!employeeId || !message) {
+    return res.status(400).json({ error: 'employeeId and message required' });
+  }
+  try {
+    const comment = await db.addComment({ employeeId, employeeName, sender, senderName, message });
+    res.status(201).json({ success: true, comment });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/comments/:id', checkAdminAuth, async (req, res) => {
+  try {
+    const success = await db.deleteComment(req.params.id);
+    res.json({ success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // For any other route, serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

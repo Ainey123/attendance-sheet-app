@@ -156,6 +156,7 @@
               <button type="button" class="emp-tab-btn active" data-emp-tab="emp-pane-attendance">Attendance</button>
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-workrecord">Work & Payment</button>
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-forms">My Forms</button>
+              <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-comments">💬 Messages &amp; Comments</button>
             </div>
 
             <div id="emp-pane-attendance" class="emp-tab-pane active">
@@ -452,6 +453,37 @@
               </div>
             </div>
 
+            <!-- Messages & Comments Tab Pane -->
+            <div id="emp-pane-comments" class="emp-tab-pane hidden">
+              <div class="panel" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                  <h3 style="margin: 0; font-size: 1.1rem; color: #fff; display: flex; align-items: center; gap: 0.5rem;">
+                    💬 Staff Messages &amp; Admin Comments
+                  </h3>
+                  <button type="button" id="btn-refresh-emp-comments" class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.75rem;">
+                    🔄 Refresh Messages
+                  </button>
+                </div>
+
+                <!-- Message Feed Container -->
+                <div id="emp-comments-feed" style="max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-right: 0.25rem; margin-bottom: 1rem;">
+                  <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.9rem;">
+                    Loading comments...
+                  </div>
+                </div>
+
+                <!-- Message Input Form -->
+                <form id="form-emp-comment" style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                  <div style="flex: 1;">
+                    <textarea id="emp-comment-input" rows="2" placeholder="Write a comment or message for Admin..." required style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: #fff; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.9rem; resize: none; outline: none;"></textarea>
+                  </div>
+                  <button type="submit" class="btn btn-primary" style="padding: 0.6rem 1rem; font-weight: 600; white-space: nowrap;">
+                    Send Comment 🚀
+                  </button>
+                </form>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -483,6 +515,12 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
               </svg>
               Staff Roster
+            </button>
+            <button class="nav-link" data-tab="tab-comments">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.377 3.746 2.25 5.14 2.25 6.741v6.018z" />
+              </svg>
+              Messages &amp; Comments
             </button>
             <button class="nav-link" data-tab="tab-workrecords">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -1187,6 +1225,55 @@
                     <tr><td colspan="5" class="table-empty">No evaluations found for this month.</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: MESSAGES & COMMENTS -->
+          <div id="tab-comments" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+              <h2 class="admin-tab-title" style="margin: 0;">💬 Staff Messages &amp; Comments Center</h2>
+              <button type="button" id="btn-refresh-admin-comments" class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;">
+                🔄 Refresh Messages
+              </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 260px 1fr; gap: 1.25rem;">
+              <!-- Staff Selection Sidebar for Admin Chat -->
+              <div class="panel" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem;">
+                <h4 style="margin-top: 0; font-size: 0.95rem; color: var(--color-indigo); margin-bottom: 0.75rem;">Select Staff Member</h4>
+                <div id="admin-comment-staff-list" class="clickable-list" style="max-height: 450px; overflow-y: auto;">
+                  <!-- JS Populated list of staff members -->
+                </div>
+              </div>
+
+              <!-- Active Chat Thread Panel -->
+              <div class="panel" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; min-height: 450px;">
+                <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+                  <h3 id="admin-comment-thread-title" style="margin: 0; font-size: 1.1rem; color: #fff;">
+                    All Staff Messages Feed
+                  </h3>
+                  <p id="admin-comment-thread-subtitle" style="margin: 0.25rem 0 0; font-size: 0.825rem; color: var(--text-muted);">
+                    Select an employee on the left to view conversation thread or reply directly.
+                  </p>
+                </div>
+
+                <!-- Feed Container -->
+                <div id="admin-comments-feed" style="flex: 1; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-right: 0.25rem; margin-bottom: 1rem;">
+                  <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                    Loading messages...
+                  </div>
+                </div>
+
+                <!-- Admin Reply Form -->
+                <form id="form-admin-comment" style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                  <div style="flex: 1;">
+                    <textarea id="admin-comment-input" rows="2" placeholder="Write a response as Admin..." required style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: #fff; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.9rem; resize: none; outline: none;"></textarea>
+                  </div>
+                  <button type="submit" class="btn btn-primary" style="padding: 0.6rem 1rem; font-weight: 600; white-space: nowrap;">
+                    Send Response ✉️
+                  </button>
+                </form>
               </div>
             </div>
           </div>
