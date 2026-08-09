@@ -133,8 +133,8 @@ const db = {
       emp.justExpired = true;
       emp.expireCount = newExpireCount;
       emp.expireMessage = newExpireCount === 1 
-        ? "You expired your link for 1 time" 
-        : (newExpireCount === 2 ? "You expired it for 2nd time" : `You expired your link for ${newExpireCount} times`);
+        ? "Warning: -1 point deducted for late clock-out (forgot to clock out within 24 hours)" 
+        : `Warning: -${newExpireCount} points deducted for late clock-out (${newExpireCount} times)`;
 
       if (useLocalFallback) {
         const data = loadLocalData();
@@ -164,7 +164,9 @@ const db = {
       emp.expireCount = emp.linkExpireCount || 0;
       emp.minusScore = emp.minusScore || 0;
       emp.expireMessage = (emp.linkExpireCount && emp.linkExpireCount > 0)
-        ? (emp.linkExpireCount === 1 ? "You expired your link for 1 time" : (emp.linkExpireCount === 2 ? "You expired it for 2nd time" : `You expired your link for ${emp.linkExpireCount} times`))
+        ? (emp.linkExpireCount === 1 
+          ? "Notice: -1 point deducted for late clock-out" 
+          : `Notice: -${emp.linkExpireCount} points deducted for late clock-out (${emp.linkExpireCount} times)`)
         : null;
     }
 
@@ -227,6 +229,33 @@ const db = {
       emp = await this.checkAndUpdateLinkCycle(emp);
     }
     return emp;
+  },
+
+  async resetEmployeeToken(id) {
+    // Generates a fresh token for an existing employee WITHOUT deleting them.
+    // All attendance history is preserved. Use this instead of delete+re-add.
+    const newToken = generateToken();
+    const nowIso = new Date().toISOString();
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const emp = data.employees.find(e => e.id === id);
+      if (!emp) throw new Error('Employee not found');
+      emp.token = newToken;
+      emp.tokenCreatedAt = nowIso;
+      saveLocalData(data);
+      return { token: newToken, tokenCreatedAt: nowIso };
+    }
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ token: newToken, tokenCreatedAt: nowIso })
+        .eq('id', id);
+      if (error) handleSupabaseError(error, 'reset employee token');
+      return { token: newToken, tokenCreatedAt: nowIso };
+    } catch (error) {
+      handleSupabaseError(error, 'reset employee token');
+    }
   },
 
   async addEmployee(name, role) {

@@ -116,6 +116,20 @@ module.exports = async (req, res) => {
       return res.json({ success: true, link, token: employee.token });
     }
 
+    // ── POST /api/employees/:id/reset-token ──────────────────────────────────
+    // Generates a FRESH link for an employee WITHOUT deleting them.
+    // All attendance history is preserved. Use instead of delete + re-add.
+    if (path.match(/^employees\/[^/]+\/reset-token$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const id = path.replace('employees/', '').replace('/reset-token', '');
+      const result = await db.resetEmployeeToken(id);
+      if (!result) return res.status(404).json({ error: 'Employee not found' });
+      const origin = headers.origin || 'https://attendence-sheet-app.vercel.app';
+      const link = origin + '/?mode=employee&token=' + result.token;
+      return res.json({ success: true, link, token: result.token });
+    }
+
     // ── POST /api/employees/verify-pin ───────────────────────────────────────
     if (path === 'employees/verify-pin' && method === 'POST') {
       const body = await parseBody(req);

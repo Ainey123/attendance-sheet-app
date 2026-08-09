@@ -1116,6 +1116,9 @@ async function loadAdminRoster() {
           <button class="btn btn-share-link" data-id="${emp.id}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: var(--color-indigo); border-color: rgba(99, 102, 241, 0.4); margin-right: 0.25rem;">
             Copy Link
           </button>
+          <button class="btn btn-resend-link" data-id="${emp.id}" title="Generate a brand-new link for this employee (keeps all attendance history)" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; margin-right: 0.25rem; border-radius: 6px; cursor: pointer; font-weight: 600;">
+            🔄 New Link
+          </button>
           <button class="btn btn-danger btn-delete-emp" data-id="${emp.id}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
             Delete
           </button>
@@ -1146,6 +1149,31 @@ async function loadAdminRoster() {
         }).catch(err => {
           showToast('Failed to copy link automatically.', 'error');
         });
+      });
+
+      // 🔄 New Link listener — generates a NEW token WITHOUT deleting the employee
+      tr.querySelector('.btn-resend-link').addEventListener('click', async (e) => {
+        const id = e.currentTarget.getAttribute('data-id');
+        if (!confirm(`Generate a NEW login link for ${emp.name}?\n\n✅ Their old link will be replaced with a brand-new one.\n✅ ALL their attendance history will be KEPT.\n\nThe new link will be copied to your clipboard so you can send it to them.`)) return;
+        try {
+          const res = await fetch(`/api/employees/${id}/reset-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode }
+          }).then(r => r.json());
+          if (res.success) {
+            emp.token = res.token;
+            const newUrl = `${window.location.origin}/?mode=employee&token=${res.token}`;
+            navigator.clipboard.writeText(newUrl).then(() => {
+              showToast(`✅ New link generated & copied for ${emp.name}! Send it to them.`, 'success');
+            }).catch(() => {
+              prompt(`New link for ${emp.name} (copy this):`, newUrl);
+            });
+          } else {
+            showToast(res.error || 'Failed to generate new link', 'error');
+          }
+        } catch (err) {
+          showToast('Connection error generating new link', 'error');
+        }
       });
 
       // Delete listener
@@ -4094,11 +4122,9 @@ function checkAndShowLinkExpiryNotice(employee) {
     const modal = document.getElementById('link-expiry-notice-modal');
     const promptMsg = document.getElementById('link-expiry-prompt-message');
     if (modal && promptMsg) {
-      let msg = "You expired your link for 1 time";
-      if (count === 2) {
-        msg = "You expired it for 2nd time";
-      } else if (count > 2) {
-        msg = `You expired your link for ${count} times`;
+      let msg = "⚠️ Notice: 1 point has been deducted because you did not clock out within 24 hours.";
+      if (count > 1) {
+        msg = `⚠️ Notice: ${count} points have been deducted for late clock-out (${count} times).`;
       }
       promptMsg.innerText = msg;
       modal.classList.remove('hidden');
@@ -4112,8 +4138,8 @@ function checkAndShowLinkExpiryNotice(employee) {
       }
     }
     const toastMsg = count === 1 
-      ? "Notice: You expired your link for 1 time" 
-      : (count === 2 ? "Notice: You expired it for 2nd time" : `Notice: You expired your link for ${count} times`);
+      ? "⚠️ Notice: -1 point deducted — please remember to clock out on time" 
+      : `⚠️ Notice: -${count} points deducted for late clock-out`;
     showToast(toastMsg, 'warning');
   }
 }

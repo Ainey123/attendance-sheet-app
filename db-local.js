@@ -86,6 +86,17 @@ const db = {
     return true;
   },
 
+  async resetEmployeeToken(id) {
+    const emp = data.employees.find(e => e.id === id);
+    if (!emp) throw new Error('Employee not found');
+    const newToken = generateToken();
+    const nowIso = new Date().toISOString();
+    emp.token = newToken;
+    emp.tokenCreatedAt = nowIso;
+    saveData();
+    return { token: newToken, tokenCreatedAt: nowIso };
+  },
+
   async verifyEmployeePin(employeeId, pin) {
     const emp = data.employees.find(e => e.id === employeeId);
     return emp && emp.pin === String(pin).trim();
