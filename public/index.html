@@ -1009,14 +1009,43 @@
 
             <!-- Detailed Monthly Summary Table Panel -->
             <div class="panel data-panel">
-              <div class="panel-header-actions">
+              <div class="panel-header-actions" style="flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
                 <div>
                   <h3 class="data-panel-title" id="summary-month-title">Monthly Employee Attendance Summary</h3>
-                  <p class="data-panel-subtitle">Comprehensive breakdown of total present days, missing attendance, work done, and expenses per employee.</p>
+                  <p class="data-panel-subtitle">Comprehensive day-by-day attendance sheet grid (1..31 days) and totals per employee.</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button id="btn-view-grid-sheet" class="btn btn-sm btn-primary" style="font-weight: 600;">
+                    📊 Monthly Sheet Grid
+                  </button>
+                  <button id="btn-view-overview-summary" class="btn btn-sm btn-secondary" style="font-weight: 600;">
+                    📋 Overview Metrics
+                  </button>
                 </div>
               </div>
 
-              <div class="table-container">
+              <!-- 1. FULL ATTENDANCE SHEET GRID VIEW (DEFAULT) -->
+              <div id="monthly-grid-sheet-container" class="table-container" style="overflow-x: auto; margin-top: 1rem;">
+                <table id="monthly-grid-sheet-table" class="data-table" style="min-width: 1200px; font-size: 0.85rem; text-align: center;">
+                  <thead id="monthly-grid-sheet-thead">
+                    <tr>
+                      <th style="width: 45px;">SR</th>
+                      <th style="text-align: left; min-width: 150px;">NAME</th>
+                      <th style="text-align: left; min-width: 130px;">DESIGNATION</th>
+                      <!-- Day 1..30/31 columns generated dynamically -->
+                      <th style="min-width: 60px;">TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monthly-grid-sheet-tbody">
+                    <tr>
+                      <td colspan="35" class="table-empty">Select a month and click "Generate Summary" to view the complete monthly attendance sheet grid.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 2. OVERVIEW METRICS VIEW (OPTIONAL) -->
+              <div id="monthly-overview-container" class="table-container hidden" style="margin-top: 1rem;">
                 <table id="monthly-summary-table">
                   <thead>
                     <tr>
@@ -1366,7 +1395,7 @@
   </script>
 
   <!-- Script Load -->
-  <script src="store.js?v=8"></script>
-  <script src="app.js?v=204"></script>
+  <script src="store.js?v=9"></script>
+  <script src="app.js?v=210"></script>
 </body>
 </html>

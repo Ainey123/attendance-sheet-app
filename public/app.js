@@ -3512,6 +3512,26 @@ function initMonthlySummaryTab() {
   if (btnExportCSV) {
     btnExportCSV.addEventListener('click', () => exportMonthlyGridCSV());
   }
+
+  const btnViewGrid = document.getElementById('btn-view-grid-sheet');
+  const btnViewOverview = document.getElementById('btn-view-overview-summary');
+  const gridContainer = document.getElementById('monthly-grid-sheet-container');
+  const overviewContainer = document.getElementById('monthly-overview-container');
+
+  if (btnViewGrid && btnViewOverview && gridContainer && overviewContainer) {
+    btnViewGrid.addEventListener('click', () => {
+      gridContainer.classList.remove('hidden');
+      overviewContainer.classList.add('hidden');
+      btnViewGrid.className = 'btn btn-sm btn-primary';
+      btnViewOverview.className = 'btn btn-sm btn-secondary';
+    });
+    btnViewOverview.addEventListener('click', () => {
+      overviewContainer.classList.remove('hidden');
+      gridContainer.classList.add('hidden');
+      btnViewOverview.className = 'btn btn-sm btn-primary';
+      btnViewGrid.className = 'btn btn-sm btn-secondary';
+    });
+  }
 }
 
 async function handlePDFFilesSelection(files) {
@@ -3609,6 +3629,9 @@ async function loadAndRenderMonthlySummary() {
       daysEvaluated,
       summaries: summaryData
     };
+
+    // Render the Full Day-by-Day Monthly Attendance Sheet Grid Table
+    await renderMonthlyGridSheetUI(selectedMonth);
 
     // Update Summary Header Title
     const titleEl = document.getElementById('summary-month-title');
@@ -4091,4 +4114,106 @@ function checkAndShowLinkExpiryNotice(employee) {
     showToast(toastMsg, 'warning');
   }
 }
+
+async function renderMonthlyGridSheetUI(monthStr) {
+  const thead = document.getElementById('monthly-grid-sheet-thead');
+  const tbody = document.getElementById('monthly-grid-sheet-tbody');
+  if (!thead || !tbody) return;
+
+  if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+    monthStr = getCurrentMonthString();
+  }
+
+  const [yearStr, mStr] = monthStr.split('-');
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(mStr, 10);
+  const daysInMonth = new Date(year, monthNum, 0).getDate();
+
+  let headerHtml = '<tr><th style="width: 45px; background: var(--bg-card, #1e293b); color: var(--text-muted); position: sticky; left: 0; z-index: 2;">SR</th><th style="text-align: left; min-width: 160px; background: var(--bg-card, #1e293b); position: sticky; left: 45px; z-index: 2;">NAME</th><th style="text-align: left; min-width: 130px; background: var(--bg-card, #1e293b);">DESIGNATION</th>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    headerHtml += `<th style="min-width: 32px; padding: 6px 4px; text-align: center;">${d}</th>`;
+  }
+  headerHtml += '<th style="min-width: 65px; text-align: center;">TOTAL</th></tr>';
+  thead.innerHTML = headerHtml;
+
+  tbody.innerHTML = '<tr><td colspan="' + (daysInMonth + 4) + '" class="table-empty">Loading monthly sheet grid...</td></tr>';
+
+  try {
+    const [employees, allLogs] = await Promise.all([
+      API.getEmployees(true),
+      API.getAttendanceLogs(null)
+    ]);
+
+    const monthLogs = (allLogs || []).filter(l => l.date && l.date.startsWith(monthStr));
+    const empAttendanceMap = new Map();
+
+    monthLogs.forEach(log => {
+      let empId = log.employeeId;
+      if (!empId && log.employeeName) {
+        const found = (employees || []).find(e => e.name.toLowerCase().trim() === log.employeeName.toLowerCase().trim());
+        if (found) empId = found.id;
+      }
+      if (!empId) return;
+
+      if (!empAttendanceMap.has(empId)) {
+        empAttendanceMap.set(empId, {});
+      }
+      const day = parseInt(log.date.split('-')[2], 10);
+      const isLeave = Boolean(log.performanceNotes && String(log.performanceNotes).trim().toUpperCase().startsWith('LEAVE'));
+      let status = 'P';
+      if (isLeave) status = 'H';
+      else if (log.status === 'ABSENT' || log.status === 'A') status = 'A';
+
+      empAttendanceMap.get(empId)[day] = status;
+    });
+
+    const activeEmps = (employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived);
+    if (activeEmps.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="' + (daysInMonth + 4) + '" class="table-empty">No active staff members found for this month.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+
+    activeEmps.forEach((emp, idx) => {
+      const empDays = empAttendanceMap.get(emp.id) || {};
+      let presentCount = 0;
+      let rowHtml = `<tr>
+        <td style="font-weight: bold; color: var(--text-muted); background: var(--bg-card, #1e293b); position: sticky; left: 0; z-index: 1;">${idx + 1}</td>
+        <td style="text-align: left; font-weight: 600; color: var(--text-color); background: var(--bg-card, #1e293b); position: sticky; left: 45px; z-index: 1;">${(emp.name || '').toUpperCase()}</td>
+        <td style="text-align: left; color: var(--text-muted); font-size: 0.8rem;">${(emp.role || 'STAFF').toUpperCase()}</td>`;
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(year, monthNum - 1, d);
+        const isSunday = dt.getDay() === 0;
+        const st = empDays[d];
+
+        if (st === 'P') {
+          rowHtml += '<td style="color: #10b981; font-weight: 700; background: rgba(16, 185, 129, 0.08); text-align: center;">P</td>';
+          presentCount++;
+        } else if (st === 'H') {
+          rowHtml += '<td style="color: #f59e0b; font-weight: 700; background: rgba(245, 158, 11, 0.08); text-align: center;">H</td>';
+        } else if (st === 'A') {
+          rowHtml += '<td style="color: #ef4444; font-weight: 700; background: rgba(239, 68, 68, 0.08); text-align: center;">A</td>';
+        } else if (isSunday) {
+          rowHtml += '<td style="background: rgba(255, 255, 255, 0.02); text-align: center;"></td>';
+        } else {
+          rowHtml += '<td style="text-align: center;"></td>';
+        }
+      }
+
+      rowHtml += `<td style="font-weight: 800; color: var(--color-primary); background: rgba(99, 102, 241, 0.12); text-align: center;">${presentCount}</td></tr>`;
+
+      // Spacer row between employees
+      const spacerHtml = `<tr style="height: 4px;"><td colspan="${daysInMonth + 4}" style="padding:0; border:none; background: transparent;"></td></tr>`;
+
+      tbody.insertAdjacentHTML('beforeend', rowHtml + spacerHtml);
+    });
+
+  } catch (err) {
+    console.error('Error rendering grid sheet UI:', err);
+    tbody.innerHTML = '<tr><td colspan="' + (daysInMonth + 4) + '" class="table-empty">Failed to load attendance grid sheet.</td></tr>';
+  }
+}
+
 
