@@ -51,7 +51,7 @@ const db = {
   // --- Employee Methods ---
   async getEmployees(includeArchived = false) {
     const list = data.employees || [];
-    return includeArchived ? list : list.filter(e => e.status !== 'DELETED' && !e.isArchived);
+    return includeArchived ? list : list.filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
   },
 
   async getEmployeeByToken(token) {
@@ -233,7 +233,7 @@ const db = {
 
   async getDashboardStats() {
     const today = getLocalDateString();
-    const employees = (data.employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived);
+    const employees = (data.employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
     const activeEmpIds = new Set(employees.map(e => e.id));
     const attendance = (data.attendance || []).filter(a => activeEmpIds.has(a.employeeId));
 

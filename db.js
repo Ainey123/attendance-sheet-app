@@ -177,26 +177,23 @@ const db = {
     if (useLocalFallback) {
       const data = loadLocalData();
       let emps = data.employees || [];
-      emps = includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived);
+      emps = includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
       for (let i = 0; i < emps.length; i++) {
         emps[i] = await this.checkAndUpdateLinkCycle(emps[i]);
       }
       return emps;
     }
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('employees')
         .select('*')
         .order('dateCreated', { ascending: false });
       
-      if (!includeArchived) {
-        query = query.neq('status', 'DELETED');
-      }
-      
-      const { data, error } = await query;
       if (error) handleSupabaseError(error, 'fetch employees');
       let list = data || [];
-      list = includeArchived ? list : list.filter(e => !e.isArchived);
+      if (!includeArchived) {
+        list = list.filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
+      }
       for (let i = 0; i < list.length; i++) {
         list[i] = await this.checkAndUpdateLinkCycle(list[i]);
       }
