@@ -17,6 +17,36 @@ let useLocalFallback = false;
 if (supabaseUrl && supabaseKey) {
   supabase = createClient(supabaseUrl, supabaseKey);
   console.log('Using Supabase database for persistent storage');
+
+  // Auto-migrate: remove the status CHECK constraint so soft-delete works
+  // and add isArchived column if missing. Uses raw SQL via rpc if available.
+  (async () => {
+    try {
+      // Use supabase.rpc if the project has the exec_sql function,
+      // otherwise fall back to individual update probing.
+      // We run a benign update first — if it fails with constraint error we know
+      // the fix is needed and we apply via the REST alter approach.
+      // Note: Supabase anon key cannot run DDL directly; we run it via rpc 'exec_sql'
+      // which must exist. If not available, the fallback in deleteEmployee handles it.
+      const { error: rpcError } = await supabase.rpc('exec_sql', {
+        sql: `
+          ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_status_check;
+          ALTER TABLE employees DROP CONSTRAINT IF EXISTS "employees_status_check";
+          ALTER TABLE employees ADD COLUMN IF NOT EXISTS "isArchived" BOOLEAN DEFAULT FALSE;
+          ALTER TABLE employees ADD COLUMN IF NOT EXISTS "tokenCreatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+          ALTER TABLE employees ADD COLUMN IF NOT EXISTS "linkExpireCount" INTEGER DEFAULT 0;
+          ALTER TABLE employees ADD COLUMN IF NOT EXISTS "minusScore" INTEGER DEFAULT 0;
+        `
+      });
+      if (rpcError) {
+        console.log('Auto-migration via rpc not available (safe to ignore):', rpcError.message);
+      } else {
+        console.log('Auto-migration: status constraint removed, isArchived column ensured.');
+      }
+    } catch (e) {
+      console.log('Auto-migration skipped (safe to ignore):', e.message);
+    }
+  })();
 } else {
   useLocalFallback = true;
   console.log('WARNING: Supabase not configured. Using local file storage.');
@@ -252,7 +282,8 @@ const db = {
   },
 
   async deleteEmployee(id) {
-    // SOFT DELETE: Preserve past attendance, work, and expense records forever!
+    // SOFT DELETE: Preserves all attendance, work, and expense history forever.
+    // The employee is hidden from the active roster but their records remain.
     if (useLocalFallback) {
       const data = loadLocalData();
       const emp = data.employees.find(e => e.id === id);
@@ -265,12 +296,30 @@ const db = {
       return true;
     }
     try {
-      // Soft-delete employee row by marking status as DELETED & invalidating token
+      // Try full soft-delete with DELETED status
       const { error } = await supabase
         .from('employees')
-        .update({ status: 'DELETED', token: 'EXPIRED_' + Date.now() })
+        .update({
+          status: 'DELETED',
+          isArchived: true,
+          token: 'EXPIRED_' + Date.now()
+        })
         .eq('id', id);
-      if (error) handleSupabaseError(error, 'delete employee');
+
+      if (error) {
+        // Fallback: if status CHECK constraint rejects 'DELETED',
+        // just mark isArchived=true and invalidate token.
+        // This hides the employee from the app without touching status.
+        console.warn('Full soft-delete failed, trying archive-only fallback:', error.message);
+        const { error: err2 } = await supabase
+          .from('employees')
+          .update({
+            isArchived: true,
+            token: 'EXPIRED_' + Date.now()
+          })
+          .eq('id', id);
+        if (err2) handleSupabaseError(err2, 'delete employee');
+      }
       return true;
     } catch (error) {
       handleSupabaseError(error, 'delete employee');

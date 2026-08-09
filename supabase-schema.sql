@@ -20,19 +20,25 @@ CREATE TABLE IF NOT EXISTS employees (
   "id"              TEXT PRIMARY KEY,
   "name"            TEXT NOT NULL,
   "role"            TEXT DEFAULT 'Staff',
-  "status"          TEXT DEFAULT 'OUT' CHECK (status IN ('IN', 'OUT')),
+  "status"          TEXT DEFAULT 'OUT',
   "pin"             TEXT NOT NULL DEFAULT '1234',
   "token"           TEXT UNIQUE NOT NULL,
+  "isArchived"      BOOLEAN DEFAULT FALSE,
   "dateCreated"     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   "tokenCreatedAt"  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   "linkExpireCount" INTEGER DEFAULT 0,
   "minusScore"      INTEGER DEFAULT 0
 );
 
--- Safe column additions for existing databases
+-- Safe column additions for existing databases (run these in Supabase SQL Editor)
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS "isArchived" BOOLEAN DEFAULT FALSE;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS "tokenCreatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS "linkExpireCount" INTEGER DEFAULT 0;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS "minusScore" INTEGER DEFAULT 0;
+
+-- Drop old status constraint if it exists (allows DELETED status for soft-delete)
+ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_status_check;
+ALTER TABLE employees DROP CONSTRAINT IF EXISTS "employees_status_check";
 
 -- 2. Settings Table (single-row config)
 CREATE TABLE IF NOT EXISTS settings (

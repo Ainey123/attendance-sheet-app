@@ -1188,22 +1188,25 @@ async function loadAdminRoster() {
   }
 }
 
-// Delete staff record
+// Delete staff record (SOFT DELETE — all past data is preserved and visible in admin reports)
 async function handleDeleteEmployee(id, name) {
-  if (!confirm(`Are you sure you want to delete ${name} from the staff registry?\nTheir past attendance logs will be preserved, but they will no longer be able to log in.`)) {
+  if (!confirm(`Are you sure you want to delete "${name}" from the active roster?\n\n✅ All their past attendance logs, work records, and expense history will be KEPT.\n❌ They will no longer be able to log in using their link.\n\nThis action archives the employee — it does NOT erase any data.`)) {
     return;
   }
 
   try {
     const res = await API.deleteEmployee(id);
-    if (res.success) {
-      showToast(`${name} deleted successfully`, 'success');
+    if (res && res.success) {
+      showToast(`✅ ${name} archived successfully. All their past data is preserved.`, 'success');
       loadAdminRoster();
     } else {
-      showToast(res.error || 'Failed to delete employee', 'error');
+      const msg = (res && res.error) ? res.error : 'Failed to archive employee';
+      showToast(`Error: ${msg}`, 'error');
     }
   } catch (err) {
-    showToast('Connection error during deletion', 'error');
+    const msg = err.message || 'Connection error — please check your internet and try again';
+    showToast(`Delete failed: ${msg}`, 'error');
+    console.error('Delete employee error:', err);
   }
 }
 
