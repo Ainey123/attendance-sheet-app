@@ -80,11 +80,76 @@ function handleSupabaseError(error, operation) {
 
 const db = {
   // --- Employee Methods ---
+  async checkAndUpdateLinkCycle(emp) {
+    if (!emp || emp.status === 'DELETED' || emp.isArchived) return emp;
+
+    const now = Date.now();
+    const startTimeStr = emp.tokenCreatedAt || emp.dateCreated || new Date(now).toISOString();
+    const startTime = new Date(startTimeStr).getTime();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+    const diffMs = now - startTime;
+
+    if (isNaN(startTime) || diffMs < 0) return emp;
+
+    const cyclesPassed = Math.floor(diffMs / twentyFourHoursMs);
+    if (cyclesPassed > 0) {
+      const newExpireCount = (emp.linkExpireCount || 0) + cyclesPassed;
+      const newMinusScore = (emp.minusScore || 0) - cyclesPassed; // -1 penalty per 24h cycle
+      const newTokenCreatedAt = new Date(startTime + (cyclesPassed * twentyFourHoursMs)).toISOString();
+
+      emp.linkExpireCount = newExpireCount;
+      emp.minusScore = newMinusScore;
+      emp.tokenCreatedAt = newTokenCreatedAt;
+      emp.justExpired = true;
+      emp.expireCount = newExpireCount;
+      emp.expireMessage = newExpireCount === 1 
+        ? "You expired your link for 1 time" 
+        : (newExpireCount === 2 ? "You expired it for 2nd time" : `You expired your link for ${newExpireCount} times`);
+
+      if (useLocalFallback) {
+        const data = loadLocalData();
+        const found = data.employees.find(e => e.id === emp.id);
+        if (found) {
+          found.linkExpireCount = newExpireCount;
+          found.minusScore = newMinusScore;
+          found.tokenCreatedAt = newTokenCreatedAt;
+          saveLocalData(data);
+        }
+      } else {
+        try {
+          await supabase
+            .from('employees')
+            .update({
+              linkExpireCount: newExpireCount,
+              minusScore: newMinusScore,
+              tokenCreatedAt: newTokenCreatedAt
+            })
+            .eq('id', emp.id);
+        } catch (err) {
+          console.warn('Persisting link cycle in Supabase failed:', err.message);
+        }
+      }
+    } else {
+      emp.justExpired = false;
+      emp.expireCount = emp.linkExpireCount || 0;
+      emp.minusScore = emp.minusScore || 0;
+      emp.expireMessage = (emp.linkExpireCount && emp.linkExpireCount > 0)
+        ? (emp.linkExpireCount === 1 ? "You expired your link for 1 time" : (emp.linkExpireCount === 2 ? "You expired it for 2nd time" : `You expired your link for ${emp.linkExpireCount} times`))
+        : null;
+    }
+
+    return emp;
+  },
+
   async getEmployees(includeArchived = false) {
     if (useLocalFallback) {
       const data = loadLocalData();
-      const emps = data.employees || [];
-      return includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived);
+      let emps = data.employees || [];
+      emps = includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived);
+      for (let i = 0; i < emps.length; i++) {
+        emps[i] = await this.checkAndUpdateLinkCycle(emps[i]);
+      }
+      return emps;
     }
     try {
       let query = supabase
@@ -98,65 +163,88 @@ const db = {
       
       const { data, error } = await query;
       if (error) handleSupabaseError(error, 'fetch employees');
-      const list = data || [];
-      return includeArchived ? list : list.filter(e => !e.isArchived);
+      let list = data || [];
+      list = includeArchived ? list : list.filter(e => !e.isArchived);
+      for (let i = 0; i < list.length; i++) {
+        list[i] = await this.checkAndUpdateLinkCycle(list[i]);
+      }
+      return list;
     } catch (error) {
       handleSupabaseError(error, 'fetch employees');
     }
   },
 
   async getEmployeeByToken(token) {
+    let emp = null;
     if (useLocalFallback) {
       const data = loadLocalData();
-      const emp = data.employees.find(e => e.token === token) || null;
+      emp = data.employees.find(e => e.token === token) || null;
       if (emp && (emp.status === 'DELETED' || emp.isArchived)) return null;
-      return emp;
+    } else {
+      try {
+        const { data, error } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('token', token)
+          .single();
+        if (error || !data || data.status === 'DELETED' || data.isArchived) return null;
+        emp = data;
+      } catch (error) {
+        return null;
+      }
     }
-    try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('token', token)
-        .single();
-      if (error || !data || data.status === 'DELETED' || data.isArchived) return null;
-      return data;
-    } catch (error) {
-      return null;
+    if (emp) {
+      emp = await this.checkAndUpdateLinkCycle(emp);
     }
+    return emp;
   },
 
   async addEmployee(name, role) {
+    const nowIso = new Date().toISOString();
+    const newEmployee = {
+      id: generateId('emp'),
+      name: name.trim(),
+      role: role.trim() || 'Staff',
+      status: 'OUT',
+      pin: '1234',
+      token: generateToken(),
+      dateCreated: nowIso,
+      tokenCreatedAt: nowIso,
+      linkExpireCount: 0,
+      minusScore: 0
+    };
+
     if (useLocalFallback) {
       const data = loadLocalData();
-      const newEmployee = {
-        id: generateId('emp'),
-        name: name.trim(),
-        role: role.trim() || 'Staff',
-        status: 'OUT',
-        pin: '1234',
-        token: generateToken(),
-        dateCreated: new Date().toISOString()
-      };
       data.employees.push(newEmployee);
       saveLocalData(data);
       return newEmployee;
     }
     try {
-      const newEmployee = {
-        id: generateId('emp'),
-        name: name.trim(),
-        role: role.trim() || 'Staff',
-        status: 'OUT',
-        pin: '1234',
-        token: generateToken(),
-        dateCreated: new Date().toISOString()
-      };
       const { data, error } = await supabase
         .from('employees')
         .insert([newEmployee])
         .select()
         .single();
-      if (error) handleSupabaseError(error, 'add employee');
+      if (error) {
+        // Fallback insert without new columns if Supabase table has strict schema
+        const legacyEmp = {
+          id: newEmployee.id,
+          name: newEmployee.name,
+          role: newEmployee.role,
+          status: newEmployee.status,
+          pin: newEmployee.pin,
+          token: newEmployee.token,
+          dateCreated: newEmployee.dateCreated
+        };
+        const { data: d2, error: e2 } = await supabase
+          .from('employees')
+          .insert([legacyEmp])
+          .select()
+          .single();
+        if (e2) handleSupabaseError(e2, 'add employee');
+        return d2 || newEmployee;
+      }
       return data;
     } catch (error) {
       handleSupabaseError(error, 'add employee');
@@ -1106,6 +1194,8 @@ const db = {
         employeeName: emp.name,
         role: emp.role || 'Staff',
         isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
+        minusScore: emp.minusScore || 0,
+        linkExpireCount: emp.linkExpireCount || 0,
         presentDates: new Set(),
         leaveDates: new Set(),
         workDoneDetails: [],
@@ -1197,6 +1287,8 @@ const db = {
           employeeName: emp.employeeName,
           role: emp.role,
           isArchived: emp.isArchived,
+          minusScore: emp.minusScore || 0,
+          linkExpireCount: emp.linkExpireCount || 0,
           presentDatesList: Array.from(emp.presentDates || []),
           leaveDatesList: Array.from(emp.leaveDates || []),
           totalDaysInMonth,

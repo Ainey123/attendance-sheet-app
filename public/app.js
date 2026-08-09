@@ -490,6 +490,7 @@ async function selectEmployee(employee) {
     leaveDateInput.value = getLocalDateString();
   }
   await loadSelectedEmployeeLogs(employee.id);
+  checkAndShowLinkExpiryNotice(employee);
 }
 
 // Helper status badges
@@ -2835,6 +2836,7 @@ async function handleQueryParams() {
         localStorage.setItem('loggedInEmployeeId', emp.id);
         selectEmployee(emp);
         setupEmployeeSessionUI(emp);
+        checkAndShowLinkExpiryNotice(emp);
         return;
       }
     } catch (e) {
@@ -3508,7 +3510,7 @@ function initMonthlySummaryTab() {
   }
 
   if (btnExportCSV) {
-    btnExportCSV.addEventListener('click', () => exportMonthlySummaryToCSV());
+    btnExportCSV.addEventListener('click', () => exportMonthlyGridCSV());
   }
 }
 
@@ -3664,6 +3666,11 @@ async function loadAndRenderMonthlySummary() {
       const workDoneText = row.totalWorkDone || (row.totalWorkDoneCount ? `${row.totalWorkDoneCount} Work Items` : '0 Work Items');
       const expenseFmt = (row.totalExpensesAdded || 0).toLocaleString();
 
+      const minusVal = row.minusScore || 0;
+      const minusBadge = minusVal < 0 
+        ? `<span class="badge-role" style="background: rgba(239, 68, 68, 0.16); color: #f87171; font-weight: 700;">${minusVal}</span>` 
+        : `<span style="color: var(--text-muted);">0</span>`;
+
       tr.innerHTML = `
         <td class="col-sn">${idx + 1}</td>
         <td style="font-weight: 600;">${row.employeeName}${archivedBadge}</td>
@@ -3672,6 +3679,7 @@ async function loadAndRenderMonthlySummary() {
         <td style="color: ${missingCount > 0 ? 'var(--color-danger)' : 'var(--text-muted)'}; font-weight: 600;">${missingCount} Days</td>
         <td title="${row.workDoneSummary || ''}">${workDoneText}</td>
         <td style="font-weight: 600; color: var(--color-primary);">PKR ${expenseFmt}</td>
+        <td style="text-align: center;">${minusBadge}</td>
         <td><span class="remarks-badge ${rateClass}">${ratePct}% Present</span></td>
       `;
       tbody.appendChild(tr);
@@ -3680,7 +3688,7 @@ async function loadAndRenderMonthlySummary() {
   } catch (err) {
     console.error('Error loading monthly summary:', err);
     if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load monthly summary report.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Failed to load monthly summary report.</td></tr>';
     }
   }
 }
@@ -3927,3 +3935,160 @@ function exportMonthlySummaryToCSV() {
   link.remove();
   showToast('Monthly Summary CSV exported successfully!', 'success');
 }
+
+async function exportMonthlyGridCSV(monthStr) {
+  const monthInput = document.getElementById('summary-month-input');
+  if (!monthStr && monthInput && monthInput.value) {
+    monthStr = monthInput.value;
+  }
+  if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+    monthStr = getCurrentMonthString();
+  }
+
+  const [yearStr, mStr] = monthStr.split('-');
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(mStr, 10);
+  const daysInMonth = new Date(year, monthNum, 0).getDate();
+
+  const monthDate = new Date(year, monthNum - 1, 1);
+  const monthAbbr = monthDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+  const titleMonth = `${monthAbbr}-${year}`;
+
+  let officeName = 'FAST ENGINEERING SOLUTIONS';
+  try {
+    const s = await API.getSettings();
+    if (s && s.officeName) officeName = s.officeName.toUpperCase();
+  } catch (e) {}
+
+  showToast('Generating monthly attendance sheet grid CSV...', 'info');
+
+  try {
+    const [employees, allLogs] = await Promise.all([
+      API.getEmployees(true),
+      API.getAttendanceLogs(null)
+    ]);
+
+    const monthLogs = (allLogs || []).filter(l => l.date && l.date.startsWith(monthStr));
+
+    const empAttendanceMap = new Map();
+
+    monthLogs.forEach(log => {
+      let empId = log.employeeId;
+      if (!empId && log.employeeName) {
+        const found = (employees || []).find(e => e.name.toLowerCase().trim() === log.employeeName.toLowerCase().trim());
+        if (found) empId = found.id;
+      }
+      if (!empId) return;
+
+      if (!empAttendanceMap.has(empId)) {
+        empAttendanceMap.set(empId, {});
+      }
+      const day = parseInt(log.date.split('-')[2], 10);
+      const isLeave = Boolean(log.performanceNotes && String(log.performanceNotes).trim().toUpperCase().startsWith('LEAVE'));
+      let status = 'P';
+      if (isLeave) status = 'H';
+      else if (log.status === 'ABSENT' || log.status === 'A') status = 'A';
+
+      empAttendanceMap.get(empId)[day] = status;
+    });
+
+    const activeEmps = (employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived);
+
+    const totalCols = 3 + daysInMonth + 1;
+    const csvRows = [];
+
+    // Line 1: FAST ENGINEERING SOLUTIONS,,,,,,ATTENDENCE SHEET-JUN-2026,,,,,,,,,,,,,,,,,,,,,,,,,,,
+    const line1 = Array(totalCols).fill('');
+    line1[0] = `"${officeName.replace(/"/g, '""')}"`;
+    line1[6] = `ATTENDENCE SHEET-${titleMonth}`;
+    csvRows.push(line1.join(','));
+
+    // Line 2: SR,NAME,DESIGNATION,1,2,3,4,...,30,TOTAL
+    const headers = ['SR', 'NAME', 'DESIGNATION'];
+    for (let d = 1; d <= daysInMonth; d++) {
+      headers.push(String(d));
+    }
+    headers.push('TOTAL');
+    csvRows.push(headers.join(','));
+
+    const emptyLine = Array(totalCols).fill('').join(',');
+
+    activeEmps.forEach((emp, idx) => {
+      const empDays = empAttendanceMap.get(emp.id) || {};
+      let presentCount = 0;
+      const empRow = [
+        idx + 1,
+        `"${(emp.name || '').toUpperCase().replace(/"/g, '""')}"`,
+        `"${(emp.role || 'STAFF').toUpperCase().replace(/"/g, '""')}"`
+      ];
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(year, monthNum - 1, d);
+        const isSunday = dt.getDay() === 0;
+        const st = empDays[d];
+
+        if (st === 'P') {
+          empRow.push('P');
+          presentCount++;
+        } else if (st === 'H') {
+          empRow.push('H');
+        } else if (st === 'A') {
+          empRow.push('A');
+        } else if (isSunday) {
+          empRow.push('');
+        } else {
+          empRow.push('');
+        }
+      }
+
+      empRow.push(presentCount);
+      csvRows.push(empRow.join(','));
+      csvRows.push(emptyLine);
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(csvRows.join("\n"));
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", `Employees_Attendance_Sheet_${titleMonth}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showToast(`Monthly Attendance Grid CSV exported for ${titleMonth}!`, 'success');
+  } catch (err) {
+    console.error('Error exporting grid CSV:', err);
+    showToast('Failed to export grid CSV', 'error');
+  }
+}
+
+function checkAndShowLinkExpiryNotice(employee) {
+  if (!employee) return;
+  const count = employee.expireCount || employee.linkExpireCount || 0;
+  if (employee.justExpired || (count > 0 && !sessionStorage.getItem('seenExpiryNotice_' + employee.id))) {
+    const modal = document.getElementById('link-expiry-notice-modal');
+    const promptMsg = document.getElementById('link-expiry-prompt-message');
+    if (modal && promptMsg) {
+      let msg = "You expired your link for 1 time";
+      if (count === 2) {
+        msg = "You expired it for 2nd time";
+      } else if (count > 2) {
+        msg = `You expired your link for ${count} times`;
+      }
+      promptMsg.innerText = msg;
+      modal.classList.remove('hidden');
+
+      const btnClose = document.getElementById('btn-close-link-expiry-modal');
+      if (btnClose) {
+        btnClose.onclick = () => {
+          modal.classList.add('hidden');
+          sessionStorage.setItem('seenExpiryNotice_' + employee.id, 'true');
+        };
+      }
+    }
+    const toastMsg = count === 1 
+      ? "Notice: You expired your link for 1 time" 
+      : (count === 2 ? "Notice: You expired it for 2nd time" : `Notice: You expired your link for ${count} times`);
+    showToast(toastMsg, 'warning');
+  }
+}
+

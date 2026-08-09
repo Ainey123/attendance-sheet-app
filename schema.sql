@@ -10,14 +10,22 @@
 
 -- 1. Employees Table
 CREATE TABLE IF NOT EXISTS employees (
-  "id"          TEXT PRIMARY KEY,
-  "name"        TEXT NOT NULL,
-  "role"        TEXT DEFAULT 'Staff',
-  "status"      TEXT DEFAULT 'OUT' CHECK (status IN ('IN', 'OUT', 'LEAVE')),
-  "pin"         TEXT NOT NULL DEFAULT '1234',
-  "token"       TEXT UNIQUE NOT NULL,
-  "dateCreated" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  "id"              TEXT PRIMARY KEY,
+  "name"            TEXT NOT NULL,
+  "role"            TEXT DEFAULT 'Staff',
+  "status"          TEXT DEFAULT 'OUT' CHECK (status IN ('IN', 'OUT', 'LEAVE')),
+  "pin"             TEXT NOT NULL DEFAULT '1234',
+  "token"           TEXT UNIQUE NOT NULL,
+  "dateCreated"     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "tokenCreatedAt"  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "linkExpireCount" INTEGER DEFAULT 0,
+  "minusScore"      INTEGER DEFAULT 0
 );
+
+-- Safe column additions for existing databases
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS "tokenCreatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS "linkExpireCount" INTEGER DEFAULT 0;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS "minusScore" INTEGER DEFAULT 0;
 
 -- 2. Settings Table (single-row config)
 CREATE TABLE IF NOT EXISTS settings (

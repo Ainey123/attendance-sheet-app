@@ -70,7 +70,7 @@ module.exports = async (req, res) => {
       let employees = await db.getEmployees();
       // If not admin, scrub sensitive data (pin, token)
       if (adminPasscode !== settings.adminPasscode) {
-        employees = employees.map(e => ({ id: e.id, name: e.name, role: e.role, status: e.status }));
+        employees = employees.map(e => ({ id: e.id, name: e.name, role: e.role, status: e.status, minusScore: e.minusScore || 0, linkExpireCount: e.linkExpireCount || 0 }));
       }
       return res.json(employees);
     }
