@@ -38,7 +38,7 @@ if (supabaseUrl && supabaseKey) {
           ALTER TABLE employees ADD COLUMN IF NOT EXISTS "minusScore" INTEGER DEFAULT 0;
           CREATE TABLE IF NOT EXISTS comments (
             "id"           TEXT PRIMARY KEY,
-            "employeeId"   TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+            "employeeId"   TEXT NOT NULL,
             "employeeName" TEXT NOT NULL,
             "sender"       TEXT NOT NULL,
             "senderName"   TEXT NOT NULL,
@@ -1424,7 +1424,27 @@ const db = {
       if (employeeId) query = query.eq('employeeId', employeeId);
       const { data, error } = await query;
       if (error) {
-        console.warn('Supabase fetch comments error, falling back to local:', error.message);
+        console.warn('Supabase fetch comments error:', error.message);
+        // If table doesn't exist, try to create it via RPC
+        if (error.message && (error.message.includes('does not exist') || error.message.includes('relation') || error.code === '42P01')) {
+          try {
+            await supabase.rpc('exec_sql', {
+              sql: `CREATE TABLE IF NOT EXISTS comments (
+                "id" TEXT PRIMARY KEY,
+                "employeeId" TEXT NOT NULL,
+                "employeeName" TEXT NOT NULL,
+                "sender" TEXT NOT NULL,
+                "senderName" TEXT NOT NULL,
+                "message" TEXT NOT NULL,
+                "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+              );`
+            });
+            console.log('comments table created via fallback RPC');
+          } catch (rpcErr) {
+            console.warn('Could not auto-create comments table:', rpcErr.message);
+          }
+        }
+        // Always fall through to local fallback on error
         const dataLocal = loadLocalData();
         let list = dataLocal.comments || [];
         if (employeeId) list = list.filter(c => c.employeeId === employeeId);
@@ -1440,13 +1460,15 @@ const db = {
     }
   },
 
+
   async addComment({ employeeId, employeeName, sender, senderName, message }) {
+    const senderNorm = (sender || 'employee').toLowerCase();
     const newComment = {
       id: generateId('comm'),
       employeeId,
       employeeName: employeeName || 'Employee',
-      sender: sender || 'EMPLOYEE',
-      senderName: senderName || (sender === 'ADMIN' ? 'Admin' : 'Employee'),
+      sender: senderNorm,
+      senderName: senderName || (senderNorm === 'admin' ? 'Admin' : (employeeName || 'Employee')),
       message: message.trim(),
       createdAt: new Date().toISOString()
     };

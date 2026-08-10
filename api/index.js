@@ -299,7 +299,7 @@ module.exports = async (req, res) => {
     // ── GET /api/comments ───────────────────────────────────────────────────
     if (path === 'comments' && method === 'GET') {
       const comments = await db.getComments(query.employeeId || null);
-      return res.json(comments);
+      return res.json({ comments: Array.isArray(comments) ? comments : [] });
     }
 
     // ── POST /api/comments ──────────────────────────────────────────────────

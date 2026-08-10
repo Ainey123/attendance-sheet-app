@@ -554,12 +554,13 @@ const db = {
 
   async addComment({ employeeId, employeeName, sender, senderName, message }) {
     if (!data.comments) data.comments = [];
+    const senderNorm = (sender || 'employee').toLowerCase();
     const newComment = {
       id: generateId('comm'),
       employeeId,
       employeeName: employeeName || 'Employee',
-      sender: sender || 'EMPLOYEE',
-      senderName: senderName || (sender === 'ADMIN' ? 'Admin' : 'Employee'),
+      sender: senderNorm,
+      senderName: senderName || (senderNorm === 'admin' ? 'Admin' : (employeeName || 'Employee')),
       message: message.trim(),
       createdAt: new Date().toISOString()
     };
@@ -567,6 +568,7 @@ const db = {
     saveData();
     return newComment;
   },
+
 
   async deleteComment(id) {
     if (data.comments) {

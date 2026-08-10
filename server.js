@@ -470,7 +470,7 @@ app.delete('/api/forms/:id', async (req, res) => {
 app.get('/api/comments', async (req, res) => {
   try {
     const comments = await db.getComments(req.query.employeeId || null);
-    res.json(comments);
+    res.json({ comments: Array.isArray(comments) ? comments : [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
