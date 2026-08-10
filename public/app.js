@@ -17,6 +17,13 @@ let settings = {
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const payload = await response.json().catch(() => null);
+  // Service Worker offline fallback returns 503 with { error: 'Network error' }
+  // Treat this as a non-fatal network issue rather than throwing
+  if (response.status === 503 && payload && payload.error === 'Network error') {
+    const err = new Error('Network error');
+    err.isOffline = true;
+    throw err;
+  }
   if (response.ok) return payload;
   const errorMessage = payload?.error || payload?.message || `${response.status} ${response.statusText}`;
   const error = new Error(errorMessage);
@@ -3783,8 +3790,12 @@ async function loadAndRenderMonthlySummary() {
   } catch (err) {
     console.error('Error loading monthly summary:', err);
     if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Failed to load monthly summary report.</td></tr>';
+      const msg = err.isOffline
+        ? 'You appear to be offline. Please check your connection and try again.'
+        : 'Failed to load monthly summary report.';
+      tbody.innerHTML = `<tr><td colspan="9" class="table-empty">${msg}</td></tr>`;
     }
+    if (err.isOffline) showToast('You are offline. Please reconnect.', 'warning');
   }
 }
 
