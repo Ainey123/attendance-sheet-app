@@ -4706,40 +4706,48 @@ async function loadAndRenderIndividualAttendance() {
     }
 
     tbody.innerHTML = '';
-    res.records.forEach(r => {
-      const tr = document.createElement('tr');
+    let rowsHtml = '';
+    res.records.forEach(function(r) {
       const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
       const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
-      const durationFmt = r.duration ? `${Math.floor(r.duration / 60)}h ${r.duration % 60}m` : (r.clockOutTime ? '0m' : 'Incomplete');
+      const dur = (typeof r.duration === 'number' && r.duration > 0) ? r.duration : 0;
+      const durationFmt = dur > 0 ? (Math.floor(dur / 60) + 'h ' + (dur % 60) + 'm') : (r.clockOutTime ? '0m' : 'Incomplete');
 
-      const isLeave = Boolean(r.performanceNotes && String(r.performanceNotes).trim().toUpperCase().startsWith('LEAVE'));
+      const notesStr = String(r.performanceNotes || '');
+      const isLeave = notesStr.trim().toUpperCase().startsWith('LEAVE');
 
-      let statusBadge = '<span class="badge-role" style="background: rgba(16, 185, 129, 0.16); color: #34d399;">Present</span>';
+      let statusBadge;
       if (isLeave) {
-        statusBadge = '<span class="badge-role" style="background: rgba(99, 102, 241, 0.16); color: #818cf8;">Leave</span>';
+        statusBadge = '<span class="badge-role" style="background:rgba(99,102,241,.16);color:#818cf8">Leave</span>';
       } else if (!r.clockOutTime) {
-        statusBadge = '<span class="badge-role" style="background: rgba(245, 158, 11, 0.16); color: #fbbf24;">Clocked In (Unclosed)</span>';
+        statusBadge = '<span class="badge-role" style="background:rgba(245,158,11,.16);color:#fbbf24">Clocked In (Unclosed)</span>';
+      } else {
+        statusBadge = '<span class="badge-role" style="background:rgba(16,185,129,.16);color:#34d399">Present</span>';
       }
 
       const resolveBtn = (!r.clockOutTime && !isLeave)
-        ? `<button type="button" onclick="promptResolveAttendance('${r.id}')" class="btn btn-sm btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">Complete Clock-Out</button>`
-        : `<span style="color: var(--text-muted); font-size: 0.8rem;">-</span>`;
+        ? '<button type="button" onclick="promptResolveAttendance(\'' + String(r.id).replace(/'/g, "\\'") + '\')" class="btn btn-sm btn-secondary" style="padding:.2rem .5rem;font-size:.75rem">Complete Clock-Out</button>'
+        : '<span style="color:var(--text-muted);font-size:.8rem">-</span>';
 
-      tr.innerHTML = `
-        <td style="font-weight: 600;">${r.date}</td>
-        <td>${inTimeFmt}</td>
-        <td>${outTimeFmt}</td>
-        <td>${durationFmt}</td>
-        <td>${statusBadge}</td>
-        <td>${escapeHtml(r.performanceNotes || '-')}</td>
-        <td style="font-weight: 600; color: var(--color-primary);">PKR ${(r.expenseAmount || 0).toLocaleString()}</td>
-        <td>${resolveBtn}</td>
-      `;
-      tbody.appendChild(tr);
+      const expense = typeof r.expenseAmount === 'number' ? r.expenseAmount : (parseFloat(r.expenseAmount) || 0);
+      const notesSafe = String(r.performanceNotes || '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      rowsHtml += '<tr>' +
+        '<td style="font-weight:600">' + (r.date || '-') + '</td>' +
+        '<td>' + inTimeFmt + '</td>' +
+        '<td>' + outTimeFmt + '</td>' +
+        '<td>' + durationFmt + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + notesSafe + '</td>' +
+        '<td style="font-weight:600;color:var(--color-primary)">PKR ' + expense.toLocaleString() + '</td>' +
+        '<td>' + resolveBtn + '</td>' +
+        '</tr>';
     });
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="8" class="table-empty">No attendance records found for this tenure.</td></tr>';
   } catch (err) {
     console.error('Error loading individual attendance:', err);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load individual attendance records.</td></tr>';
+    const msg = err && err.message ? err.message : String(err);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty" style="color:#f87171">Error: ' + msg + '</td></tr>';
   }
 }
 
