@@ -262,12 +262,35 @@ app.get('/api/attendance/status/:employeeId', async (req, res) => {
   }
 });
 
-// Get monthly attendance summary across all active & archived staff
+// Get monthly attendance summary across all staff with optional tenure date range filter
 app.get('/api/attendance/monthly-summary', async (req, res) => {
-  const { month } = req.query;
+  const { month, startDate, endDate } = req.query;
   try {
-    const summary = await db.getMonthlySummary(month || null);
+    const summary = await db.getMonthlySummary(month || null, startDate || null, endDate || null);
     res.json({ success: true, ...summary });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get detailed individual attendance history by employee ID or full name with tenure filter
+app.get('/api/attendance/individual', async (req, res) => {
+  const { employeeId, employeeName, startDate, endDate, month } = req.query;
+  try {
+    const data = await db.getIndividualAttendance({ employeeId, employeeName, startDate, endDate, month });
+    res.json({ success: true, ...data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Resolve unclocked-out attendance record (admin action)
+app.post('/api/attendance/resolve', checkAdminAuth, async (req, res) => {
+  const { attendanceId, clockOutTime, performanceNotes, expenseAmount } = req.body;
+  if (!attendanceId) return res.status(400).json({ error: 'attendanceId required' });
+  try {
+    const record = await db.resolveUnclockedOutAttendance(attendanceId, clockOutTime, performanceNotes, expenseAmount);
+    res.json({ success: true, record });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

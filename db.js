@@ -777,6 +777,62 @@ const db = {
     }
   },
 
+  async resolveUnclockedOutAttendance(attendanceId, clockOutTime, performanceNotes, expenseAmount) {
+    const nowIso = clockOutTime ? new Date(clockOutTime).toISOString() : new Date().toISOString();
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const record = (data.attendance || []).find(r => r.id === attendanceId);
+      if (!record) throw new Error('Attendance record not found');
+      
+      const inTime = new Date(record.clockInTime);
+      const outTime = new Date(nowIso);
+      const duration = Math.max(0, Math.round((outTime - inTime) / (1000 * 60)));
+
+      record.clockOutTime = nowIso;
+      record.duration = duration;
+      if (performanceNotes) record.performanceNotes = performanceNotes;
+      if (expenseAmount !== undefined) record.expenseAmount = Number(expenseAmount) || 0;
+
+      const employee = data.employees.find(e => e.id === record.employeeId);
+      if (employee) employee.status = 'OUT';
+
+      saveLocalData(data);
+      return record;
+    }
+    try {
+      const { data: record, error: fetchErr } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('id', attendanceId)
+        .single();
+      
+      if (fetchErr || !record) throw new Error('Attendance record not found');
+
+      const inTime = new Date(record.clockInTime);
+      const outTime = new Date(nowIso);
+      const duration = Math.max(0, Math.round((outTime - inTime) / (1000 * 60)));
+
+      const { data: updated, error } = await supabase
+        .from('attendance')
+        .update({
+          clockOutTime: nowIso,
+          duration,
+          performanceNotes: performanceNotes || record.performanceNotes || 'Resolved by admin',
+          expenseAmount: expenseAmount !== undefined ? Number(expenseAmount) : (record.expenseAmount || 0)
+        })
+        .eq('id', attendanceId)
+        .select()
+        .single();
+
+      if (error) handleSupabaseError(error, 'resolve attendance record');
+
+      await supabase.from('employees').update({ status: 'OUT' }).eq('id', record.employeeId);
+      return updated;
+    } catch (error) {
+      handleSupabaseError(error, 'resolve attendance record');
+    }
+  },
+
   async getDashboardStats() {
     const today = getLocalDateString();
     const activeEmployees = await this.getEmployees(false);
@@ -1243,74 +1299,116 @@ const db = {
     }
   },
 
-  async getMonthlySummary(monthStr) {
-    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+  async getMonthlySummary(monthStr = null, startDate = null, endDate = null) {
+    let filterStart = startDate;
+    let filterEnd = endDate;
+
+    if (!filterStart || !filterEnd) {
+      if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+        const now = new Date();
+        monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      }
+      const [yearStr, mStr] = monthStr.split('-');
+      const year = parseInt(yearStr, 10);
+      const monthNum = parseInt(mStr, 10);
+      const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
+
       const now = new Date();
-      monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      let lastDay = totalDaysInMonth;
+      if (monthStr === currentMonthStr) {
+        lastDay = now.getDate();
+      }
+      filterStart = `${monthStr}-01`;
+      filterEnd = `${monthStr}-${String(lastDay).padStart(2, '0')}`;
     }
-    const [yearStr, mStr] = monthStr.split('-');
-    const year = parseInt(yearStr, 10);
-    const monthNum = parseInt(mStr, 10);
-    const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
 
-    const now = new Date();
-    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    let daysToEvaluate = totalDaysInMonth;
-    if (monthStr === currentMonthStr) {
-      daysToEvaluate = now.getDate();
-    }
-    const daysEvaluated = daysToEvaluate;
-
-    // Count Sundays in evaluated period
+    const startDt = new Date(filterStart + 'T00:00:00');
+    const endDt = new Date(filterEnd + 'T23:59:59');
+    
+    let daysEvaluated = 0;
     let sundaysInEvaluatedPeriod = 0;
-    for (let d = 1; d <= daysToEvaluate; d++) {
-      const dt = new Date(year, monthNum - 1, d);
-      if (dt.getDay() === 0) sundaysInEvaluatedPeriod++;
+
+    if (!isNaN(startDt.getTime()) && !isNaN(endDt.getTime())) {
+      const cur = new Date(startDt);
+      while (cur <= endDt) {
+        daysEvaluated++;
+        if (cur.getDay() === 0) sundaysInEvaluatedPeriod++;
+        cur.setDate(cur.getDate() + 1);
+      }
     }
-    const workingDaysToEvaluate = Math.max(0, daysToEvaluate - sundaysInEvaluatedPeriod);
+    if (daysEvaluated === 0) daysEvaluated = 1;
+    const workingDaysToEvaluate = Math.max(0, daysEvaluated - sundaysInEvaluatedPeriod);
 
     const allEmployees = await this.getEmployees(true);
     const allAttendance = await this.getAttendance();
-    const monthLogs = (allAttendance || []).filter(a => a.date && a.date.startsWith(monthStr));
     
+    const periodLogs = (allAttendance || []).filter(a => {
+      if (!a.date) return false;
+      return a.date >= filterStart && a.date <= filterEnd;
+    });
+
     let workRecords = [];
     try {
-      workRecords = await this.getWorkRecords(null, monthStr);
+      const yearMonth = filterStart.substring(0, 7);
+      workRecords = await this.getWorkRecords(null, yearMonth);
+      workRecords = (workRecords || []).filter(w => w.date >= filterStart && w.date <= filterEnd);
     } catch (e) {
       workRecords = [];
     }
 
     const summaryMap = new Map();
+    const normalizeName = (name) => String(name || '').trim().toLowerCase();
 
     (allEmployees || []).forEach(emp => {
-      summaryMap.set(emp.id, {
-        employeeId: emp.id,
-        employeeName: emp.name,
-        role: emp.role || 'Staff',
-        isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
-        minusScore: emp.minusScore || 0,
-        linkExpireCount: emp.linkExpireCount || 0,
-        presentDates: new Set(),
-        leaveDates: new Set(),
-        workDoneDetails: [],
-        totalExpensesAdded: 0
-      });
-    });
-
-    monthLogs.forEach(log => {
-      let empSummary = summaryMap.get(log.employeeId);
-      if (!empSummary) {
-        empSummary = {
-          employeeId: log.employeeId || 'emp_' + String(log.employeeName).toLowerCase().replace(/\s+/g, ''),
-          employeeName: log.employeeName || 'Staff Member',
-          role: log.role || 'Staff',
-          isArchived: true,
+      const normKey = normalizeName(emp.name);
+      if (!normKey) return;
+      if (!summaryMap.has(normKey)) {
+        summaryMap.set(normKey, {
+          employeeId: emp.id,
+          employeeName: emp.name.trim(),
+          role: emp.role || 'Staff',
+          isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
+          minusScore: emp.minusScore || 0,
+          linkExpireCount: emp.linkExpireCount || 0,
           presentDates: new Set(),
           leaveDates: new Set(),
+          incompleteDates: new Set(),
+          totalDurationMinutes: 0,
+          workDoneDetails: [],
+          totalExpensesAdded: 0
+        });
+      } else {
+        const existing = summaryMap.get(normKey);
+        if (emp.status !== 'DELETED' && !emp.isArchived) {
+          existing.isArchived = false;
+          existing.employeeId = emp.id;
+        }
+        existing.minusScore += (emp.minusScore || 0);
+        existing.linkExpireCount += (emp.linkExpireCount || 0);
+      }
+    });
+
+    periodLogs.forEach(log => {
+      const normKey = normalizeName(log.employeeName);
+      if (!normKey) return;
+      let empSummary = summaryMap.get(normKey);
+      if (!empSummary) {
+        empSummary = {
+          employeeId: log.employeeId || 'emp_' + normKey.replace(/\s+/g, ''),
+          employeeName: log.employeeName ? log.employeeName.trim() : 'Staff Member',
+          role: log.role || 'Staff',
+          isArchived: true,
+          minusScore: 0,
+          linkExpireCount: 0,
+          presentDates: new Set(),
+          leaveDates: new Set(),
+          incompleteDates: new Set(),
+          totalDurationMinutes: 0,
           workDoneDetails: [],
           totalExpensesAdded: 0
         };
-        summaryMap.set(empSummary.employeeId, empSummary);
+        summaryMap.set(normKey, empSummary);
       }
 
       const isLeave = isLeaveAttendanceRecord(log);
@@ -1318,6 +1416,13 @@ const db = {
         empSummary.leaveDates.add(log.date);
       } else {
         empSummary.presentDates.add(log.date);
+        if (!log.clockOutTime && log.date < getLocalDateString()) {
+          empSummary.incompleteDates.add(log.date);
+        }
+      }
+
+      if (log.duration && !isNaN(Number(log.duration))) {
+        empSummary.totalDurationMinutes += Number(log.duration);
       }
 
       if (log.expenseAmount && !isNaN(Number(log.expenseAmount))) {
@@ -1329,19 +1434,25 @@ const db = {
     });
 
     (workRecords || []).forEach(wr => {
-      let empSummary = summaryMap.get(wr.employeeId);
+      const normKey = normalizeName(wr.employeeName);
+      if (!normKey) return;
+      let empSummary = summaryMap.get(normKey);
       if (!empSummary) {
         empSummary = {
-          employeeId: wr.employeeId || 'emp_' + String(wr.employeeName).toLowerCase().replace(/\s+/g, ''),
-          employeeName: wr.employeeName || 'Staff Member',
+          employeeId: wr.employeeId || 'emp_' + normKey.replace(/\s+/g, ''),
+          employeeName: wr.employeeName ? wr.employeeName.trim() : 'Staff Member',
           role: 'Staff',
           isArchived: true,
+          minusScore: 0,
+          linkExpireCount: 0,
           presentDates: new Set(),
           leaveDates: new Set(),
+          incompleteDates: new Set(),
+          totalDurationMinutes: 0,
           workDoneDetails: [],
           totalExpensesAdded: 0
         };
-        summaryMap.set(empSummary.employeeId, empSummary);
+        summaryMap.set(normKey, empSummary);
       }
 
       if (wr.performedWork && wr.performedWork.trim() !== '') {
@@ -1372,8 +1483,10 @@ const db = {
 
       const totalAttendance = regularPresentCount + sundayPresentCount;
       const leaveDays = regularLeaveCount;
+      const incompleteDays = emp.incompleteDates.size;
       const missingAttendance = Math.max(0, workingDaysToEvaluate - regularPresentCount - regularLeaveCount);
       const workDoneCount = emp.workDoneDetails.length;
+      const totalHoursWorked = Math.round((emp.totalDurationMinutes / 60) * 10) / 10;
 
       if (!emp.isArchived || totalAttendance > 0 || workDoneCount > 0 || emp.totalExpensesAdded > 0) {
         summaries.push({
@@ -1385,7 +1498,7 @@ const db = {
           linkExpireCount: emp.linkExpireCount || 0,
           presentDatesList: Array.from(emp.presentDates || []),
           leaveDatesList: Array.from(emp.leaveDates || []),
-          totalDaysInMonth,
+          incompleteDatesList: Array.from(emp.incompleteDates || []),
           daysEvaluated,
           sundaysInEvaluatedPeriod,
           workingDaysToEvaluate,
@@ -1393,6 +1506,8 @@ const db = {
           sundayPresentCount,
           missingAttendance,
           leaveDays,
+          incompleteDays,
+          totalHoursWorked,
           totalWorkDone: workDoneCount > 0 ? `${workDoneCount} Work Items` : '0 Work Items',
           totalWorkDoneCount: workDoneCount,
           workDoneSummary: emp.workDoneDetails.length > 0 ? emp.workDoneDetails.slice(0, 3).join('; ') : 'None',
@@ -1402,12 +1517,98 @@ const db = {
     });
 
     return {
-      month: monthStr,
-      daysInMonth: totalDaysInMonth,
+      month: monthStr || filterStart.substring(0, 7),
+      startDate: filterStart,
+      endDate: filterEnd,
       daysEvaluated,
       sundaysInEvaluatedPeriod,
       workingDaysToEvaluate,
       summaries
+    };
+  },
+
+  async getIndividualAttendance({ employeeId, employeeName, startDate, endDate, month }) {
+    let filterStart = startDate;
+    let filterEnd = endDate;
+
+    if (!filterStart || !filterEnd) {
+      const monthStr = month || getLocalDateString().substring(0, 7);
+      const [y, m] = monthStr.split('-');
+      const days = new Date(parseInt(y, 10), parseInt(m, 10), 0).getDate();
+      filterStart = `${monthStr}-01`;
+      filterEnd = `${monthStr}-${String(days).padStart(2, '0')}`;
+    }
+
+    const allAttendance = await this.getAttendance();
+    const allEmployees = await this.getEmployees(true);
+
+    const normName = employeeName ? String(employeeName).trim().toLowerCase() : null;
+
+    let targetEmpIds = new Set();
+    if (employeeId) targetEmpIds.add(employeeId);
+    
+    if (normName) {
+      allEmployees.forEach(e => {
+        if (e.name && e.name.trim().toLowerCase() === normName) {
+          targetEmpIds.add(e.id);
+        }
+      });
+    }
+
+    const records = (allAttendance || []).filter(a => {
+      const matchId = targetEmpIds.has(a.employeeId);
+      const matchName = normName && a.employeeName && a.employeeName.trim().toLowerCase() === normName;
+      if (!matchId && !matchName) return false;
+      if (a.date < filterStart || a.date > filterEnd) return false;
+      return true;
+    }).sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
+
+    const presentDates = new Set();
+    const leaveDates = new Set();
+    const incompleteDates = new Set();
+    let totalMinutes = 0;
+    let totalExpenses = 0;
+
+    records.forEach(r => {
+      const isLeave = isLeaveAttendanceRecord(r);
+      if (isLeave) leaveDates.add(r.date);
+      else {
+        presentDates.add(r.date);
+        if (!r.clockOutTime && r.date < getLocalDateString()) incompleteDates.add(r.date);
+      }
+      if (r.duration) totalMinutes += Number(r.duration);
+      if (r.expenseAmount) totalExpenses += Number(r.expenseAmount);
+    });
+
+    const startDt = new Date(filterStart + 'T00:00:00');
+    const endDt = new Date(filterEnd + 'T23:59:59');
+    let daysEvaluated = 0;
+    let sundays = 0;
+    if (!isNaN(startDt.getTime()) && !isNaN(endDt.getTime())) {
+      const cur = new Date(startDt);
+      while (cur <= endDt) {
+        daysEvaluated++;
+        if (cur.getDay() === 0) sundays++;
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
+    const workingDays = Math.max(0, daysEvaluated - sundays);
+    const absentDays = Math.max(0, workingDays - presentDates.size - leaveDates.size);
+
+    return {
+      employeeName: employeeName || (records[0] ? records[0].employeeName : 'Employee'),
+      startDate: filterStart,
+      endDate: filterEnd,
+      daysEvaluated,
+      workingDays,
+      presentDays: presentDates.size,
+      leaveDays: leaveDates.size,
+      incompleteDays: incompleteDates.size,
+      absentDays,
+      totalHours: Math.round((totalMinutes / 60) * 10) / 10,
+      totalExpenses,
+      records
     };
   },
 

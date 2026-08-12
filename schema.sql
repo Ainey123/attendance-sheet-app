@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS settings (
 -- 3. Attendance Table
 CREATE TABLE IF NOT EXISTS attendance (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "role"             TEXT NOT NULL,
   "date"             TEXT NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS attendance (
 -- 4. Work Records Table (monthly daily entries per employee)
 CREATE TABLE IF NOT EXISTS work_records (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "month"            TEXT NOT NULL,
   "date"             TEXT NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS work_records (
 
 -- 5. Work Profiles Table (one per employee per month)
 CREATE TABLE IF NOT EXISTS work_profiles (
-  "employeeId" TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId" TEXT NOT NULL,
   "month"      TEXT NOT NULL,
   "fatherName" TEXT,
   PRIMARY KEY ("employeeId", "month")
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS work_profiles (
 -- 6. Form Submissions Table (employee documents like CNIC, CV, etc.)
 CREATE TABLE IF NOT EXISTS form_submissions (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "formType"         TEXT NOT NULL,
   "formData"         JSONB NOT NULL,
@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS form_submissions (
 
 -- ── Indexes for fast lookups ──────────────────────────────
 CREATE INDEX idx_attendance_employee_id  ON attendance("employeeId");
+CREATE INDEX idx_attendance_employee_name ON attendance("employeeName");
 CREATE INDEX idx_attendance_date         ON attendance("date");
 CREATE INDEX idx_work_records_employee_id ON work_records("employeeId");
 CREATE INDEX idx_work_records_month      ON work_records("month");

@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS settings (
 -- 3. Attendance Table
 CREATE TABLE IF NOT EXISTS attendance (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "role"             TEXT NOT NULL,
   "date"             TEXT NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS attendance (
 -- 4. Work Records Table (monthly daily entries per employee)
 CREATE TABLE IF NOT EXISTS work_records (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "month"            TEXT NOT NULL,
   "date"             TEXT NOT NULL,
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS work_records (
 
 -- 5. Work Profiles Table (one per employee per month)
 CREATE TABLE IF NOT EXISTS work_profiles (
-  "employeeId" TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId" TEXT NOT NULL,
   "month"      TEXT NOT NULL,
   "fatherName" TEXT,
   PRIMARY KEY ("employeeId", "month")
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS work_profiles (
 -- 6. Form Submissions Table (employee documents like CNIC, CV, etc.)
 CREATE TABLE IF NOT EXISTS form_submissions (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "formType"         TEXT NOT NULL,
   "formData"         JSONB NOT NULL,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS form_submissions (
 -- 7. Employee Evaluations Table
 CREATE TABLE IF NOT EXISTS employee_evaluations (
   "id"               TEXT PRIMARY KEY,
-  "employeeId"       TEXT NOT NULL REFERENCES employees("id") ON DELETE CASCADE,
+  "employeeId"       TEXT NOT NULL,
   "employeeName"     TEXT NOT NULL,
   "month"            TEXT NOT NULL,
   "score"            INTEGER NOT NULL CHECK (score >= 0 AND score <= 100),
@@ -115,14 +115,15 @@ CREATE TABLE IF NOT EXISTS employee_evaluations (
 );
 
 -- ── Indexes for fast lookups (IF NOT EXISTS prevents duplicate errors) ─
-CREATE INDEX IF NOT EXISTS idx_attendance_employee_id  ON attendance("employeeId");
-CREATE INDEX IF NOT EXISTS idx_attendance_date         ON attendance("date");
+CREATE INDEX IF NOT EXISTS idx_attendance_employee_id   ON attendance("employeeId");
+CREATE INDEX IF NOT EXISTS idx_attendance_employee_name ON attendance("employeeName");
+CREATE INDEX IF NOT EXISTS idx_attendance_date          ON attendance("date");
 CREATE INDEX IF NOT EXISTS idx_work_records_employee_id ON work_records("employeeId");
-CREATE INDEX IF NOT EXISTS idx_work_records_month      ON work_records("month");
-CREATE INDEX IF NOT EXISTS idx_work_records_date       ON work_records("date");
-CREATE INDEX IF NOT EXISTS idx_employees_token         ON employees("token");
+CREATE INDEX IF NOT EXISTS idx_work_records_month       ON work_records("month");
+CREATE INDEX IF NOT EXISTS idx_work_records_date        ON work_records("date");
+CREATE INDEX IF NOT EXISTS idx_employees_token          ON employees("token");
 CREATE INDEX IF NOT EXISTS idx_form_submissions_employee_id ON form_submissions("employeeId");
-CREATE INDEX IF NOT EXISTS idx_form_submissions_type   ON form_submissions("formType");
+CREATE INDEX IF NOT EXISTS idx_form_submissions_type    ON form_submissions("formType");
 
 -- ── Row Level Security (RLS) ─────────────────────────────
 ALTER TABLE employees      ENABLE ROW LEVEL SECURITY;

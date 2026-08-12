@@ -77,7 +77,27 @@ const API = {
   }),
   getStats: () => fetchJson('/api/stats'),
   getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
-  getMonthlySummary: (month) => fetchJson(`/api/attendance/monthly-summary?month=${encodeURIComponent(month || '')}`),
+  getMonthlySummary: (month, startDate, endDate) => {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    return fetchJson(`/api/attendance/monthly-summary?${params.toString()}`);
+  },
+  getIndividualAttendance: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.employeeId) q.append('employeeId', params.employeeId);
+    if (params.employeeName) q.append('employeeName', params.employeeName);
+    if (params.startDate) q.append('startDate', params.startDate);
+    if (params.endDate) q.append('endDate', params.endDate);
+    if (params.month) q.append('month', params.month);
+    return fetchJson(`/api/attendance/individual?${q.toString()}`);
+  },
+  resolveAttendance: (body) => fetchJson('/api/attendance/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(body)
+  }),
   getAttendanceLogs: (date) => {
     let url = '/api/attendance';
     if (date) url += `?date=${date}`;
@@ -3451,6 +3471,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Monthly Summary & PDF Batch Upload Tab
   initMonthlySummaryTab();
 
+  // Initialize Individual Person Attendance Tab
+  initIndividualAttendanceTab();
+
   // --- COMMENTS / MESSAGES BINDINGS ---
   const btnRefreshEmpComments = document.getElementById('btn-refresh-emp-comments');
   if (btnRefreshEmpComments) {
@@ -3684,7 +3707,13 @@ async function extractTextFromPDFs(files) {
 
 async function loadAndRenderMonthlySummary() {
   const monthInput = document.getElementById('summary-month-input');
+  const startDateInput = document.getElementById('summary-start-date');
+  const endDateInput = document.getElementById('summary-end-date');
+
   const selectedMonth = (monthInput && monthInput.value) ? monthInput.value : getCurrentMonthString();
+  const startDate = startDateInput ? startDateInput.value : '';
+  const endDate = endDateInput ? endDateInput.value : '';
+
   const tbody = document.querySelector('#monthly-summary-table tbody');
   
   if (tbody) {
@@ -3692,7 +3721,7 @@ async function loadAndRenderMonthlySummary() {
   }
 
   try {
-    const res = await API.getMonthlySummary(selectedMonth);
+    const res = await API.getMonthlySummary(selectedMonth, startDate, endDate);
     let summaryData = (res && res.summaries) ? res.summaries : [];
     const daysInMonth = res.daysInMonth || 31;
     const daysEvaluated = res.daysEvaluated || 31;
@@ -3704,21 +3733,27 @@ async function loadAndRenderMonthlySummary() {
 
     currentMonthlySummaryResults = {
       month: selectedMonth,
+      startDate: res.startDate || startDate,
+      endDate: res.endDate || endDate,
       daysInMonth,
       daysEvaluated,
       summaries: summaryData
     };
 
     // Render the Full Day-by-Day Monthly Attendance Sheet Grid Table
-    await renderMonthlyGridSheetUI(selectedMonth);
+    await renderMonthlyGridSheetUI(selectedMonth, startDate, endDate);
 
     // Update Summary Header Title
     const titleEl = document.getElementById('summary-month-title');
     if (titleEl) {
-      const dateObj = new Date(`${selectedMonth}-01T00:00:00`);
-      const monthName = isNaN(dateObj.getTime()) ? selectedMonth : dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' });
       const workDays = res.workingDaysToEvaluate || daysEvaluated;
-      titleEl.innerText = `Monthly Employee Attendance Summary — ${monthName} (${workDays} Working Days Evaluated, Sundays Off)`;
+      if (startDate && endDate) {
+        titleEl.innerText = `Employee Attendance Summary — Tenure: ${startDate} to ${endDate} (${workDays} Working Days Evaluated)`;
+      } else {
+        const dateObj = new Date(`${selectedMonth}-01T00:00:00`);
+        const monthName = isNaN(dateObj.getTime()) ? selectedMonth : dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' });
+        titleEl.innerText = `Monthly Employee Attendance Summary — ${monthName} (${workDays} Working Days Evaluated, Sundays Off)`;
+      }
     }
 
     // Calculate Totals for Stats Grid
@@ -3929,8 +3964,13 @@ async function exportMonthlySummaryToPDF() {
 
   showToast('Generating Monthly Summary PDF Report...', 'info');
   const monthStr = currentMonthlySummaryResults.month;
+  const startDate = currentMonthlySummaryResults.startDate;
+  const endDate = currentMonthlySummaryResults.endDate;
   const dateObj = new Date(`${monthStr}-01T00:00:00`);
   const monthDisplay = isNaN(dateObj.getTime()) ? monthStr : dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' });
+  const periodSubtitle = (startDate && endDate)
+    ? `Tenure Period: <strong>${startDate} to ${endDate}</strong> (${currentMonthlySummaryResults.daysEvaluated} Days Evaluated)`
+    : `Month: <strong>${monthDisplay}</strong> (${currentMonthlySummaryResults.daysEvaluated} Days Evaluated)`;
 
   const printContainer = document.createElement('div');
   printContainer.className = 'pdf-report-wrapper';
@@ -3954,8 +3994,8 @@ async function exportMonthlySummaryToPDF() {
   printContainer.innerHTML = `
     <div style="padding: 20px; font-family: 'Inter', sans-serif; color: #111827; background: #ffffff;">
       <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px;">
-        <h1 style="font-size: 20px; margin: 0; color: #4f46e5; text-transform: uppercase; font-weight: 800;">MONTHLY ATTENDANCE & EXPENSE SUMMARY</h1>
-        <div style="font-size: 14px; color: #4b5563; margin-top: 4px;">Month: <strong>${monthDisplay}</strong> (${currentMonthlySummaryResults.daysEvaluated} Days Evaluated)</div>
+        <h1 style="font-size: 20px; margin: 0; color: #4f46e5; text-transform: uppercase; font-weight: 800;">EMPLOYEE ATTENDANCE & EXPENSE SUMMARY</h1>
+        <div style="font-size: 14px; color: #4b5563; margin-top: 4px;">${periodSubtitle}</div>
       </div>
 
       <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px;">
@@ -4196,7 +4236,7 @@ function checkAndShowLinkExpiryNotice(employee) {
   }
 }
 
-async function renderMonthlyGridSheetUI(monthStr) {
+async function renderMonthlyGridSheetUI(monthStr, startDate, endDate) {
   const thead = document.getElementById('monthly-grid-sheet-thead');
   const tbody = document.getElementById('monthly-grid-sheet-tbody');
   if (!thead || !tbody) return;
@@ -4225,19 +4265,22 @@ async function renderMonthlyGridSheetUI(monthStr) {
       API.getAttendanceLogs(null)
     ]);
 
-    const monthLogs = (allLogs || []).filter(l => l.date && l.date.startsWith(monthStr));
+    const normalizeName = (name) => String(name || '').trim().toLowerCase();
+
+    const monthLogs = (allLogs || []).filter(l => {
+      if (!l.date) return false;
+      if (startDate && endDate) return l.date >= startDate && l.date <= endDate;
+      return l.date.startsWith(monthStr);
+    });
+
     const empAttendanceMap = new Map();
 
     monthLogs.forEach(log => {
-      let empId = log.employeeId;
-      if (!empId && log.employeeName) {
-        const found = (employees || []).find(e => e.name.toLowerCase().trim() === log.employeeName.toLowerCase().trim());
-        if (found) empId = found.id;
-      }
-      if (!empId) return;
+      const normKey = normalizeName(log.employeeName);
+      if (!normKey) return;
 
-      if (!empAttendanceMap.has(empId)) {
-        empAttendanceMap.set(empId, {});
+      if (!empAttendanceMap.has(normKey)) {
+        empAttendanceMap.set(normKey, {});
       }
       const day = parseInt(log.date.split('-')[2], 10);
       const isLeave = Boolean(log.performanceNotes && String(log.performanceNotes).trim().toUpperCase().startsWith('LEAVE'));
@@ -4245,22 +4288,34 @@ async function renderMonthlyGridSheetUI(monthStr) {
       if (isLeave) status = 'H';
       else if (log.status === 'ABSENT' || log.status === 'A') status = 'A';
 
-      empAttendanceMap.get(empId)[day] = status;
+      empAttendanceMap.get(normKey)[day] = status;
     });
 
-    const activeEmps = (employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived);
-    if (activeEmps.length === 0) {
+    // Group active employees by full name identity
+    const activeEmpMap = new Map();
+    (employees || []).forEach(e => {
+      if (e.status !== 'DELETED' && !e.isArchived && e.name && e.name.trim()) {
+        const norm = normalizeName(e.name);
+        if (!activeEmpMap.has(norm)) {
+          activeEmpMap.set(norm, e);
+        }
+      }
+    });
+
+    if (activeEmpMap.size === 0) {
       tbody.innerHTML = '<tr><td colspan="' + (daysInMonth + 4) + '" class="table-empty">No active staff members found for this month.</td></tr>';
       return;
     }
 
     tbody.innerHTML = '';
 
-    activeEmps.forEach((emp, idx) => {
-      const empDays = empAttendanceMap.get(emp.id) || {};
+    let idx = 0;
+    activeEmpMap.forEach((emp, normKey) => {
+      idx++;
+      const empDays = empAttendanceMap.get(normKey) || {};
       let presentCount = 0;
       let rowHtml = `<tr>
-        <td style="font-weight: bold; color: var(--text-muted); background: var(--bg-card, #1e293b); position: sticky; left: 0; z-index: 1;">${idx + 1}</td>
+        <td style="font-weight: bold; color: var(--text-muted); background: var(--bg-card, #1e293b); position: sticky; left: 0; z-index: 1;">${idx}</td>
         <td style="text-align: left; font-weight: 600; color: var(--text-color); background: var(--bg-card, #1e293b); position: sticky; left: 45px; z-index: 1;">${(emp.name || '').toUpperCase()}</td>
         <td style="text-align: left; color: var(--text-muted); font-size: 0.8rem;">${(emp.role || 'STAFF').toUpperCase()}</td>`;
 
@@ -4285,9 +4340,7 @@ async function renderMonthlyGridSheetUI(monthStr) {
 
       rowHtml += `<td style="font-weight: 800; color: var(--color-primary); background: rgba(99, 102, 241, 0.12); text-align: center;">${presentCount}</td></tr>`;
 
-      // Spacer row between employees
       const spacerHtml = `<tr style="height: 4px;"><td colspan="${daysInMonth + 4}" style="padding:0; border:none; background: transparent;"></td></tr>`;
-
       tbody.insertAdjacentHTML('beforeend', rowHtml + spacerHtml);
     });
 
@@ -4540,4 +4593,287 @@ function buildCommentBubble(c, isAdminView) {
 function escapeHtml(str) {
   if (typeof str !== 'string') return str;
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ==========================================================================
+// INDIVIDUAL PERSON ATTENDANCE & TENURE SEARCH ENGINE
+// ==========================================================================
+let currentIndividualSummaryData = null;
+
+function initIndividualAttendanceTab() {
+  const btnSearch = document.getElementById('btn-search-individual-att');
+  const btnExportPDF = document.getElementById('btn-export-individual-pdf');
+  const btnExportCSV = document.getElementById('btn-export-individual-csv');
+
+  if (btnSearch) {
+    btnSearch.addEventListener('click', () => loadAndRenderIndividualAttendance());
+  }
+
+  if (btnExportPDF) {
+    btnExportPDF.addEventListener('click', () => exportIndividualAttendanceToPDF());
+  }
+
+  if (btnExportCSV) {
+    btnExportCSV.addEventListener('click', () => exportIndividualAttendanceToCSV());
+  }
+
+  const navLink = document.querySelector('[data-tab="tab-individual-attendance"]');
+  if (navLink) {
+    navLink.addEventListener('click', () => {
+      populateIndividualEmployeeDropdown();
+    });
+  }
+}
+
+async function populateIndividualEmployeeDropdown() {
+  const select = document.getElementById('indiv-employee-select');
+  if (!select) return;
+
+  try {
+    const employees = await API.getEmployees(true);
+    const nameMap = new Map();
+    (employees || []).forEach(e => {
+      if (e.name && e.name.trim()) {
+        const norm = e.name.trim().toLowerCase();
+        if (!nameMap.has(norm)) {
+          nameMap.set(norm, e.name.trim());
+        }
+      }
+    });
+
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- Select Employee Identity --</option>';
+    nameMap.forEach((displayName) => {
+      const opt = document.createElement('option');
+      opt.value = displayName;
+      opt.textContent = displayName;
+      select.appendChild(opt);
+    });
+
+    if (currentVal) select.value = currentVal;
+  } catch (err) {
+    console.error('Failed to populate individual employee dropdown:', err);
+  }
+}
+
+async function loadAndRenderIndividualAttendance() {
+  const select = document.getElementById('indiv-employee-select');
+  const startDateInput = document.getElementById('indiv-start-date');
+  const endDateInput = document.getElementById('indiv-end-date');
+  const tbody = document.getElementById('individual-attendance-tbody');
+  const titleEl = document.getElementById('indiv-person-title');
+
+  const empName = select ? select.value : '';
+  if (!empName) {
+    showToast('Please select an employee identity first', 'warning');
+    return;
+  }
+
+  const startDate = startDateInput ? startDateInput.value : '';
+  const endDate = endDateInput ? endDateInput.value : '';
+
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading attendance records...</td></tr>';
+  }
+
+  try {
+    const res = await API.getIndividualAttendance({ employeeName: empName, startDate, endDate });
+    if (!res || !res.success) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No records found.</td></tr>';
+      return;
+    }
+
+    currentIndividualSummaryData = res;
+
+    const elDays = document.getElementById('indiv-stat-days');
+    const elPresent = document.getElementById('indiv-stat-present');
+    const elAbsent = document.getElementById('indiv-stat-absent');
+    const elHours = document.getElementById('indiv-stat-hours');
+
+    if (elDays) elDays.innerText = `${res.daysEvaluated} Days (${res.workingDays} Working)`;
+    if (elPresent) elPresent.innerText = `${res.presentDays} Days`;
+    if (elAbsent) elAbsent.innerText = `${res.absentDays} Days`;
+    if (elHours) elHours.innerText = `${res.totalHours} hrs`;
+
+    if (titleEl) {
+      titleEl.innerText = `Attendance Records for ${res.employeeName} (${res.startDate} to ${res.endDate})`;
+    }
+
+    if (!tbody) return;
+    if (!res.records || res.records.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No attendance records found for this tenure.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    res.records.forEach(r => {
+      const tr = document.createElement('tr');
+      const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+      const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+      const durationFmt = r.duration ? `${Math.floor(r.duration / 60)}h ${r.duration % 60}m` : (r.clockOutTime ? '0m' : 'Incomplete');
+      
+      let statusBadge = '<span class="badge-role" style="background: rgba(16, 185, 129, 0.16); color: #34d399;">Present</span>';
+      if (!r.clockOutTime) {
+        statusBadge = '<span class="badge-role" style="background: rgba(245, 158, 11, 0.16); color: #fbbf24;">Clocked In (Unclosed)</span>';
+      }
+      if (isLeaveAttendanceRecord(r)) {
+        statusBadge = '<span class="badge-role" style="background: rgba(99, 102, 241, 0.16); color: #818cf8;">Leave</span>';
+      }
+
+      const resolveBtn = (!r.clockOutTime && !isLeaveAttendanceRecord(r))
+        ? `<button type="button" onclick="promptResolveAttendance('${r.id}')" class="btn btn-sm btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">Complete Clock-Out</button>`
+        : `<span style="color: var(--text-muted); font-size: 0.8rem;">-</span>`;
+
+      tr.innerHTML = `
+        <td style="font-weight: 600;">${r.date}</td>
+        <td>${inTimeFmt}</td>
+        <td>${outTimeFmt}</td>
+        <td>${durationFmt}</td>
+        <td>${statusBadge}</td>
+        <td>${escapeHtml(r.performanceNotes || '-')}</td>
+        <td style="font-weight: 600; color: var(--color-primary);">PKR ${(r.expenseAmount || 0).toLocaleString()}</td>
+        <td>${resolveBtn}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error('Error loading individual attendance:', err);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load individual attendance records.</td></tr>';
+  }
+}
+
+async function promptResolveAttendance(attendanceId) {
+  const notes = prompt('Enter performance/work notes for this clock-out (or leave blank):');
+  if (notes === null) return;
+
+  const expenseStr = prompt('Enter expense amount in PKR (default 0):', '0');
+  const expenseAmount = parseFloat(expenseStr) || 0;
+
+  try {
+    showToast('Resolving clock-out record...', 'info');
+    await API.resolveAttendance({ attendanceId, clockOutTime: new Date().toISOString(), performanceNotes: notes || 'Resolved by admin', expenseAmount });
+    showToast('Attendance record updated and completed!', 'success');
+    loadAndRenderIndividualAttendance();
+    loadAndRenderMonthlySummary();
+  } catch (err) {
+    showToast('Failed to resolve attendance: ' + err.message, 'error');
+  }
+}
+
+async function exportIndividualAttendanceToPDF() {
+  if (!currentIndividualSummaryData || !currentIndividualSummaryData.records) {
+    showToast('Please search individual employee attendance first', 'warning');
+    return;
+  }
+
+  const d = currentIndividualSummaryData;
+  showToast(`Generating Attendance PDF for ${d.employeeName}...`, 'info');
+
+  const printContainer = document.createElement('div');
+  printContainer.className = 'pdf-report-wrapper';
+
+  const rowsHtml = d.records.map((r, idx) => {
+    const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+    const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+    const durationFmt = r.duration ? `${Math.floor(r.duration / 60)}h ${r.duration % 60}m` : (r.clockOutTime ? '0m' : 'Incomplete');
+
+    return `
+      <tr>
+        <td style="padding: 6px; border: 1px solid #d1d5db; text-align: center;">${idx + 1}</td>
+        <td style="padding: 6px; border: 1px solid #d1d5db; font-weight: bold;">${r.date}</td>
+        <td style="padding: 6px; border: 1px solid #d1d5db; text-align: center;">${inTimeFmt}</td>
+        <td style="padding: 6px; border: 1px solid #d1d5db; text-align: center;">${outTimeFmt}</td>
+        <td style="padding: 6px; border: 1px solid #d1d5db; text-align: center;">${durationFmt}</td>
+        <td style="padding: 6px; border: 1px solid #d1d5db;">${escapeHtml(r.performanceNotes || '-')}</td>
+        <td style="padding: 6px; border: 1px solid #d1d5db; text-align: right; color: #4f46e5;">PKR ${(r.expenseAmount || 0).toLocaleString()}</td>
+      </tr>
+    `;
+  }).join('');
+
+  printContainer.innerHTML = `
+    <div style="padding: 20px; font-family: 'Inter', sans-serif; color: #111827; background: #ffffff;">
+      <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px;">
+        <h1 style="font-size: 20px; margin: 0; color: #4f46e5; text-transform: uppercase; font-weight: 800;">INDIVIDUAL ATTENDANCE REPORT</h1>
+        <div style="font-size: 14px; color: #4b5563; margin-top: 4px;">Employee: <strong>${escapeHtml(d.employeeName)}</strong> | Tenure: <strong>${d.startDate} to ${d.endDate}</strong></div>
+        <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">Present Days: <strong>${d.presentDays}</strong> | Working Days: <strong>${d.workingDays}</strong> | Total Hours: <strong>${d.totalHours} hrs</strong> | Expenses: <strong>PKR ${d.totalExpenses.toLocaleString()}</strong></div>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px;">
+        <thead>
+          <tr style="background-color: #f3f4f6; color: #1f2937;">
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">#</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: left;">Date</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Clock In</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Clock Out</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: center;">Duration</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: left;">Work Notes</th>
+            <th style="padding: 7px; border: 1px solid #d1d5db; text-align: right;">Expenses</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      <div style="margin-top: 24px; font-size: 10px; color: #6b7280; text-align: right;">
+        Report Generated: ${new Date().toLocaleString()} | Office Attendance Portal
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(printContainer);
+
+  if (window.html2pdf) {
+    const opt = {
+      margin: 8,
+      filename: `Attendance_${d.employeeName.replace(/\s+/g, '_')}_${d.startDate}_to_${d.endDate}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    try {
+      await html2pdf().set(opt).from(printContainer).save();
+      showToast('Individual Attendance PDF downloaded!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to export PDF', 'error');
+    } finally {
+      printContainer.remove();
+    }
+  } else {
+    window.print();
+    printContainer.remove();
+  }
+}
+
+function exportIndividualAttendanceToCSV() {
+  if (!currentIndividualSummaryData || !currentIndividualSummaryData.records) {
+    showToast('Please search individual employee attendance first', 'warning');
+    return;
+  }
+  const d = currentIndividualSummaryData;
+  const headers = ['S.No', 'Date', 'Clock In', 'Clock Out', 'Duration', 'Work Notes', 'Expenses (PKR)'];
+  const rows = d.records.map((r, idx) => {
+    const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+    const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+    const durationFmt = r.duration ? `${Math.floor(r.duration / 60)}h ${r.duration % 60}m` : '-';
+    return [
+      idx + 1,
+      r.date,
+      `"${inTimeFmt}"`,
+      `"${outTimeFmt}"`,
+      `"${durationFmt}"`,
+      `"${(r.performanceNotes || '').replace(/"/g, '""')}"`,
+      r.expenseAmount || 0
+    ].join(',');
+  });
+
+  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `Attendance_${d.employeeName.replace(/\s+/g, '_')}_${d.startDate}_to_${d.endDate}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }

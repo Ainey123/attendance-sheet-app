@@ -553,6 +553,12 @@
               </svg>
               Monthly Summary &amp; PDFs
             </button>
+            <button class="nav-link" data-tab="tab-individual-attendance">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+              </svg>
+              Individual Person History
+            </button>
             <button class="nav-link" data-tab="tab-settings">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
@@ -963,6 +969,14 @@
                     <input type="month" id="summary-month-input" class="form-input" style="padding: 0.5rem 0.75rem;">
                   </div>
                   <div class="filter-group">
+                    <label for="summary-start-date">Tenure From Date:</label>
+                    <input type="date" id="summary-start-date" class="form-input" style="padding: 0.5rem 0.75rem;">
+                  </div>
+                  <div class="filter-group">
+                    <label for="summary-end-date">Tenure To Date:</label>
+                    <input type="date" id="summary-end-date" class="form-input" style="padding: 0.5rem 0.75rem;">
+                  </div>
+                  <div class="filter-group">
                     <button type="button" id="btn-trigger-pdf-upload" class="btn btn-secondary">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 18px; height: 18px;">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12 3 3 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -1103,6 +1117,97 @@
                     <tr>
                       <td colspan="9" class="table-empty">Select a month and click "Generate Summary" to view reports.</td>
                     </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: INDIVIDUAL ATTENDANCE & TENURE HISTORY -->
+          <div id="tab-individual-attendance" class="tab-pane">
+            <h2 class="admin-tab-title">Individual Person Attendance &amp; Tenure Search</h2>
+            <p class="panel-subtitle" style="margin-top: -1rem; margin-bottom: 1.25rem;">Search any employee by Full Name to view complete day-by-day attendance history, working hours, missing clock-outs, and tenure records across all active and past links.</p>
+
+            <div class="panel data-panel" style="margin-bottom: 1.5rem;">
+              <div class="panel-header-actions" style="flex-wrap: wrap; gap: 1rem;">
+                <div class="table-filters" style="flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                  <div class="filter-group" style="min-width: 220px;">
+                    <label for="indiv-employee-select">Select / Search Employee:</label>
+                    <select id="indiv-employee-select" class="form-select" style="padding: 0.5rem 0.75rem; width: 100%;">
+                      <option value="">-- Select Employee Identity --</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label for="indiv-start-date">Tenure From Date:</label>
+                    <input type="date" id="indiv-start-date" class="form-input" style="padding: 0.5rem 0.75rem;">
+                  </div>
+                  <div class="filter-group">
+                    <label for="indiv-end-date">Tenure To Date:</label>
+                    <input type="date" id="indiv-end-date" class="form-input" style="padding: 0.5rem 0.75rem;">
+                  </div>
+                </div>
+
+                <div class="table-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                  <button id="btn-search-individual-att" class="btn btn-primary">
+                    🔍 Search Tenure History
+                  </button>
+                  <button id="btn-export-individual-pdf" class="btn btn-primary">
+                    Download Person PDF
+                  </button>
+                  <button id="btn-export-individual-csv" class="btn btn-secondary">
+                    Export CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stats grid for Individual Person -->
+            <div class="stats-grid" style="margin-bottom: 1.5rem;">
+              <div class="stat-card">
+                <div class="stat-info">
+                  <span class="stat-label">Evaluated Days</span>
+                  <span class="stat-number" id="indiv-stat-days">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-info">
+                  <span class="stat-label">Present Days</span>
+                  <span class="stat-number" style="color: var(--color-success);" id="indiv-stat-present">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-info">
+                  <span class="stat-label">Absent / Missing</span>
+                  <span class="stat-number" style="color: var(--color-danger);" id="indiv-stat-absent">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-info">
+                  <span class="stat-label">Total Hours Worked</span>
+                  <span class="stat-number" style="color: var(--color-primary);" id="indiv-stat-hours">0 hrs</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Detailed Table for Individual Person -->
+            <div class="panel data-panel">
+              <h3 class="data-panel-title" id="indiv-person-title">Individual Attendance Records</h3>
+              <div class="table-container" style="overflow-x: auto; margin-top: 1rem;">
+                <table id="individual-attendance-table" class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Clock In</th>
+                      <th>Clock Out</th>
+                      <th>Duration</th>
+                      <th>Status</th>
+                      <th>Work Notes</th>
+                      <th>Expenses</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="individual-attendance-tbody">
+                    <tr><td colspan="8" class="table-empty">Select an employee identity and click "Search Tenure History".</td></tr>
                   </tbody>
                 </table>
               </div>

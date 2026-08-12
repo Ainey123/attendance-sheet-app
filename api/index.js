@@ -162,8 +162,30 @@ module.exports = async (req, res) => {
 
     // ── GET /api/attendance/monthly-summary ──────────────────────────────────
     if (path === 'attendance/monthly-summary' && method === 'GET') {
-      const summary = await db.getMonthlySummary(query.month || null);
+      const summary = await db.getMonthlySummary(query.month || null, query.startDate || null, query.endDate || null);
       return res.json({ success: true, ...summary });
+    }
+
+    // ── GET /api/attendance/individual ───────────────────────────────────────
+    if (path === 'attendance/individual' && method === 'GET') {
+      const data = await db.getIndividualAttendance({
+        employeeId: query.employeeId || null,
+        employeeName: query.employeeName || null,
+        startDate: query.startDate || null,
+        endDate: query.endDate || null,
+        month: query.month || null
+      });
+      return res.json({ success: true, ...data });
+    }
+
+    // ── POST /api/attendance/resolve ──────────────────────────────────────────
+    if (path === 'attendance/resolve' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.attendanceId) return res.status(400).json({ error: 'attendanceId required' });
+      const record = await db.resolveUnclockedOutAttendance(body.attendanceId, body.clockOutTime, body.performanceNotes, body.expenseAmount);
+      return res.json({ success: true, record });
     }
 
     // ── POST /api/attendance/clock-in ─────────────────────────────────────────
