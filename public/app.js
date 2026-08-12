@@ -4711,16 +4711,17 @@ async function loadAndRenderIndividualAttendance() {
       const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
       const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
       const durationFmt = r.duration ? `${Math.floor(r.duration / 60)}h ${r.duration % 60}m` : (r.clockOutTime ? '0m' : 'Incomplete');
-      
+
+      const isLeave = Boolean(r.performanceNotes && String(r.performanceNotes).trim().toUpperCase().startsWith('LEAVE'));
+
       let statusBadge = '<span class="badge-role" style="background: rgba(16, 185, 129, 0.16); color: #34d399;">Present</span>';
-      if (!r.clockOutTime) {
+      if (isLeave) {
+        statusBadge = '<span class="badge-role" style="background: rgba(99, 102, 241, 0.16); color: #818cf8;">Leave</span>';
+      } else if (!r.clockOutTime) {
         statusBadge = '<span class="badge-role" style="background: rgba(245, 158, 11, 0.16); color: #fbbf24;">Clocked In (Unclosed)</span>';
       }
-      if (isLeaveAttendanceRecord(r)) {
-        statusBadge = '<span class="badge-role" style="background: rgba(99, 102, 241, 0.16); color: #818cf8;">Leave</span>';
-      }
 
-      const resolveBtn = (!r.clockOutTime && !isLeaveAttendanceRecord(r))
+      const resolveBtn = (!r.clockOutTime && !isLeave)
         ? `<button type="button" onclick="promptResolveAttendance('${r.id}')" class="btn btn-sm btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">Complete Clock-Out</button>`
         : `<span style="color: var(--text-muted); font-size: 0.8rem;">-</span>`;
 
