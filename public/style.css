@@ -2258,3 +2258,33 @@ tr:hover td {
   opacity: 1;
   text-decoration: underline;
 }
+
+/* ── Admin Message Notification Badge ── */
+.emp-tab-btn {
+  position: relative;
+}
+
+.msg-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 4px;
+  pointer-events: none;
+  z-index: 10;
+  animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes badge-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+

@@ -35,6 +35,10 @@ module.exports = async (req, res) => {
   const adminPasscode = headers['x-admin-passcode'] || headers['X-Admin-Passcode'] || '';
 
   try {
+    // Auto-complete any unclosed attendance records from previous days
+    if (method === 'GET' && (path === 'attendance/monthly-summary' || path === 'attendance/individual' || path === 'stats')) {
+      db.autoCompleteOldAttendance().catch(e => console.warn('autoCompleteOldAttendance error:', e.message));
+    }
 
     // ── GET /api/stats ──────────────────────────────────────────────────────
     if (path === 'stats' && method === 'GET') {
@@ -158,6 +162,11 @@ module.exports = async (req, res) => {
       if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
       const record = await db.getTodayAttendanceForEmployee(employeeId);
       return res.json({ activeRecord: record });
+    }
+
+    // Auto-complete any unclosed attendance records from previous days
+    if (method === 'GET' && (path === 'attendance/monthly-summary' || path === 'attendance/individual' || path === 'stats')) {
+      db.autoCompleteOldAttendance().catch(e => console.warn('[AutoClockOut]', e.message));
     }
 
     // ── GET /api/attendance/monthly-summary ──────────────────────────────────
@@ -341,6 +350,22 @@ module.exports = async (req, res) => {
       const id = path.replace('comments/', '');
       const success = await db.deleteComment(id);
       return res.json({ success });
+    }
+
+    // ── GET /api/comments/unread ─────────────────────────────────────────────
+    if (path === 'comments/unread' && method === 'GET') {
+      const empId = query.employeeId;
+      if (!empId) return res.status(400).json({ error: 'employeeId required' });
+      const result = await db.getUnreadAdminMessages(empId);
+      return res.json(result);
+    }
+
+    // ── POST /api/comments/mark-read ─────────────────────────────────────────
+    if (path === 'comments/mark-read' && method === 'POST') {
+      const body = await parseBody(req);
+      if (!body.employeeId) return res.status(400).json({ error: 'employeeId required' });
+      await db.markMessagesRead(body.employeeId);
+      return res.json({ success: true });
     }
 
     // ── 404 fallback ──────────────────────────────────────────────────────────

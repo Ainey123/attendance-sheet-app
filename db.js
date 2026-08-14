@@ -833,6 +833,56 @@ const db = {
     }
   },
 
+  async autoCompleteOldAttendance() {
+    // Auto clock-out all records from PREVIOUS days (not today) that have no clockOutTime
+    const today = getLocalDateString();
+    try {
+      if (useLocalFallback) {
+        const data = loadLocalData();
+        let changed = false;
+        (data.attendance || []).forEach(r => {
+          if (!r.clockOutTime && r.date && r.date < today) {
+            // Clock out at 23:59:59 of the clock-in date
+            const autoOut = new Date(r.date + 'T23:59:59');
+            const inTime = new Date(r.clockInTime);
+            const duration = isNaN(inTime.getTime()) ? 0 : Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
+            r.clockOutTime = autoOut.toISOString();
+            r.duration = duration;
+            r.autoClockOut = true;
+            r.autoClockOutNote = 'Auto clock-out by system — employee did not manually clock out';
+            changed = true;
+          }
+        });
+        if (changed) saveLocalData(data);
+        return;
+      }
+      // Supabase: find all attendance records from before today with no clockOutTime
+      const { data: stale, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .lt('date', today)
+        .is('clockOutTime', null);
+      if (error || !stale || stale.length === 0) return;
+
+      for (const r of stale) {
+        const autoOut = new Date(r.date + 'T23:59:59');
+        const inTime = new Date(r.clockInTime);
+        const duration = isNaN(inTime.getTime()) ? 0 : Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
+        await supabase.from('attendance').update({
+          clockOutTime: autoOut.toISOString(),
+          duration,
+          autoClockOut: true,
+          autoClockOutNote: 'Auto clock-out by system — employee did not manually clock out'
+        }).eq('id', r.id);
+        // Also set employee status to OUT if they are still IN
+        await supabase.from('employees').update({ status: 'OUT' }).eq('id', r.employeeId).eq('status', 'IN');
+      }
+      console.log(`[Auto Clock-Out] Completed ${stale.length} unclosed records from previous days`);
+    } catch (err) {
+      console.warn('[Auto Clock-Out] Error:', err.message);
+    }
+  },
+
   async getDashboardStats() {
     const today = getLocalDateString();
     const activeEmployees = await this.getEmployees(false);
@@ -1671,7 +1721,8 @@ const db = {
       sender: senderNorm,
       senderName: senderName || (senderNorm === 'admin' ? 'Admin' : (employeeName || 'Employee')),
       message: message.trim(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      isRead: senderNorm === 'admin' ? false : true
     };
 
     if (useLocalFallback) {
@@ -1731,6 +1782,48 @@ const db = {
         saveLocalData(data);
       }
       return true;
+    }
+  },
+
+  async getUnreadAdminMessages(employeeId) {
+    try {
+      if (useLocalFallback) {
+        const data = loadLocalData();
+        const list = (data.comments || []).filter(c =>
+          c.employeeId === employeeId && c.sender === 'admin' && c.isRead === false
+        );
+        return { count: list.length, messages: list };
+      }
+      const { data, error } = await supabase
+        .from('comments')
+        .select('id,message,createdAt')
+        .eq('employeeId', employeeId)
+        .eq('sender', 'admin')
+        .eq('isRead', false);
+      if (error) return { count: 0, messages: [] };
+      return { count: (data || []).length, messages: data || [] };
+    } catch {
+      return { count: 0, messages: [] };
+    }
+  },
+
+  async markMessagesRead(employeeId) {
+    try {
+      if (useLocalFallback) {
+        const data = loadLocalData();
+        (data.comments || []).forEach(c => {
+          if (c.employeeId === employeeId && c.sender === 'admin') c.isRead = true;
+        });
+        saveLocalData(data);
+        return;
+      }
+      await supabase.from('comments')
+        .update({ isRead: true })
+        .eq('employeeId', employeeId)
+        .eq('sender', 'admin')
+        .eq('isRead', false);
+    } catch (err) {
+      console.warn('markMessagesRead error:', err.message);
     }
   }
 };

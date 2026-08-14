@@ -265,6 +265,7 @@ app.get('/api/attendance/status/:employeeId', async (req, res) => {
 // Get monthly attendance summary across all staff with optional tenure date range filter
 app.get('/api/attendance/monthly-summary', async (req, res) => {
   const { month, startDate, endDate } = req.query;
+  db.autoCompleteOldAttendance().catch(e => console.warn('autoCompleteOldAttendance error:', e.message));
   try {
     const summary = await db.getMonthlySummary(month || null, startDate || null, endDate || null);
     res.json({ success: true, ...summary });
@@ -520,6 +521,32 @@ app.delete('/api/comments/:id', checkAdminAuth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/comments/unread — unread admin messages for an employee
+app.get('/api/comments/unread', async (req, res) => {
+  try {
+    const empId = req.query.employeeId;
+    if (!empId) return res.status(400).json({ error: 'employeeId required' });
+    const result = await db.getUnreadAdminMessages(empId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/comments/mark-read — mark all admin messages as read for an employee
+app.post('/api/comments/mark-read', async (req, res) => {
+  try {
+    const { employeeId } = req.body;
+    if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+    await db.markMessagesRead(employeeId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 // For any other route, serve index.html
 app.get('*', (req, res) => {

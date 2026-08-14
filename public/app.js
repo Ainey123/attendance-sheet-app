@@ -75,6 +75,12 @@ const API = {
     method: 'DELETE',
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
+  getUnreadMessages: (employeeId) => fetchJson(`/api/comments/unread?employeeId=${encodeURIComponent(employeeId)}`),
+  markMessagesRead: (employeeId) => fetchJson('/api/comments/mark-read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employeeId })
+  }),
   getStats: () => fetchJson('/api/stats'),
   getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
   getMonthlySummary: (month, startDate, endDate) => {
@@ -536,6 +542,8 @@ async function selectEmployee(employee) {
   }
   await loadSelectedEmployeeLogs(employee.id);
   checkAndShowLinkExpiryNotice(employee);
+  // Start polling for unread admin messages
+  startMessageNotificationPolling(employee.id);
 }
 
 // Helper status badges
@@ -1720,7 +1728,10 @@ function switchEmployeeTab(tabId) {
     }
   } else if (tabId === 'emp-pane-comments') {
     grid.classList.remove('work-record-active');
-    if (selectedEmployee) loadEmployeeComments();
+    if (selectedEmployee) {
+      loadEmployeeComments();
+      markMessagesAsRead();
+    }
   } else {
     grid.classList.remove('work-record-active');
   }
@@ -4377,6 +4388,7 @@ async function loadEmployeeComments() {
       feed.insertAdjacentHTML('beforeend', buildCommentBubble(c, false));
     });
     feed.scrollTop = feed.scrollHeight;
+    markMessagesAsRead();
   } catch (err) {
     feed.innerHTML = '<p style="color:var(--color-danger);font-size:0.85rem;">Failed to load messages.</p>';
     console.error('loadEmployeeComments error:', err);
@@ -4709,7 +4721,8 @@ async function loadAndRenderIndividualAttendance() {
     let rowsHtml = '';
     res.records.forEach(function(r) {
       const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
-      const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+      const rawOutTime = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+      const outTimeFmt = r.autoClockOut ? (rawOutTime + ' ⚠') : rawOutTime;
       const dur = (typeof r.duration === 'number' && r.duration > 0) ? r.duration : 0;
       const durationFmt = dur > 0 ? (Math.floor(dur / 60) + 'h ' + (dur % 60) + 'm') : (r.clockOutTime ? '0m' : 'Incomplete');
 
@@ -4719,13 +4732,15 @@ async function loadAndRenderIndividualAttendance() {
       let statusBadge;
       if (isLeave) {
         statusBadge = '<span class="badge-role" style="background:rgba(99,102,241,.16);color:#818cf8">Leave</span>';
+      } else if (r.autoClockOut) {
+        statusBadge = '<span class="badge-role" style="background:rgba(245,158,11,.16);color:#f59e0b" title="Auto clock-out by system — employee did not manually clock out">⚠ Auto Clock-Out</span>';
       } else if (!r.clockOutTime) {
         statusBadge = '<span class="badge-role" style="background:rgba(245,158,11,.16);color:#fbbf24">Clocked In (Unclosed)</span>';
       } else {
         statusBadge = '<span class="badge-role" style="background:rgba(16,185,129,.16);color:#34d399">Present</span>';
       }
 
-      const resolveBtn = (!r.clockOutTime && !isLeave)
+      const resolveBtn = (!r.clockOutTime && !isLeave && !r.autoClockOut)
         ? '<button type="button" onclick="promptResolveAttendance(\'' + String(r.id).replace(/'/g, "\\'") + '\')" class="btn btn-sm btn-secondary" style="padding:.2rem .5rem;font-size:.75rem">Complete Clock-Out</button>'
         : '<span style="color:var(--text-muted);font-size:.8rem">-</span>';
 
@@ -4783,7 +4798,8 @@ async function exportIndividualAttendanceToPDF() {
 
   const rowsHtml = d.records.map((r, idx) => {
     const inTimeFmt = r.clockInTime ? new Date(r.clockInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
-    const outTimeFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+    const rawOutFmt = r.clockOutTime ? new Date(r.clockOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+    const outTimeFmt = r.autoClockOut ? (rawOutFmt + ' (Auto)') : rawOutFmt;
     const durationFmt = r.duration ? `${Math.floor(r.duration / 60)}h ${r.duration % 60}m` : (r.clockOutTime ? '0m' : 'Incomplete');
 
     return `
@@ -4886,3 +4902,80 @@ function exportIndividualAttendanceToCSV() {
   link.click();
   link.remove();
 }
+
+// ==========================================================================
+// ADMIN MESSAGE NOTIFICATION POLLING (EMPLOYEE PORTAL)
+// ==========================================================================
+let _msgPollInterval = null;
+let _lastUnreadCount = 0;
+
+function startMessageNotificationPolling(employeeId) {
+  stopMessageNotificationPolling();
+  _lastUnreadCount = 0;
+  // Immediate first check
+  checkAndShowMessageNotification(employeeId);
+  // Then every 30 seconds
+  _msgPollInterval = setInterval(function() {
+    checkAndShowMessageNotification(employeeId);
+  }, 30000);
+}
+
+function stopMessageNotificationPolling() {
+  if (_msgPollInterval) {
+    clearInterval(_msgPollInterval);
+    _msgPollInterval = null;
+  }
+  _lastUnreadCount = 0;
+  clearMessageBadge();
+}
+
+async function checkAndShowMessageNotification(employeeId) {
+  try {
+    const res = await API.getUnreadMessages(employeeId);
+    const count = (res && typeof res.count === 'number') ? res.count : 0;
+    if (count > 0) {
+      showMessageBadge(count);
+      if (count > _lastUnreadCount) {
+        // New messages since last check — show toast
+        showToast('\uD83D\uDCE9 You have ' + count + ' new message' + (count > 1 ? 's' : '') + ' from Admin!', 'info');
+      }
+    } else {
+      clearMessageBadge();
+    }
+    _lastUnreadCount = count;
+  } catch (e) {
+    // Silently ignore polling errors
+  }
+}
+
+function showMessageBadge(count) {
+  const btn = document.querySelector('[data-emp-tab="emp-pane-comments"]');
+  if (!btn) return;
+  let badge = btn.querySelector('.msg-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'msg-badge';
+    btn.style.position = 'relative';
+    btn.appendChild(badge);
+  }
+  badge.textContent = count > 9 ? '9+' : String(count);
+}
+
+function clearMessageBadge() {
+  const btn = document.querySelector('[data-emp-tab="emp-pane-comments"]');
+  if (!btn) return;
+  const badge = btn.querySelector('.msg-badge');
+  if (badge) badge.remove();
+}
+
+async function markMessagesAsRead() {
+  if (!selectedEmployee) return;
+  try {
+    await API.markMessagesRead(selectedEmployee.id);
+    _lastUnreadCount = 0;
+    clearMessageBadge();
+  } catch (e) {
+    // ignore
+  }
+}
+
