@@ -43,8 +43,10 @@ if (supabaseUrl && supabaseKey) {
             "sender"       TEXT NOT NULL,
             "senderName"   TEXT NOT NULL,
             "message"      TEXT NOT NULL,
-            "createdAt"    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            "createdAt"    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            "isRead"       BOOLEAN DEFAULT TRUE
           );
+          ALTER TABLE comments ADD COLUMN IF NOT EXISTS "isRead" BOOLEAN DEFAULT TRUE;
         `
       });
       if (rpcError) {
@@ -1687,8 +1689,10 @@ const db = {
                 "sender" TEXT NOT NULL,
                 "senderName" TEXT NOT NULL,
                 "message" TEXT NOT NULL,
-                "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-              );`
+                "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                "isRead" BOOLEAN DEFAULT TRUE
+              );
+              ALTER TABLE comments ADD COLUMN IF NOT EXISTS "isRead" BOOLEAN DEFAULT TRUE;`
             });
             console.log('comments table created via fallback RPC');
           } catch (rpcErr) {
