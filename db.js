@@ -590,7 +590,7 @@ const db = {
       if (todayRecords.some(isLeaveAttendanceRecord)) {
         throw new Error('Employee has a leave request for today');
       }
-      const activeRecord = data.attendance.find(r => r.employeeId === employeeId && !r.clockOutTime);
+      const activeRecord = data.attendance.find(r => r.employeeId === employeeId && r.date === today && !r.clockOutTime);
       if (activeRecord) throw new Error('Employee is already clocked in');
 
       const record = {
@@ -637,6 +637,7 @@ const db = {
         .from('attendance')
         .select('*')
         .eq('employeeId', employeeId)
+        .eq('date', today)
         .is('clockOutTime', null)
         .single();
 

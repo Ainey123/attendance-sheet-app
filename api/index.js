@@ -101,6 +101,7 @@ module.exports = async (req, res) => {
 
     // ── GET /api/employees/token/:token ──────────────────────────────────────
     if (path.startsWith('employees/token/') && method === 'GET') {
+      db.autoCompleteOldAttendance().catch(e => console.warn('[AutoClockOut]', e.message));
       const token = path.replace('employees/token/', '');
       const employee = await db.getEmployeeByToken(token);
       if (!employee) return res.status(404).json({ error: 'Invalid token' });
@@ -158,6 +159,7 @@ module.exports = async (req, res) => {
 
     // ── GET /api/attendance/status/:employeeId ────────────────────────────────
     if (path.startsWith('attendance/status') && method === 'GET') {
+      db.autoCompleteOldAttendance().catch(e => console.warn('[AutoClockOut]', e.message));
       const employeeId = path.replace('attendance/status/', '') || query.employeeId;
       if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
       const record = await db.getTodayAttendanceForEmployee(employeeId);
