@@ -2288,3 +2288,61 @@ tr:hover td {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* ==========================================================================
+   SALARY SHEET STYLES
+   ========================================================================== */
+.salary-basic-input {
+  background: rgba(99,102,241,0.10);
+  border: 1px solid rgba(99,102,241,0.35);
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  width: 110px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.salary-basic-input:focus {
+  border-color: var(--color-indigo);
+  background: rgba(99,102,241,0.18);
+}
+.salary-save-btn {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.salary-save-btn:hover { opacity: 0.85; }
+.salary-generate-btn {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.salary-generate-btn:hover { opacity: 0.85; }
+
+.net-salary-positive { color: #22c55e; font-weight: 700; }
+.net-salary-negative { color: #f87171; font-weight: 700; }
+
+/* Print styles for salary sheet */
+@media print {
+  body * { visibility: hidden !important; }
+  #salary-sheet-printable, #salary-sheet-printable * { visibility: visible !important; }
+  #salary-sheet-printable { position: fixed; top: 0; left: 0; width: 100%; background: #fff !important; color: #000 !important; }
+  #salary-sheet-printable table { border-collapse: collapse; width: 100%; }
+  #salary-sheet-printable th, #salary-sheet-printable td { border: 1px solid #333 !important; color: #000 !important; background: #fff !important; font-size: 0.75rem; padding: 4px 6px; }
+  #salary-sheet-printable th { background: #eee !important; font-weight: 700; }
+  .no-print { display: none !important; }
+  .salary-basic-input, .salary-save-btn, .salary-generate-btn { display: none !important; }
+}
+

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load existing data or create default
-let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [] };
+let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [] };
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
@@ -11,7 +11,7 @@ function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const fileData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [] };
+      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [] };
     }
   } catch (e) {
     console.error('Error loading data:', e.message);
@@ -562,6 +562,7 @@ const db = {
       sender: senderNorm,
       senderName: senderName || (senderNorm === 'admin' ? 'Admin' : (employeeName || 'Employee')),
       message: message.trim(),
+      isRead: senderNorm === 'admin' ? false : true, // admin messages start as unread for employee
       createdAt: new Date().toISOString()
     };
     data.comments.push(newComment);
@@ -576,6 +577,153 @@ const db = {
       saveData();
     }
     return true;
+  },
+
+  async getUnreadAdminMessages(employeeId) {
+    const list = (data.comments || []).filter(c =>
+      c.employeeId === employeeId && c.sender === 'admin' && c.isRead === false
+    );
+    return { count: list.length, messages: list };
+  },
+
+  async markMessagesRead(employeeId) {
+    (data.comments || []).forEach(c => {
+      if (c.employeeId === employeeId && c.sender === 'admin') c.isRead = true;
+    });
+    saveData();
+  },
+
+  // --- Salary Methods ---
+  async getSalaryRecord(employeeId, month) {
+    if (!data.salaries) data.salaries = [];
+    return data.salaries.find(s => s.employeeId === employeeId && s.month === month) || null;
+  },
+
+  async getAllSalaries(month) {
+    if (!data.salaries) data.salaries = [];
+    if (month) return data.salaries.filter(s => s.month === month);
+    return data.salaries;
+  },
+
+  async setSalaryBasic(employeeId, month, basicSalary) {
+    if (!data.salaries) data.salaries = [];
+    let rec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
+    if (!rec) {
+      const emp = (data.employees || []).find(e => e.id === employeeId);
+      rec = {
+        id: generateId('sal'),
+        employeeId,
+        employeeName: emp ? emp.name : '',
+        role: emp ? (emp.role || 'Staff') : 'Staff',
+        month,
+        basicSalary: 0,
+        generatedAt: null
+      };
+      data.salaries.push(rec);
+    }
+    rec.basicSalary = Number(basicSalary) || 0;
+    saveData();
+    return rec;
+  },
+
+  async generateSalary(employeeId, month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    const [yearStr, mStr] = month.split('-');
+    const year = parseInt(yearStr, 10);
+    const monthNum = parseInt(mStr, 10);
+    const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
+
+    // Get or create salary record
+    if (!data.salaries) data.salaries = [];
+    let salRec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
+    const emp = (data.employees || []).find(e => e.id === employeeId);
+    if (!salRec) {
+      salRec = {
+        id: generateId('sal'),
+        employeeId,
+        employeeName: emp ? emp.name : employeeId,
+        role: emp ? (emp.role || 'Staff') : 'Staff',
+        month,
+        basicSalary: 0,
+        generatedAt: null
+      };
+      data.salaries.push(salRec);
+    }
+
+    // Count present days from attendance (non-leave records)
+    const attendanceLogs = (data.attendance || []).filter(a =>
+      a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeaveAttendanceRecord(a)
+    );
+    const presentDates = new Set();
+    attendanceLogs.forEach(a => presentDates.add(a.date));
+
+    // Separate regular days vs Sunday days worked
+    let regularPresentDays = 0;
+    let sundayPresentDays = 0;
+    presentDates.forEach(dateStr => {
+      const parts = dateStr.split('-');
+      const dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      if (dt.getDay() === 0) sundayPresentDays++;
+      else regularPresentDays++;
+    });
+
+    // Sum total expenses from all clock-out records that month
+    let totalExpenses = 0;
+    attendanceLogs.forEach(a => {
+      if (a.expenseAmount && !isNaN(Number(a.expenseAmount))) {
+        totalExpenses += Number(a.expenseAmount);
+      }
+    });
+
+    const basicSalary = salRec.basicSalary || 0;
+
+    // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day month)
+    const perDaySalary = basicSalary / 30;
+
+    // Regular earned = per day × regular present days
+    const regularEarned = Math.round(perDaySalary * regularPresentDays);
+
+    // Sunday bonus = per day × sunday days worked (they are paid extra for coming on Sunday)
+    const sundayBonus = Math.round(perDaySalary * sundayPresentDays);
+
+    // Total earned = regular + sunday bonus
+    const earnedSalary = regularEarned + sundayBonus;
+
+    // Net salary = earned - expenses (expenses deducted at clock-out)
+    const netSalary = earnedSalary - Math.round(totalExpenses);
+
+    Object.assign(salRec, {
+      employeeName: emp ? emp.name : salRec.employeeName,
+      role: emp ? (emp.role || 'Staff') : salRec.role,
+      totalDaysInMonth,
+      workingDays: 30, // fixed divisor
+      regularPresentDays,
+      sundayPresentDays,
+      presentDays: regularPresentDays + sundayPresentDays,
+      perDaySalary: Math.round(perDaySalary),
+      regularEarned,
+      sundayBonus,
+      earnedSalary,
+      totalExpenses: Math.round(totalExpenses),
+      netSalary,
+      generatedAt: new Date().toISOString()
+    });
+
+    saveData();
+    return salRec;
+  },
+
+  async generateAllSalaries(month) {
+    const employees = await this.getEmployees(false);
+    const results = [];
+    for (const emp of employees) {
+      const rec = await this.generateSalary(emp.id, month);
+      results.push(rec);
+    }
+    return results;
   }
 };
 

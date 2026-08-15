@@ -370,8 +370,55 @@ module.exports = async (req, res) => {
       return res.json({ success: true });
     }
 
+
+    // ── GET /api/salary ──────────────────────────────────────────────────────
+    if (path === 'salary' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const records = await db.getAllSalaries(query.month || null);
+      return res.json({ success: true, salaries: records });
+    }
+
+    // ── GET /api/salary/:employeeId ──────────────────────────────────────────
+    if (path.startsWith('salary/') && method === 'GET') {
+      const empId = path.replace('salary/', '');
+      const record = await db.getSalaryRecord(empId, query.month || null);
+      return res.json({ success: true, salary: record });
+    }
+
+    // ── POST /api/salary/set-basic ───────────────────────────────────────────
+    if (path === 'salary/set-basic' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month) return res.status(400).json({ error: 'employeeId and month required' });
+      const rec = await db.setSalaryBasic(body.employeeId, body.month, body.basicSalary || 0);
+      return res.json({ success: true, salary: rec });
+    }
+
+    // ── POST /api/salary/generate ────────────────────────────────────────────
+    if (path === 'salary/generate' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month) return res.status(400).json({ error: 'employeeId and month required' });
+      const rec = await db.generateSalary(body.employeeId, body.month);
+      return res.json({ success: true, salary: rec });
+    }
+
+    // ── POST /api/salary/generate-all ───────────────────────────────────────
+    if (path === 'salary/generate-all' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.month) return res.status(400).json({ error: 'month required' });
+      const results = await db.generateAllSalaries(body.month);
+      return res.json({ success: true, salaries: results });
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
+
 
   } catch (e) {
     console.error('API error:', e);

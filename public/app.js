@@ -99,6 +99,25 @@ const API = {
     if (params.month) q.append('month', params.month);
     return fetchJson(`/api/attendance/individual?${q.toString()}`);
   },
+  // Salary APIs
+  getSalaries: (month) => fetchJson(`/api/salary?month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
+  setSalaryBasic: (employeeId, month, basicSalary) => fetchJson('/api/salary/set-basic', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month, basicSalary })
+  }),
+  generateSalary: (employeeId, month) => fetchJson('/api/salary/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month })
+  }),
+  generateAllSalaries: (month) => fetchJson('/api/salary/generate-all', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ month })
+  }),
   resolveAttendance: (body) => fetchJson('/api/attendance/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
@@ -542,7 +561,8 @@ async function selectEmployee(employee) {
   }
   await loadSelectedEmployeeLogs(employee.id);
   checkAndShowLinkExpiryNotice(employee);
-  // Start polling for unread admin messages
+  // Start polling for unread admin messages and request notification permission
+  requestBrowserNotificationPermission();
   startMessageNotificationPolling(employee.id);
 }
 
@@ -1001,6 +1021,8 @@ async function switchAdminTab(tabId) {
     await loadAndRenderMonthlySummary();
   } else if (tabId === 'tab-comments') {
     await loadAdminComments();
+  } else if (tabId === 'tab-salary') {
+    await loadSalarySheet();
   }
 }
 
@@ -3485,6 +3507,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Individual Person Attendance Tab
   initIndividualAttendanceTab();
 
+  // Initialize Salary Tab
+  initSalaryTab();
+
   // --- COMMENTS / MESSAGES BINDINGS ---
   const btnRefreshEmpComments = document.getElementById('btn-refresh-emp-comments');
   if (btnRefreshEmpComments) {
@@ -4938,6 +4963,16 @@ async function checkAndShowMessageNotification(employeeId) {
       if (count > _lastUnreadCount) {
         // New messages since last check — show toast
         showToast('\uD83D\uDCE9 You have ' + count + ' new message' + (count > 1 ? 's' : '') + ' from Admin!', 'info');
+        // Also fire a browser push notification if permitted
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          try {
+            new Notification('📩 New Message from Admin', {
+              body: 'You have ' + count + ' new message' + (count > 1 ? 's' : '') + '. Open the app to read.',
+              icon: '/icon.svg',
+              tag: 'admin-msg-' + employeeId
+            });
+          } catch (ne) { /* ignore notification errors */ }
+        }
       }
     } else {
       clearMessageBadge();
@@ -4979,3 +5014,216 @@ async function markMessagesAsRead() {
   }
 }
 
+// ==========================================================================
+// BROWSER NOTIFICATION PERMISSION
+// ==========================================================================
+function requestBrowserNotificationPermission() {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    // Delay slightly so user sees the app first
+    setTimeout(() => {
+      Notification.requestPermission().catch(() => {});
+    }, 2000);
+  }
+}
+
+// ==========================================================================
+// SALARY SHEET SYSTEM
+// ==========================================================================
+let currentSalaryMonth = '';
+
+function initSalaryTab() {
+  // Set default month to current month
+  const picker = document.getElementById('salary-month-picker');
+  if (picker) {
+    const now = new Date();
+    picker.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  const btnLoad = document.getElementById('btn-load-salary-sheet');
+  if (btnLoad) btnLoad.addEventListener('click', () => loadSalarySheet());
+
+  const btnGenerateAll = document.getElementById('btn-generate-all-salaries');
+  if (btnGenerateAll) btnGenerateAll.addEventListener('click', handleGenerateAllSalaries);
+
+  const btnPrint = document.getElementById('btn-print-salary-sheet');
+  if (btnPrint) btnPrint.addEventListener('click', printSalarySheet);
+}
+
+async function loadSalarySheet(monthOverride) {
+  const picker = document.getElementById('salary-month-picker');
+  const month = monthOverride || (picker ? picker.value : '') || getCurrentMonthString();
+  if (!month) { showToast('Please select a month first.', 'warning'); return; }
+  currentSalaryMonth = month;
+
+  const tbody = document.getElementById('salary-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Loading salary data...</td></tr>';
+
+  // Update header info
+  const orgNameEl = document.getElementById('salary-sheet-org-name');
+  if (orgNameEl) orgNameEl.textContent = settings.organizationName || 'Company Name';
+  const periodEl = document.getElementById('salary-sheet-period');
+  if (periodEl) {
+    const [yr, mo] = month.split('-');
+    const monthName = new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    periodEl.textContent = `SALARY SHEET — ${monthName.toUpperCase()}`;
+  }
+  const dateEl = document.getElementById('salary-sheet-date');
+  if (dateEl) dateEl.textContent = `Generated: ${new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}`;
+  const statMonth = document.getElementById('sal-stat-month');
+  if (statMonth) statMonth.textContent = month;
+
+  try {
+    // Load employees + existing salary records
+    const [empRes, salRes] = await Promise.all([
+      API.getEmployees(),
+      API.getSalaries(month)
+    ]);
+    const employees = empRes.employees || empRes || [];
+    const salaries = (salRes && salRes.salaries) ? salRes.salaries : [];
+
+    // Build salary map
+    const salMap = {};
+    salaries.forEach(s => { salMap[s.employeeId] = s; });
+
+    if (!employees.length) {
+      tbody.innerHTML = '<tr><td colspan="13" class="table-empty">No employees found.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    let totalPayable = 0;
+    let totalExpenses = 0;
+
+    employees.forEach((emp, idx) => {
+      const sal = salMap[emp.id] || {};
+      const basicSalary = sal.basicSalary || 0;
+      const monthDays = sal.totalDaysInMonth || '—';
+      const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : '—';
+      const sundayDays = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
+      const presentDays = sal.presentDays !== undefined ? sal.presentDays : '—';
+      // Per day = basic / 30
+      const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : '—');
+      const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : '—';
+      const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (typeof sundayDays === 'number' && typeof perDay === 'number' ? sundayDays * perDay : '—');
+      const earnedSalary = sal.earnedSalary !== undefined ? sal.earnedSalary : '—'; // total = regular + sunday
+      const expenses = sal.totalExpenses !== undefined ? sal.totalExpenses : '—';
+      const netSalary = sal.netSalary !== undefined ? sal.netSalary : '—';
+      const isGenerated = sal.generatedAt;
+
+      if (typeof netSalary === 'number') totalPayable += netSalary;
+      if (typeof expenses === 'number') totalExpenses += expenses;
+
+      const netClass = typeof netSalary === 'number' ? (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative') : '';
+      const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : v;
+      // Present days tooltip: e.g. "11 regular + 2 Sundays"
+      const presentTitle = isGenerated ? `${regularDays} regular + ${sundayDays} Sunday(s)` : '';
+      const sundayBonusTip = typeof sundayDays === 'number' && sundayDays > 0 
+        ? `${sundayDays} Sunday(s) × ${fmtNum(perDay)}` : '';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="text-align:center; color:var(--text-muted);">${idx + 1}</td>
+        <td style="font-weight:600;">${escapeHtml(emp.name)}</td>
+        <td style="color:var(--text-secondary); font-size:0.85rem;">${escapeHtml(emp.role || 'Staff')}</td>
+        <td>
+          <div style="display:flex; gap:0.35rem; align-items:center;">
+            <input type="number" class="salary-basic-input" data-empid="${emp.id}" data-month="${month}"
+              value="${basicSalary}" placeholder="0" min="0" />
+            <button class="salary-save-btn" data-empid="${emp.id}" data-month="${month}"
+              onclick="handleSetBasicSalary(this)">Save</button>
+          </div>
+        </td>
+        <td style="text-align:center;">30</td>
+        <td style="text-align:center; color:${isGenerated ? '#22c55e' : 'var(--text-muted)'}; font-weight:${isGenerated ? '700' : '400'}" title="${presentTitle}">${fmtNum(regularDays)}</td>
+        <td style="text-align:right; font-family:monospace;">${fmtNum(perDay)}</td>
+        <td style="text-align:right; font-family:monospace; color:#a5b4fc;">${fmtNum(regularEarned)}</td>
+        <td style="text-align:right; font-family:monospace; color:${typeof sundayBonus === 'number' && sundayBonus > 0 ? '#fbbf24' : 'var(--text-muted)'}" title="${sundayBonusTip}">
+          ${typeof sundayBonus === 'number' && sundayBonus > 0 ? '☀️ +' + fmtNum(sundayBonus) : (isGenerated ? '—' : '—')}
+        </td>
+        <td style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
+        <td style="text-align:right; font-family:monospace; color:#f87171;">${typeof expenses === 'number' && expenses > 0 ? '−' + fmtNum(expenses) : fmtNum(expenses)}</td>
+        <td style="text-align:right; font-family:monospace;" class="${netClass}">${fmtNum(netSalary)}</td>
+        <td class="no-print">
+          <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
+            title="Recalculate from attendance">${isGenerated ? '🔄 Recalc' : '⚡ Generate'}</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Update stat cards
+    const salTotalEl = document.getElementById('sal-stat-total');
+    if (salTotalEl) salTotalEl.textContent = employees.length;
+    const salPayEl = document.getElementById('sal-stat-payable');
+    if (salPayEl) salPayEl.textContent = 'PKR ' + totalPayable.toLocaleString();
+    const salExpEl = document.getElementById('sal-stat-expenses');
+    if (salExpEl) salExpEl.textContent = 'PKR ' + totalExpenses.toLocaleString();
+
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="13" class="table-empty" style="color:var(--color-danger);">Failed to load salary data.</td></tr>';
+    console.error('loadSalarySheet error:', err);
+  }
+}
+
+async function handleSetBasicSalary(btn) {
+  const empId = btn.dataset.empid;
+  const month = btn.dataset.month;
+  const input = btn.parentElement.querySelector('.salary-basic-input');
+  const value = parseFloat(input.value) || 0;
+  if (!empId || !month) return;
+
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await API.setSalaryBasic(empId, month, value);
+    showToast('Basic salary saved! Click Generate to recalculate.', 'success');
+  } catch (err) {
+    showToast('Failed to save basic salary: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function handleGenerateSingleSalary(empId, month) {
+  try {
+    showToast('Generating salary...', 'info');
+    await API.generateSalary(empId, month);
+    await loadSalarySheet(month);
+    showToast('Salary generated!', 'success');
+  } catch (err) {
+    showToast('Failed to generate salary: ' + err.message, 'error');
+  }
+}
+
+async function handleGenerateAllSalaries() {
+  const picker = document.getElementById('salary-month-picker');
+  const month = (picker ? picker.value : '') || getCurrentMonthString();
+  if (!month) { showToast('Please select a month first.', 'warning'); return; }
+
+  const btn = document.getElementById('btn-generate-all-salaries');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+
+  try {
+    showToast('Generating salaries for all employees...', 'info');
+    const res = await API.generateAllSalaries(month);
+    const count = res.salaries ? res.salaries.length : 0;
+    showToast(`✅ Generated salaries for ${count} employee(s)!`, 'success');
+    await loadSalarySheet(month);
+  } catch (err) {
+    showToast('Failed to generate salaries: ' + err.message, 'error');
+    console.error('handleGenerateAllSalaries error:', err);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate All Salaries'; }
+  }
+}
+
+function printSalarySheet() {
+  if (!currentSalaryMonth) {
+    showToast('Please load a salary sheet first.', 'warning');
+    return;
+  }
+  window.print();
+}

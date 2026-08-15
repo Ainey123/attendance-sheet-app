@@ -77,11 +77,13 @@ function loadLocalData() {
         workProfiles: file.workProfiles || {},
         settings: file.settings || { adminPasscode: '1234', officeName: 'My Office' },
         formSubmissions: file.formSubmissions || [],
-        employeeEvaluations: file.employeeEvaluations || []
+        employeeEvaluations: file.employeeEvaluations || [],
+        comments: file.comments || [],
+        salaries: file.salaries || []
       };
     }
   } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [] };
+  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [] };
 }
 
 function saveLocalData(data) {
@@ -1830,6 +1832,149 @@ const db = {
     } catch (err) {
       console.warn('markMessagesRead error:', err.message);
     }
+  },
+
+  // ─── Salary Methods (local file storage — works with or without Supabase) ──
+
+  async getAllSalaries(month) {
+    const data = loadLocalData();
+    const salaries = data.salaries || [];
+    if (month) return salaries.filter(s => s.month === month);
+    return salaries;
+  },
+
+  async getSalaryRecord(employeeId, month) {
+    const data = loadLocalData();
+    return (data.salaries || []).find(s => s.employeeId === employeeId && s.month === month) || null;
+  },
+
+  async setSalaryBasic(employeeId, month, basicSalary) {
+    const data = loadLocalData();
+    if (!data.salaries) data.salaries = [];
+    let rec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
+    if (!rec) {
+      const emp = (data.employees || []).find(e => e.id === employeeId);
+      rec = {
+        id: generateId('sal'),
+        employeeId,
+        employeeName: emp ? emp.name : '',
+        role: emp ? (emp.role || 'Staff') : 'Staff',
+        month,
+        basicSalary: 0,
+        generatedAt: null
+      };
+      data.salaries.push(rec);
+    }
+    rec.basicSalary = Number(basicSalary) || 0;
+    saveLocalData(data);
+    return rec;
+  },
+
+  async generateSalary(employeeId, month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    const [yearStr, mStr] = month.split('-');
+    const year = parseInt(yearStr, 10);
+    const monthNum = parseInt(mStr, 10);
+    const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
+
+    const data = loadLocalData();
+    if (!data.salaries) data.salaries = [];
+
+    let salRec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
+    const emp = (data.employees || []).find(e => e.id === employeeId);
+    if (!salRec) {
+      salRec = {
+        id: generateId('sal'),
+        employeeId,
+        employeeName: emp ? emp.name : employeeId,
+        role: emp ? (emp.role || 'Staff') : 'Staff',
+        month,
+        basicSalary: 0,
+        generatedAt: null
+      };
+      data.salaries.push(salRec);
+    }
+
+    // Helper: is this a leave record?
+    const isLeave = (record) => Boolean(record && String(record.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+
+    // Get all attendance records for this employee this month (no leaves)
+    const attendanceLogs = (data.attendance || []).filter(a =>
+      a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeave(a)
+    );
+    const presentDates = new Set();
+    attendanceLogs.forEach(a => presentDates.add(a.date));
+
+    // Separate regular days vs Sunday days worked
+    let regularPresentDays = 0;
+    let sundayPresentDays = 0;
+    presentDates.forEach(dateStr => {
+      const parts = dateStr.split('-');
+      const dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      if (dt.getDay() === 0) sundayPresentDays++;
+      else regularPresentDays++;
+    });
+
+    // Sum total expenses from all clock-out records that month
+    let totalExpenses = 0;
+    attendanceLogs.forEach(a => {
+      if (a.expenseAmount && !isNaN(Number(a.expenseAmount))) {
+        totalExpenses += Number(a.expenseAmount);
+      }
+    });
+
+    const basicSalary = salRec.basicSalary || 0;
+
+    // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day divisor per office policy)
+    const perDaySalary = basicSalary / 30;
+
+    // Regular earned = per day × regular weekday present days
+    const regularEarned = Math.round(perDaySalary * regularPresentDays);
+
+    // Sunday bonus = per day × Sunday days worked (extra payment for Sunday attendance)
+    const sundayBonus = Math.round(perDaySalary * sundayPresentDays);
+
+    // Total earned salary
+    const earnedSalary = regularEarned + sundayBonus;
+
+    // Net salary = earned − expenses (expenses recorded at clock-out are deducted)
+    const netSalary = earnedSalary - Math.round(totalExpenses);
+
+    Object.assign(salRec, {
+      employeeName: emp ? emp.name : salRec.employeeName,
+      role: emp ? (emp.role || 'Staff') : salRec.role,
+      totalDaysInMonth,
+      workingDays: 30,           // fixed divisor
+      regularPresentDays,
+      sundayPresentDays,
+      presentDays: regularPresentDays + sundayPresentDays,
+      perDaySalary: Math.round(perDaySalary),
+      regularEarned,
+      sundayBonus,
+      earnedSalary,
+      totalExpenses: Math.round(totalExpenses),
+      netSalary,
+      generatedAt: new Date().toISOString()
+    });
+
+    saveLocalData(data);
+    return salRec;
+  },
+
+  async generateAllSalaries(month) {
+    const data = loadLocalData();
+    const employees = (data.employees || []).filter(
+      e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_'))
+    );
+    const results = [];
+    for (const emp of employees) {
+      const rec = await this.generateSalary(emp.id, month);
+      results.push(rec);
+    }
+    return results;
   }
 };
 

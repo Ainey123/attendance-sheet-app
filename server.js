@@ -548,10 +548,70 @@ app.post('/api/comments/mark-read', async (req, res) => {
 
 
 
+
+// ─── Salary Routes ─────────────────────────────────────────────────────────
+
+// GET /api/salary?month=YYYY-MM — list all salary records for a month
+app.get('/api/salary', checkAdminAuth, async (req, res) => {
+  try {
+    const records = await db.getAllSalaries(req.query.month || null);
+    res.json({ success: true, salaries: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/salary/:employeeId?month=YYYY-MM
+app.get('/api/salary/:employeeId', checkAdminAuth, async (req, res) => {
+  try {
+    const record = await db.getSalaryRecord(req.params.employeeId, req.query.month || null);
+    res.json({ success: true, salary: record });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/set-basic — admin sets basic salary
+app.post('/api/salary/set-basic', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month, basicSalary } = req.body;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const rec = await db.setSalaryBasic(employeeId, month, basicSalary || 0);
+    res.json({ success: true, salary: rec });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/generate — generate/recalculate salary for one employee
+app.post('/api/salary/generate', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month } = req.body;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const rec = await db.generateSalary(employeeId, month);
+    res.json({ success: true, salary: rec });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/generate-all — generate salary for every active employee
+app.post('/api/salary/generate-all', checkAdminAuth, async (req, res) => {
+  try {
+    const { month } = req.body;
+    if (!month) return res.status(400).json({ error: 'month required' });
+    const results = await db.generateAllSalaries(month);
+    res.json({ success: true, salaries: results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // For any other route, serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
 
 // Start express server
 app.listen(PORT, () => {
