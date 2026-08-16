@@ -5058,7 +5058,7 @@ async function loadSalarySheet(monthOverride) {
 
   const tbody = document.getElementById('salary-table-body');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Loading salary data...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="13" class="table-empty">Loading salary data...</td></tr>';
 
   // Update header info
   const orgNameEl = document.getElementById('salary-sheet-org-name');
@@ -5075,7 +5075,7 @@ async function loadSalarySheet(monthOverride) {
   if (statMonth) statMonth.textContent = month;
 
   try {
-    // Load employees + existing salary records
+    // Fetch employees and auto-generated salaries (which include present days & clock-out expenses)
     const [empRes, salRes] = await Promise.all([
       API.getEmployees(),
       API.getSalaries(month)
@@ -5099,30 +5099,26 @@ async function loadSalarySheet(monthOverride) {
     employees.forEach((emp, idx) => {
       const sal = salMap[emp.id] || {};
       const basicSalary = sal.basicSalary || 0;
-      const monthDays = sal.totalDaysInMonth || '—';
-      const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : '—';
+      const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0);
       const sundayDays = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
-      const presentDays = sal.presentDays !== undefined ? sal.presentDays : '—';
-      // Per day = basic / 30
-      const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : '—');
-      const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : '—';
-      const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (typeof sundayDays === 'number' && typeof perDay === 'number' ? sundayDays * perDay : '—');
-      const earnedSalary = sal.earnedSalary !== undefined ? sal.earnedSalary : '—'; // total = regular + sunday
-      const expenses = sal.totalExpenses !== undefined ? sal.totalExpenses : '—';
-      const netSalary = sal.netSalary !== undefined ? sal.netSalary : '—';
-      const isGenerated = sal.generatedAt;
+      const totalPresentDays = sal.presentDays !== undefined ? sal.presentDays : (regularDays + sundayDays);
+
+      // Per day = Math.round(basic / 30)
+      const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
+      const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : (perDay * regularDays);
+      const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (perDay * sundayDays);
+      const earnedSalary = sal.earnedSalary !== undefined ? sal.earnedSalary : (perDay * totalPresentDays);
+      const expenses = sal.totalExpenses !== undefined ? sal.totalExpenses : 0;
+      const netSalary = sal.netSalary !== undefined ? sal.netSalary : (earnedSalary - expenses);
 
       if (typeof netSalary === 'number') totalPayable += netSalary;
       if (typeof expenses === 'number') totalExpenses += expenses;
 
       const netClass = typeof netSalary === 'number' ? (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative') : '';
       const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : v;
-      // Present days tooltip: e.g. "11 regular + 2 Sundays"
-      const presentTitle = isGenerated ? `${regularDays} regular + ${sundayDays} Sunday(s)` : '';
-      const sundayBonusTip = typeof sundayDays === 'number' && sundayDays > 0 
-        ? `${sundayDays} Sunday(s) × ${fmtNum(perDay)}` : '';
 
       const tr = document.createElement('tr');
+      tr.id = `sal-row-${emp.id}`;
       tr.innerHTML = `
         <td style="text-align:center; color:var(--text-muted);">${idx + 1}</td>
         <td style="font-weight:600;">${escapeHtml(emp.name)}</td>
@@ -5130,27 +5126,35 @@ async function loadSalarySheet(monthOverride) {
         <td>
           <div style="display:flex; gap:0.35rem; align-items:center;">
             <input type="number" class="salary-basic-input" data-empid="${emp.id}" data-month="${month}"
-              value="${basicSalary}" placeholder="0" min="0" />
+              data-regular="${regularDays}" data-sunday="${sundayDays}" data-expenses="${expenses}"
+              value="${basicSalary > 0 ? basicSalary : ''}" placeholder="Enter Basic" min="0" />
             <button class="salary-save-btn" data-empid="${emp.id}" data-month="${month}"
               onclick="handleSetBasicSalary(this)">Save</button>
           </div>
         </td>
         <td style="text-align:center;">30</td>
-        <td style="text-align:center; color:${isGenerated ? '#22c55e' : 'var(--text-muted)'}; font-weight:${isGenerated ? '700' : '400'}" title="${presentTitle}">${fmtNum(regularDays)}</td>
-        <td style="text-align:right; font-family:monospace;">${fmtNum(perDay)}</td>
-        <td style="text-align:right; font-family:monospace; color:#a5b4fc;">${fmtNum(regularEarned)}</td>
-        <td style="text-align:right; font-family:monospace; color:${typeof sundayBonus === 'number' && sundayBonus > 0 ? '#fbbf24' : 'var(--text-muted)'}" title="${sundayBonusTip}">
-          ${typeof sundayBonus === 'number' && sundayBonus > 0 ? '☀️ +' + fmtNum(sundayBonus) : (isGenerated ? '—' : '—')}
+        <td style="text-align:center; color:#22c55e; font-weight:700;">${fmtNum(regularDays)}</td>
+        <td class="cell-perday" style="text-align:right; font-family:monospace;">${fmtNum(perDay)}</td>
+        <td class="cell-regular-earned" style="text-align:right; font-family:monospace; color:#a5b4fc;">${fmtNum(regularEarned)}</td>
+        <td class="cell-sunday-bonus" style="text-align:right; font-family:monospace; color:${sundayDays > 0 ? '#fbbf24' : 'var(--text-muted)'}">
+          ${sundayDays > 0 ? '☀️ +' + fmtNum(sundayBonus) : '—'}
         </td>
-        <td style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
-        <td style="text-align:right; font-family:monospace; color:#f87171;">${typeof expenses === 'number' && expenses > 0 ? '−' + fmtNum(expenses) : fmtNum(expenses)}</td>
-        <td style="text-align:right; font-family:monospace;" class="${netClass}">${fmtNum(netSalary)}</td>
+        <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
+        <td class="cell-expenses" style="text-align:right; font-family:monospace; color:#f87171;">${expenses > 0 ? '−' + fmtNum(expenses) : '0'}</td>
+        <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
         <td class="no-print">
           <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
-            title="Recalculate from attendance">${isGenerated ? '🔄 Recalc' : '⚡ Generate'}</button>
+            title="Recalculate from attendance">⚡ Recalc</button>
         </td>
       `;
       tbody.appendChild(tr);
+
+      // Add real-time live input listener for basic salary typing
+      const basicInput = tr.querySelector('.salary-basic-input');
+      if (basicInput) {
+        basicInput.addEventListener('input', (e) => updateRowSalaryLive(tr, e.target.value));
+        basicInput.addEventListener('change', (e) => saveBasicSalaryFromInput(e.target));
+      }
     });
 
     // Update stat cards
@@ -5167,6 +5171,51 @@ async function loadSalarySheet(monthOverride) {
   }
 }
 
+// Live recalculation as admin types basic salary in input
+function updateRowSalaryLive(tr, basicVal) {
+  const input = tr.querySelector('.salary-basic-input');
+  if (!input) return;
+  const basic = parseFloat(basicVal) || 0;
+  const regularDays = parseFloat(input.dataset.regular) || 0;
+  const sundayDays = parseFloat(input.dataset.sunday) || 0;
+  const expenses = parseFloat(input.dataset.expenses) || 0;
+
+  const perDay = basic > 0 ? Math.round(basic / 30) : 0;
+  const regularEarned = perDay * regularDays;
+  const sundayBonus = perDay * sundayDays;
+  const earnedSalary = regularEarned + sundayBonus;
+  const netSalary = earnedSalary - expenses;
+
+  const cellPerDay = tr.querySelector('.cell-perday');
+  const cellRegularEarned = tr.querySelector('.cell-regular-earned');
+  const cellSundayBonus = tr.querySelector('.cell-sunday-bonus');
+  const cellEarned = tr.querySelector('.cell-earned');
+  const cellExpenses = tr.querySelector('.cell-expenses');
+  const cellNet = tr.querySelector('.cell-net');
+
+  if (cellPerDay) cellPerDay.textContent = perDay > 0 ? perDay.toLocaleString() : '0';
+  if (cellRegularEarned) cellRegularEarned.textContent = regularEarned > 0 ? regularEarned.toLocaleString() : '0';
+  if (cellSundayBonus) cellSundayBonus.textContent = sundayBonus > 0 ? '☀️ +' + sundayBonus.toLocaleString() : '—';
+  if (cellEarned) cellEarned.textContent = earnedSalary > 0 ? earnedSalary.toLocaleString() : '0';
+  if (cellExpenses) cellExpenses.textContent = expenses > 0 ? '−' + expenses.toLocaleString() : '0';
+  if (cellNet) {
+    cellNet.textContent = netSalary.toLocaleString();
+    cellNet.className = 'cell-net ' + (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative');
+  }
+}
+
+async function saveBasicSalaryFromInput(input) {
+  const empId = input.dataset.empid;
+  const month = input.dataset.month;
+  const value = parseFloat(input.value) || 0;
+  if (!empId || !month) return;
+  try {
+    await API.setSalaryBasic(empId, month, value);
+  } catch (err) {
+    console.error('Auto-save basic salary error:', err);
+  }
+}
+
 async function handleSetBasicSalary(btn) {
   const empId = btn.dataset.empid;
   const month = btn.dataset.month;
@@ -5178,7 +5227,8 @@ async function handleSetBasicSalary(btn) {
   btn.textContent = '...';
   try {
     await API.setSalaryBasic(empId, month, value);
-    showToast('Basic salary saved! Click Generate to recalculate.', 'success');
+    showToast('Basic salary saved & auto-calculated!', 'success');
+    await loadSalarySheet(month);
   } catch (err) {
     showToast('Failed to save basic salary: ' + err.message, 'error');
   } finally {
@@ -5186,6 +5236,7 @@ async function handleSetBasicSalary(btn) {
     btn.textContent = 'Save';
   }
 }
+
 
 async function handleGenerateSingleSalary(empId, month) {
   try {

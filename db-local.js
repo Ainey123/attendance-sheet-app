@@ -599,10 +599,21 @@ const db = {
     return data.salaries.find(s => s.employeeId === employeeId && s.month === month) || null;
   },
 
+  // --- Salary Methods ---
   async getAllSalaries(month) {
-    if (!data.salaries) data.salaries = [];
-    if (month) return data.salaries.filter(s => s.month === month);
-    return data.salaries;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return await this.generateAllSalaries(month);
+  },
+
+  async getSalaryRecord(employeeId, month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return await this.generateSalary(employeeId, month);
   },
 
   async setSalaryBasic(employeeId, month, basicSalary) {
@@ -623,7 +634,8 @@ const db = {
     }
     rec.basicSalary = Number(basicSalary) || 0;
     saveData();
-    return rec;
+    // Auto-calculate full salary immediately after setting basic salary
+    return await this.generateSalary(employeeId, month);
   },
 
   async generateSalary(employeeId, month) {
@@ -639,7 +651,8 @@ const db = {
     // Get or create salary record
     if (!data.salaries) data.salaries = [];
     let salRec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
-    const emp = (data.employees || []).find(e => e.id === employeeId);
+    const employees = await this.getEmployees(true);
+    const emp = employees.find(e => e.id === employeeId);
     if (!salRec) {
       salRec = {
         id: generateId('sal'),
@@ -653,10 +666,12 @@ const db = {
       data.salaries.push(salRec);
     }
 
-    // Count present days from attendance (non-leave records)
-    const attendanceLogs = (data.attendance || []).filter(a =>
+    // Get attendance logs for this employee this month
+    const allAttendance = await this.getAttendance();
+    const attendanceLogs = (allAttendance || []).filter(a =>
       a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeaveAttendanceRecord(a)
     );
+
     const presentDates = new Set();
     attendanceLogs.forEach(a => presentDates.add(a.date));
 
@@ -670,40 +685,58 @@ const db = {
       else regularPresentDays++;
     });
 
-    // Sum total expenses from all clock-out records that month
+    const totalPresentDays = regularPresentDays + sundayPresentDays;
+
+    // Sum total expenses from clock-out records & work records for this month
     let totalExpenses = 0;
+    const processedDates = new Set();
     attendanceLogs.forEach(a => {
-      if (a.expenseAmount && !isNaN(Number(a.expenseAmount))) {
-        totalExpenses += Number(a.expenseAmount);
+      const exp = Number(a.expenseAmount) || Number(a.moneySpent) || 0;
+      if (exp > 0) {
+        totalExpenses += exp;
+        processedDates.add(a.date);
+      }
+    });
+
+    let workRecords = [];
+    try {
+      workRecords = await this.getWorkRecords(employeeId, month);
+    } catch (e) {
+      workRecords = [];
+    }
+    (workRecords || []).forEach(wr => {
+      if (!processedDates.has(wr.date)) {
+        const exp = Number(wr.expenseAmount) || 0;
+        if (exp > 0) totalExpenses += exp;
       }
     });
 
     const basicSalary = salRec.basicSalary || 0;
 
-    // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day month)
-    const perDaySalary = basicSalary / 30;
+    // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day divisor per office policy)
+    const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
 
     // Regular earned = per day × regular present days
-    const regularEarned = Math.round(perDaySalary * regularPresentDays);
+    const regularEarned = perDaySalary * regularPresentDays;
 
-    // Sunday bonus = per day × sunday days worked (they are paid extra for coming on Sunday)
-    const sundayBonus = Math.round(perDaySalary * sundayPresentDays);
+    // Sunday bonus = per day × Sunday days worked
+    const sundayBonus = perDaySalary * sundayPresentDays;
 
-    // Total earned = regular + sunday bonus
-    const earnedSalary = regularEarned + sundayBonus;
+    // Total earned = regular + sunday bonus = per day × total present days
+    const earnedSalary = perDaySalary * totalPresentDays;
 
-    // Net salary = earned - expenses (expenses deducted at clock-out)
+    // Net salary = earned - total clock-out expenses
     const netSalary = earnedSalary - Math.round(totalExpenses);
 
     Object.assign(salRec, {
       employeeName: emp ? emp.name : salRec.employeeName,
       role: emp ? (emp.role || 'Staff') : salRec.role,
       totalDaysInMonth,
-      workingDays: 30, // fixed divisor
+      workingDays: 30, // fixed 30-day divisor
       regularPresentDays,
       sundayPresentDays,
-      presentDays: regularPresentDays + sundayPresentDays,
-      perDaySalary: Math.round(perDaySalary),
+      presentDays: totalPresentDays,
+      perDaySalary,
       regularEarned,
       sundayBonus,
       earnedSalary,
@@ -730,4 +763,4 @@ const db = {
 // Load data on module init
 loadData();
 
-module.exports = db;
+module.exports = db;
