@@ -235,19 +235,28 @@ const db = {
     const today = getLocalDateString();
     const employees = (data.employees || []).filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
     const activeEmpIds = new Set(employees.map(e => e.id));
-    const attendance = (data.attendance || []).filter(a => activeEmpIds.has(a.employeeId));
+
+    // Helper: is leave record?
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+
+    // Today's valid attendance records for active employees
+    const todayAttendance = (data.attendance || []).filter(a => a.date === today && activeEmpIds.has(a.employeeId) && !isLeave(a));
 
     const totalEmployees = employees.length;
-    const activePresent = employees.filter(e => e.status === 'IN').length;
-    const todayAttendance = attendance.filter(a => a.date === today);
-    const todayAttendees = new Set(todayAttendance.map(r => r.employeeId));
-    const presentToday = todayAttendees.size;
+    // Currently Clocked In = today's records where clockInTime IS NOT NULL and clockOutTime IS NULL
+    const currentlyClockedIn = todayAttendance.filter(r => r.clockInTime && !r.clockOutTime).length;
+    // Present Today = distinct employees who clocked in today
+    const presentToday = new Set(todayAttendance.map(r => r.employeeId)).size;
+    // Clocked Out Today = today's records where clockOutTime IS NOT NULL
+    const clockedOutToday = todayAttendance.filter(r => r.clockOutTime).length;
     const absentToday = Math.max(0, totalEmployees - presentToday);
 
     return {
       totalEmployees,
-      activePresent,
+      activePresent: currentlyClockedIn,
+      currentlyClockedIn,
       presentToday,
+      clockedOutToday,
       absentToday,
       officeName: data.settings?.officeName || 'My Office'
     };
@@ -465,26 +474,12 @@ const db = {
     });
 
     (workRecords || []).forEach(wr => {
+      if (!wr || !wr.employeeId) return;
       let empSummary = summaryMap.get(wr.employeeId);
-      if (!empSummary) {
-        empSummary = {
-          employeeId: wr.employeeId || 'emp_' + String(wr.employeeName).toLowerCase().replace(/\s+/g, ''),
-          employeeName: wr.employeeName || 'Staff Member',
-          role: 'Staff',
-          isArchived: true,
-          presentDates: new Set(),
-          leaveDates: new Set(),
-          workDoneDetails: [],
-          totalExpensesAdded: 0
-        };
-        summaryMap.set(empSummary.employeeId, empSummary);
-      }
-
-      if (wr.performedWork && wr.performedWork.trim() !== '') {
-        empSummary.workDoneDetails.push(wr.performedWork.trim());
-      }
-      if (wr.expenseAmount && !isNaN(Number(wr.expenseAmount))) {
-        empSummary.totalExpensesAdded += Number(wr.expenseAmount);
+      if (empSummary) {
+        if (wr.performedWork && wr.performedWork.trim() !== '') {
+          empSummary.workDoneDetails.push(wr.performedWork.trim());
+        }
       }
     });
 

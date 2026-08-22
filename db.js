@@ -896,15 +896,17 @@ const db = {
     let attendanceLogs = [];
     let officeName = 'My Office';
 
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+
     if (useLocalFallback) {
       const data = loadLocalData();
-      attendanceLogs = (data.attendance || []).filter(a => a.date === today && activeEmpIds.has(a.employeeId));
+      attendanceLogs = (data.attendance || []).filter(a => a.date === today && activeEmpIds.has(a.employeeId) && !isLeave(a));
       officeName = data.settings?.officeName || 'My Office';
     } else {
       try {
-        const { data: attendance } = await supabase.from('attendance').select('employeeId').eq('date', today);
+        const { data: attendance } = await supabase.from('attendance').select('*').eq('date', today);
         if (attendance) {
-          attendanceLogs = attendance.filter(a => activeEmpIds.has(a.employeeId));
+          attendanceLogs = attendance.filter(a => activeEmpIds.has(a.employeeId) && !isLeave(a));
         }
         const { data: settings } = await supabase.from('settings').select('officeName').single();
         if (settings && settings.officeName) officeName = settings.officeName;
@@ -914,14 +916,20 @@ const db = {
     }
 
     const totalEmployees = activeEmployees.length;
-    const activePresent = activeEmployees.filter(e => e.status === 'IN').length;
+    // Currently Clocked In = today's records with clockInTime and no clockOutTime
+    const currentlyClockedIn = attendanceLogs.filter(r => r.clockInTime && !r.clockOutTime).length;
+    // Present Today = distinct employeeIds with a clock-in today
     const presentToday = new Set(attendanceLogs.map(r => r.employeeId)).size;
+    // Clocked Out Today = today's records with a clockOutTime
+    const clockedOutToday = attendanceLogs.filter(r => r.clockOutTime).length;
     const absentToday = Math.max(0, totalEmployees - presentToday);
 
     return {
       totalEmployees,
-      activePresent,
+      activePresent: currentlyClockedIn,
+      currentlyClockedIn,
       presentToday,
+      clockedOutToday,
       absentToday,
       officeName
     };
@@ -1413,44 +1421,31 @@ const db = {
     }
 
     const summaryMap = new Map();
-    const normalizeName = (name) => String(name || '').trim().toLowerCase();
 
     (allEmployees || []).forEach(emp => {
-      const normKey = normalizeName(emp.name);
-      if (!normKey) return;
-      if (!summaryMap.has(normKey)) {
-        summaryMap.set(normKey, {
-          employeeId: emp.id,
-          employeeName: emp.name.trim(),
-          role: emp.role || 'Staff',
-          isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
-          minusScore: emp.minusScore || 0,
-          linkExpireCount: emp.linkExpireCount || 0,
-          presentDates: new Set(),
-          leaveDates: new Set(),
-          incompleteDates: new Set(),
-          totalDurationMinutes: 0,
-          workDoneDetails: [],
-          totalExpensesAdded: 0
-        });
-      } else {
-        const existing = summaryMap.get(normKey);
-        if (emp.status !== 'DELETED' && !emp.isArchived) {
-          existing.isArchived = false;
-          existing.employeeId = emp.id;
-        }
-        existing.minusScore += (emp.minusScore || 0);
-        existing.linkExpireCount += (emp.linkExpireCount || 0);
-      }
+      if (!emp || !emp.id) return;
+      summaryMap.set(emp.id, {
+        employeeId: emp.id,
+        employeeName: emp.name ? emp.name.trim() : 'Staff Member',
+        role: emp.role || 'Staff',
+        isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
+        minusScore: emp.minusScore || 0,
+        linkExpireCount: emp.linkExpireCount || 0,
+        presentDates: new Set(),
+        leaveDates: new Set(),
+        incompleteDates: new Set(),
+        totalDurationMinutes: 0,
+        workDoneDetails: [],
+        totalExpensesAdded: 0
+      });
     });
 
     periodLogs.forEach(log => {
-      const normKey = normalizeName(log.employeeName);
-      if (!normKey) return;
-      let empSummary = summaryMap.get(normKey);
+      if (!log || !log.employeeId) return;
+      let empSummary = summaryMap.get(log.employeeId);
       if (!empSummary) {
         empSummary = {
-          employeeId: log.employeeId || 'emp_' + normKey.replace(/\s+/g, ''),
+          employeeId: log.employeeId,
           employeeName: log.employeeName ? log.employeeName.trim() : 'Staff Member',
           role: log.role || 'Staff',
           isArchived: true,
@@ -1463,15 +1458,16 @@ const db = {
           workDoneDetails: [],
           totalExpensesAdded: 0
         };
-        summaryMap.set(normKey, empSummary);
+        summaryMap.set(log.employeeId, empSummary);
       }
 
       const isLeave = isLeaveAttendanceRecord(log);
       if (isLeave) {
         empSummary.leaveDates.add(log.date);
       } else {
+        // Valid clock-in adds to presentDates even if auto-clocked out at end of day
         empSummary.presentDates.add(log.date);
-        if (!log.clockOutTime && log.date < getLocalDateString()) {
+        if (log.autoClockOut || (!log.clockOutTime && log.date < getLocalDateString())) {
           empSummary.incompleteDates.add(log.date);
         }
       }
@@ -1489,32 +1485,12 @@ const db = {
     });
 
     (workRecords || []).forEach(wr => {
-      const normKey = normalizeName(wr.employeeName);
-      if (!normKey) return;
-      let empSummary = summaryMap.get(normKey);
-      if (!empSummary) {
-        empSummary = {
-          employeeId: wr.employeeId || 'emp_' + normKey.replace(/\s+/g, ''),
-          employeeName: wr.employeeName ? wr.employeeName.trim() : 'Staff Member',
-          role: 'Staff',
-          isArchived: true,
-          minusScore: 0,
-          linkExpireCount: 0,
-          presentDates: new Set(),
-          leaveDates: new Set(),
-          incompleteDates: new Set(),
-          totalDurationMinutes: 0,
-          workDoneDetails: [],
-          totalExpensesAdded: 0
-        };
-        summaryMap.set(normKey, empSummary);
-      }
-
-      if (wr.performedWork && wr.performedWork.trim() !== '') {
-        empSummary.workDoneDetails.push(wr.performedWork.trim());
-      }
-      if (wr.expenseAmount && !isNaN(Number(wr.expenseAmount))) {
-        empSummary.totalExpensesAdded += Number(wr.expenseAmount);
+      if (!wr || !wr.employeeId) return;
+      let empSummary = summaryMap.get(wr.employeeId);
+      if (empSummary) {
+        if (wr.performedWork && wr.performedWork.trim() !== '') {
+          empSummary.workDoneDetails.push(wr.performedWork.trim());
+        }
       }
     });
 
@@ -1597,23 +1573,18 @@ const db = {
     const allAttendance = await this.getAttendance();
     const allEmployees = await this.getEmployees(true);
 
-    const normName = employeeName ? String(employeeName).trim().toLowerCase() : null;
-
     let targetEmpIds = new Set();
-    if (employeeId) targetEmpIds.add(employeeId);
-    
-    if (normName) {
+    if (employeeId) {
+      targetEmpIds.add(employeeId);
+    } else if (employeeName) {
+      const norm = String(employeeName).trim().toLowerCase();
       allEmployees.forEach(e => {
-        if (e.name && e.name.trim().toLowerCase() === normName) {
-          targetEmpIds.add(e.id);
-        }
+        if (e.name && e.name.trim().toLowerCase() === norm) targetEmpIds.add(e.id);
       });
     }
 
     const records = (allAttendance || []).filter(a => {
-      const matchId = targetEmpIds.has(a.employeeId);
-      const matchName = normName && a.employeeName && a.employeeName.trim().toLowerCase() === normName;
-      if (!matchId && !matchName) return false;
+      if (!a.employeeId || !targetEmpIds.has(a.employeeId)) return false;
       if (a.date < filterStart || a.date > filterEnd) return false;
       return true;
     }).sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
