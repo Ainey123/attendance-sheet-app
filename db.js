@@ -190,10 +190,16 @@ const db = {
     if (useLocalFallback) {
       const data = loadLocalData();
       let emps = data.employees || [];
-      emps = includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
+      emps = includeArchived ? emps : emps.filter(e => e.status !== 'DELETED' && !e.isArchived);
+      let changed = false;
       for (let i = 0; i < emps.length; i++) {
+        if (!emps[i].token || emps[i].token.startsWith('EXPIRED_')) {
+          emps[i].token = generateToken();
+          changed = true;
+        }
         emps[i] = await this.checkAndUpdateLinkCycle(emps[i]);
       }
+      if (changed) saveLocalData(data);
       return emps;
     }
     try {
@@ -205,9 +211,15 @@ const db = {
       if (error) handleSupabaseError(error, 'fetch employees');
       let list = data || [];
       if (!includeArchived) {
-        list = list.filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
+        list = list.filter(e => e.status !== 'DELETED' && !e.isArchived);
       }
       for (let i = 0; i < list.length; i++) {
+        if (!list[i].token || list[i].token.startsWith('EXPIRED_')) {
+          list[i].token = generateToken();
+          try {
+            await supabase.from('employees').update({ token: list[i].token }).eq('id', list[i].id);
+          } catch(e) {}
+        }
         list[i] = await this.checkAndUpdateLinkCycle(list[i]);
       }
       return list;

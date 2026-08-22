@@ -51,7 +51,16 @@ const db = {
   // --- Employee Methods ---
   async getEmployees(includeArchived = false) {
     const list = data.employees || [];
-    return includeArchived ? list : list.filter(e => e.status !== 'DELETED' && !e.isArchived && (!e.token || !e.token.startsWith('EXPIRED_')));
+    const result = includeArchived ? list : list.filter(e => e.status !== 'DELETED' && !e.isArchived);
+    let changed = false;
+    for (const emp of result) {
+      if (!emp.token || emp.token.startsWith('EXPIRED_')) {
+        emp.token = generateToken();
+        changed = true;
+      }
+    }
+    if (changed) saveData();
+    return result;
   },
 
   async getEmployeeByToken(token) {

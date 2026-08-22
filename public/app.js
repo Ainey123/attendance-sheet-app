@@ -1160,7 +1160,10 @@ function filterAdminLogs(searchText) {
 // TAB 2: Roster profile listings
 async function loadAdminRoster() {
   try {
-    const employees = await API.getEmployees();
+    const [employees, todayLogs] = await Promise.all([
+      API.getEmployees(),
+      API.getAttendanceLogs(getLocalDateString()).catch(() => [])
+    ]);
     Store.saveEmployees(employees);
     const tbody = document.querySelector('#admin-roster-table tbody');
     tbody.innerHTML = '';
@@ -1170,17 +1173,32 @@ async function loadAdminRoster() {
       return;
     }
 
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+    const todayMap = new Map();
+    (todayLogs || []).forEach(log => {
+      if (!isLeave(log)) {
+        todayMap.set(log.employeeId, log);
+      }
+    });
+
     employees.forEach(emp => {
       const tr = document.createElement('tr');
       const formattedDate = new Date(emp.dateCreated).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
       
-      const statusBadge = emp.status === 'IN' 
-        ? '<span class="status-indicator status-in">Clocked In</span>' 
-        : '<span class="status-indicator status-out">Clocked Out</span>';
+      const todayAtt = todayMap.get(emp.id);
+      let statusBadge = '<span class="status-indicator status-out" style="background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);">Not Checked In</span>';
+      
+      if (todayAtt) {
+        if (todayAtt.clockInTime && !todayAtt.clockOutTime) {
+          statusBadge = '<span class="status-indicator status-in" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">🟢 Clocked In</span>';
+        } else if (todayAtt.clockOutTime) {
+          statusBadge = '<span class="status-indicator status-out" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">🔵 Clocked Out</span>';
+        }
+      }
 
       tr.innerHTML = `
-        <td><strong>${emp.name}</strong></td>
-        <td><span class="badge-role">${emp.role || 'Staff'}</span></td>
+        <td><strong>${escapeHtml(emp.name)}</strong></td>
+        <td><span class="badge-role">${escapeHtml(emp.role || 'Staff')}</span></td>
         <td>
           <div style="display: flex; align-items: center; gap: 0.25rem;">
             <input type="text" class="roster-pin-input" data-id="${emp.id}" value="${emp.pin || '1234'}" maxlength="4" style="width: 50px; text-align: center; background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); color: var(--color-warning); font-family: monospace; border-radius: 4px; padding: 0.15rem 0.25rem; font-size: 0.8rem; outline: none;">
