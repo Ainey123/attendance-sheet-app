@@ -1826,6 +1826,30 @@
           </div>
         </div>
 
+        <!-- Date-by-Date Cross-Check Comparison Table -->
+        <div style="margin-top: 1rem; background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem;">
+          <h4 style="margin: 0 0 0.6rem; font-size: 0.88rem; color: #38bdf8; display:flex; justify-content:space-between; align-items:center;">
+            <span>📅 Exact Date-by-Date Cross-Check (Attendance vs Accounts PDF)</span>
+            <span id="disc-modal-recon-badge" style="font-size:0.75rem; color:var(--text-muted);"></span>
+          </h4>
+          <div style="overflow-x: auto; max-height: 240px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
+              <thead>
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary);">
+                  <th style="padding: 0.4rem 0.5rem;">Date</th>
+                  <th style="padding: 0.4rem 0.5rem; text-align: right;">App Clock-Out</th>
+                  <th style="padding: 0.4rem 0.5rem; text-align: right;">Accounts PDF</th>
+                  <th style="padding: 0.4rem 0.5rem; text-align: right;">Difference</th>
+                  <th style="padding: 0.4rem 0.5rem; text-align: center;">Status</th>
+                </tr>
+              </thead>
+              <tbody id="disc-modal-recon-tbody">
+                <tr><td colspan="5" class="text-muted" style="text-align:center; padding:0.6rem;">No date records available.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Manual Mapping Selector (If needed to link an unmatched name) -->
         <div id="disc-modal-mapping-section" style="margin-top: 1rem; padding: 0.85rem; background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px;">
           <div style="font-size: 0.82rem; font-weight: 600; color: #e0e7ff; margin-bottom: 0.4rem;">
@@ -1912,6 +1936,6 @@
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=216"></script>
+  <script src="app.js?v=217"></script>
 </body>
 </html>

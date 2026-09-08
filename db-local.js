@@ -870,7 +870,8 @@ const db = {
       parsed.extractedEntries,
       employees,
       appExpensesMap,
-      manualMappings
+      manualMappings,
+      month
     );
 
     const nowIso = new Date().toISOString();
@@ -940,7 +941,8 @@ const db = {
       pdfRecord.extractedData || [],
       employees,
       appExpensesMap,
-      pdfRecord.manualMappings || {}
+      pdfRecord.manualMappings || {},
+      month
     );
 
     pdfRecord.verificationResults = verificationResults;

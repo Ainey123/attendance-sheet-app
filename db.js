@@ -2056,13 +2056,32 @@ const db = {
       month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    const data = loadLocalData();
-    const list = data.accountsPdfs || [];
-    const found = list.find(p => p.salaryMonth === month);
+    let found = null;
+    if (!useLocalFallback && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('accounts_pdfs')
+          .select('*')
+          .eq('salaryMonth', month)
+          .maybeSingle();
+        if (data && !error) {
+          found = data;
+        }
+      } catch (err) {
+        console.warn('Supabase getAccountsPdf fetch notice:', err.message);
+      }
+    }
+
+    if (!found) {
+      const data = loadLocalData();
+      const list = data.accountsPdfs || [];
+      found = list.find(p => p.salaryMonth === month);
+    }
+
     if (!found) return null;
 
-    // Refresh live verification using current application expenses and roster
-    return await this.reverifyAccountsPdf(month);
+    // Refresh live verification using current application expenses, roster, and exact date matching
+    return await this.reverifyAccountsPdf(month, found);
   },
 
   async saveAccountsPdf(month, fileName, pdfBase64, uploadedBy = 'Admin', replace = false) {
@@ -2089,17 +2108,27 @@ const db = {
     const employees = await this.getEmployees(false);
     const appExpensesMap = await this.getAppExpensesMap(month);
 
-    const data = loadLocalData();
-    if (!data.accountsPdfs) data.accountsPdfs = [];
+    let existing = null;
+    if (!useLocalFallback && supabase) {
+      try {
+        const { data } = await supabase.from('accounts_pdfs').select('*').eq('salaryMonth', month).maybeSingle();
+        if (data) existing = data;
+      } catch (e) {}
+    }
 
-    let existing = data.accountsPdfs.find(p => p.salaryMonth === month);
+    const localData = loadLocalData();
+    if (!localData.accountsPdfs) localData.accountsPdfs = [];
+    const localExisting = localData.accountsPdfs.find(p => p.salaryMonth === month);
+    if (!existing) existing = localExisting;
+
     const manualMappings = existing?.manualMappings || {};
 
     const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
       parsed.extractedEntries,
       employees,
       appExpensesMap,
-      manualMappings
+      manualMappings,
+      month
     );
 
     const nowIso = new Date().toISOString();
@@ -2127,7 +2156,7 @@ const db = {
         throw new Error(`An Accounts PDF already exists for ${month}. Please confirm replacement.`);
       }
       existing = {
-        id: generateId('pdf'),
+        id: (existing && existing.id) ? existing.id : generateId('pdf'),
         salaryMonth: month,
         fileName,
         fileSize,
@@ -2150,15 +2179,17 @@ const db = {
           fileName
         }]
       };
-      data.accountsPdfs.push(existing);
+      if (!localExisting) {
+        localData.accountsPdfs.push(existing);
+      }
     }
 
-    saveLocalData(data);
+    saveLocalData(localData);
 
-    // If Supabase is connected, attempt sync (silent non-blocking background sync)
+    // Sync to Supabase
     if (!useLocalFallback && supabase) {
-      Promise.race([
-        supabase.from('accounts_pdfs').upsert({
+      try {
+        await supabase.from('accounts_pdfs').upsert({
           id: existing.id,
           salaryMonth: existing.salaryMonth,
           fileName: existing.fileName,
@@ -2166,27 +2197,55 @@ const db = {
           pdfData: existing.pdfData,
           uploadedBy: existing.uploadedBy,
           uploadedAt: existing.uploadedAt,
+          replacedAt: existing.replacedAt,
+          replacedBy: existing.replacedBy,
           processingStatus: existing.processingStatus,
           extractedData: existing.extractedData,
           summary: existing.summary,
           manualMappings: existing.manualMappings,
           auditLog: existing.auditLog
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase sync timeout')), 3000))
-      ]).catch(err => {
-        console.warn('Supabase accounts_pdfs sync notice:', err.message);
-      });
+        });
+      } catch (err) {
+        console.warn('Supabase accounts_pdfs upsert notice:', err.message);
+      }
     }
 
     return existing;
   },
 
-  async reverifyAccountsPdf(month) {
-    const data = loadLocalData();
-    const pdfRecord = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+  async reverifyAccountsPdf(month, existingRecord = null) {
+    let pdfRecord = existingRecord;
+
+    if (!pdfRecord && !useLocalFallback && supabase) {
+      try {
+        const { data } = await supabase.from('accounts_pdfs').select('*').eq('salaryMonth', month).maybeSingle();
+        if (data) pdfRecord = data;
+      } catch (e) {}
+    }
+
+    if (!pdfRecord) {
+      const data = loadLocalData();
+      pdfRecord = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+    }
+
     if (!pdfRecord) return null;
 
-    const { matchAndVerifyExpenses } = require('./pdf-parser-helper');
+    const { parseAccountsPdf, matchAndVerifyExpenses } = require('./pdf-parser-helper');
+
+    // If pdfData is stored, re-parse with the latest multi-line statement extractor
+    if (pdfRecord.pdfData) {
+      try {
+        const cleanBase64 = String(pdfRecord.pdfData).replace(/^data:.*?;base64,/, '').replace(/\s+/g, '');
+        const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+        const parsed = await parseAccountsPdf(pdfBuffer);
+        if (parsed && parsed.extractedEntries && parsed.extractedEntries.length > 0) {
+          pdfRecord.extractedData = parsed.extractedEntries;
+        }
+      } catch (err) {
+        console.warn('Re-parse pdfData notice:', err.message);
+      }
+    }
+
     const employees = await this.getEmployees(false);
     const appExpensesMap = await this.getAppExpensesMap(month);
 
@@ -2194,48 +2253,80 @@ const db = {
       pdfRecord.extractedData || [],
       employees,
       appExpensesMap,
-      pdfRecord.manualMappings || {}
+      pdfRecord.manualMappings || {},
+      month
     );
 
     pdfRecord.verificationResults = verificationResults;
     pdfRecord.unmatchedPdfEntries = unmatchedPdfEntries;
     pdfRecord.summary = summary;
+
+    const data = loadLocalData();
+    const localIdx = (data.accountsPdfs || []).findIndex(p => p.salaryMonth === month);
+    if (localIdx !== -1) {
+      data.accountsPdfs[localIdx] = pdfRecord;
+    } else {
+      if (!data.accountsPdfs) data.accountsPdfs = [];
+      data.accountsPdfs.push(pdfRecord);
+    }
     saveLocalData(data);
+
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('accounts_pdfs').update({
+          summary: pdfRecord.summary,
+          extractedData: pdfRecord.extractedData,
+          manualMappings: pdfRecord.manualMappings,
+          auditLog: pdfRecord.auditLog
+        }).eq('salaryMonth', month);
+      } catch (err) {
+        console.warn('Supabase accounts_pdfs update notice:', err.message);
+      }
+    }
 
     return pdfRecord;
   },
 
   async mapAccountsPdfEmployee(month, extractedName, targetEmployeeId) {
-    const data = loadLocalData();
-    const pdfRecord = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+    let pdfRecord = null;
+    if (!useLocalFallback && supabase) {
+      try {
+        const { data } = await supabase.from('accounts_pdfs').select('*').eq('salaryMonth', month).maybeSingle();
+        if (data) pdfRecord = data;
+      } catch (e) {}
+    }
+
+    if (!pdfRecord) {
+      const data = loadLocalData();
+      pdfRecord = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+    }
+
     if (!pdfRecord) throw new Error(`No Accounts PDF found for month ${month}`);
 
     if (!pdfRecord.manualMappings) pdfRecord.manualMappings = {};
     if (targetEmployeeId) {
       pdfRecord.manualMappings[targetEmployeeId] = extractedName;
     } else {
-      // Remove mapping if targetEmployeeId is null
       for (const [k, v] of Object.entries(pdfRecord.manualMappings)) {
         if (v === extractedName) delete pdfRecord.manualMappings[k];
       }
     }
 
-    return await this.reverifyAccountsPdf(month);
+    return await this.reverifyAccountsPdf(month, pdfRecord);
   },
 
   async deleteAccountsPdf(month, deletedBy = 'Admin') {
     const data = loadLocalData();
     const idx = (data.accountsPdfs || []).findIndex(p => p.salaryMonth === month);
-    if (idx === -1) return true;
-
-    data.accountsPdfs.splice(idx, 1);
-    saveLocalData(data);
+    if (idx !== -1) {
+      data.accountsPdfs.splice(idx, 1);
+      saveLocalData(data);
+    }
 
     if (!useLocalFallback && supabase) {
-      Promise.race([
-        supabase.from('accounts_pdfs').delete().eq('salaryMonth', month),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase delete timeout')), 3000))
-      ]).catch(() => {});
+      try {
+        await supabase.from('accounts_pdfs').delete().eq('salaryMonth', month);
+      } catch (e) {}
     }
     return true;
   }

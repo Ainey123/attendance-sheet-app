@@ -5767,20 +5767,78 @@ async function openDiscrepancyModal(employeeId) {
     }
   }
 
-  // Populate Unmatched PDF names dropdown
-  if (unmatchedSelect) {
-    const unmatched = (currentAccountsPdf && currentAccountsPdf.unmatchedPdfEntries) || [];
-    unmatchedSelect.innerHTML = '<option value="">-- Select an unmatched name from PDF to link --</option>';
-    unmatched.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.extractedName;
-      opt.textContent = `${u.extractedName} (PKR ${(u.totalAmount || 0).toLocaleString()})`;
-      unmatchedSelect.appendChild(opt);
-    });
-  }
+    // Populate Date-by-Date Cross-Check Comparison Table
+    const reconTbody = document.getElementById('disc-modal-recon-tbody');
+    const reconBadge = document.getElementById('disc-modal-recon-badge');
+    const dateRecon = verif.dateReconciliation || [];
 
-  if (modal) modal.classList.remove('hidden');
-}
+    if (reconBadge) {
+      const exactMatches = dateRecon.filter(d => d.status === 'EXACT_MATCH').length;
+      reconBadge.textContent = `${dateRecon.length} dates checked • ${exactMatches} matched`;
+    }
+
+    if (reconTbody) {
+      if (dateRecon.length === 0) {
+        reconTbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center; padding:0.6rem;">No expense activity recorded on either side for this month.</td></tr>';
+      } else {
+        reconTbody.innerHTML = dateRecon.map(d => {
+          let statusBadge = '<span style="color:var(--text-muted);">—</span>';
+          let diffColor = '#94a3b8';
+          let diffSign = d.difference > 0 ? '+' : '';
+
+          if (d.status === 'EXACT_MATCH') {
+            statusBadge = '<span style="background:rgba(34,197,94,0.18); color:#4ade80; padding:2px 6px; border-radius:4px; font-weight:600; font-size:0.75rem;">✓ Matched</span>';
+            diffColor = '#4ade80';
+          } else if (d.status === 'AMOUNT_DIFF') {
+            statusBadge = '<span style="background:rgba(245,158,11,0.18); color:#fbbf24; padding:2px 6px; border-radius:4px; font-weight:600; font-size:0.75rem;">⚠ Amount Diff</span>';
+            diffColor = '#fbbf24';
+          } else if (d.status === 'APP_ONLY') {
+            statusBadge = '<span style="background:rgba(148,163,184,0.15); color:#94a3b8; padding:2px 6px; border-radius:4px; font-size:0.75rem;">📱 App Only</span>';
+            diffColor = '#f87171';
+          } else if (d.status === 'PDF_ONLY') {
+            statusBadge = '<span style="background:rgba(129,140,248,0.18); color:#a5b4fc; padding:2px 6px; border-radius:4px; font-size:0.75rem;">📄 PDF Only</span>';
+            diffColor = '#60a5fa';
+          }
+
+          return `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+              <td style="padding:0.4rem 0.5rem; font-weight:600; color:#e2e8f0; white-space:nowrap;">
+                ${escapeHtml(d.date)}
+              </td>
+              <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:${d.appAmount > 0 ? '#f87171' : 'var(--text-muted)'};">
+                ${d.appAmount > 0 ? 'PKR ' + d.appAmount.toLocaleString() : '—'}
+                <div style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-sans);">${escapeHtml(d.appNotes || '')}</div>
+              </td>
+              <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:${d.pdfAmount > 0 ? '#6ee7b7' : 'var(--text-muted)'};">
+                ${d.pdfAmount > 0 ? 'PKR ' + d.pdfAmount.toLocaleString() : '—'}
+                <div style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-sans);">${escapeHtml(d.pdfDetails || '')}</div>
+              </td>
+              <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; font-weight:700; color:${diffColor};">
+                ${d.difference !== 0 ? diffSign + 'PKR ' + Math.abs(d.difference).toLocaleString() : 'PKR 0'}
+              </td>
+              <td style="padding:0.4rem 0.5rem; text-align:center; white-space:nowrap;">
+                ${statusBadge}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // Populate Unmatched PDF names dropdown
+    if (unmatchedSelect) {
+      const unmatched = (currentAccountsPdf && currentAccountsPdf.unmatchedPdfEntries) || [];
+      unmatchedSelect.innerHTML = '<option value="">-- Select an unmatched name from PDF to link --</option>';
+      unmatched.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.extractedName;
+        opt.textContent = `${u.extractedName} (PKR ${(u.totalAmount || 0).toLocaleString()})`;
+        unmatchedSelect.appendChild(opt);
+      });
+    }
+
+    if (modal) modal.classList.remove('hidden');
+  }
 
 // Manual Mapping Save
 async function handleSaveManualMapping() {
