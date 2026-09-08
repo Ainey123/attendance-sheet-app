@@ -48,19 +48,35 @@ if (typeof globalThis.ImageData === 'undefined') {
 
 // Explicitly import and initialize pdf-parse v2 worker for Vercel Serverless
 const pdfParseModule = require('pdf-parse');
-try {
-  const { getData, getPath } = require('pdf-parse/worker');
-  if (pdfParseModule && pdfParseModule.PDFParse && typeof pdfParseModule.PDFParse.setWorker === 'function') {
-    const inlineWorkerData = typeof getData === 'function' ? getData() : null;
-    if (inlineWorkerData) {
-      pdfParseModule.PDFParse.setWorker(inlineWorkerData);
-    } else if (typeof getPath === 'function') {
-      pdfParseModule.PDFParse.setWorker(getPath());
+(async () => {
+  try {
+    let workerModule = null;
+    try {
+      workerModule = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+    } catch {
+      try {
+        workerModule = await import('pdfjs-dist/build/pdf.worker.mjs');
+      } catch {}
     }
+    if (workerModule && workerModule.WorkerMessageHandler) {
+      globalThis.pdfjsWorker = { WorkerMessageHandler: workerModule.WorkerMessageHandler };
+    }
+  } catch (_) {}
+
+  try {
+    const { getData, getPath } = require('pdf-parse/worker');
+    if (pdfParseModule && pdfParseModule.PDFParse && typeof pdfParseModule.PDFParse.setWorker === 'function') {
+      const inlineWorkerData = typeof getData === 'function' ? getData() : null;
+      if (inlineWorkerData) {
+        pdfParseModule.PDFParse.setWorker(inlineWorkerData);
+      } else if (typeof getPath === 'function') {
+        pdfParseModule.PDFParse.setWorker(getPath());
+      }
+    }
+  } catch (e) {
+    console.warn('Vercel entrypoint worker init notice:', e.message);
   }
-} catch (e) {
-  console.warn('Vercel entrypoint worker init notice:', e.message);
-}
+})();
 
 const db = require('../db');
 

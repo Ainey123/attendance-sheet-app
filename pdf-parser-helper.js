@@ -79,25 +79,53 @@ if (typeof globalThis.ImageData === 'undefined') {
 
 const pdfParseModule = require('pdf-parse');
 
-// Initialize and bind worker for pdf-parse v2 (prevents "Cannot find module ... pdf.worker.mjs" in serverless)
-function initPdfWorker() {
-  try {
-    const { getData, getPath } = require('pdf-parse/worker');
-    if (pdfParseModule && pdfParseModule.PDFParse && typeof pdfParseModule.PDFParse.setWorker === 'function') {
-      const inlineWorkerData = typeof getData === 'function' ? getData() : null;
-      if (inlineWorkerData) {
-        pdfParseModule.PDFParse.setWorker(inlineWorkerData);
-      } else if (typeof getPath === 'function') {
-        pdfParseModule.PDFParse.setWorker(getPath());
-      }
-    }
-  } catch (err) {
-    console.warn('Notice: PDFParse worker initialization:', err.message);
+let workerInitPromise = null;
+
+// Initialize and bind worker for pdf-parse v2 & pdfjs-dist
+async function ensureWorkerReady() {
+  if (globalThis.pdfjsWorker && globalThis.pdfjsWorker.WorkerMessageHandler) {
+    return;
   }
+  if (!workerInitPromise) {
+    workerInitPromise = (async () => {
+      // 1. Direct WorkerMessageHandler import for pdfjs-dist in Node.js / Vercel Serverless
+      try {
+        let workerModule = null;
+        try {
+          workerModule = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+        } catch {
+          try {
+            workerModule = await import('pdfjs-dist/build/pdf.worker.mjs');
+          } catch {}
+        }
+        if (workerModule && workerModule.WorkerMessageHandler) {
+          globalThis.pdfjsWorker = { WorkerMessageHandler: workerModule.WorkerMessageHandler };
+        }
+      } catch (err) {
+        console.warn('WorkerMessageHandler import notice:', err.message);
+      }
+
+      // 2. Worker setup for pdf-parse/worker
+      try {
+        const { getData, getPath } = require('pdf-parse/worker');
+        if (pdfParseModule && pdfParseModule.PDFParse && typeof pdfParseModule.PDFParse.setWorker === 'function') {
+          const inlineWorkerData = typeof getData === 'function' ? getData() : null;
+          if (inlineWorkerData) {
+            pdfParseModule.PDFParse.setWorker(inlineWorkerData);
+          } else if (typeof getPath === 'function') {
+            pdfParseModule.PDFParse.setWorker(getPath());
+          }
+        }
+      } catch (err) {
+        console.warn('PDFParse.setWorker notice:', err.message);
+      }
+    })();
+  }
+  await workerInitPromise;
 }
 
-// Run immediately on module import
-initPdfWorker();
+// Trigger initial worker readiness
+ensureWorkerReady().catch(() => {});
 
 function normalizeName(name) {
   if (!name) return '';
@@ -128,8 +156,8 @@ async function parseAccountsPdf(pdfBuffer) {
   let numPages = 1;
   let pdfInfo = {};
 
-  // Ensure worker is configured before instantiating parser
-  initPdfWorker();
+  // Ensure worker is fully initialized
+  await ensureWorkerReady();
 
   try {
     if (pdfParseModule && pdfParseModule.PDFParse) {
