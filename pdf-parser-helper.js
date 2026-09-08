@@ -79,6 +79,26 @@ if (typeof globalThis.ImageData === 'undefined') {
 
 const pdfParseModule = require('pdf-parse');
 
+// Initialize and bind worker for pdf-parse v2 (prevents "Cannot find module ... pdf.worker.mjs" in serverless)
+function initPdfWorker() {
+  try {
+    const { getData, getPath } = require('pdf-parse/worker');
+    if (pdfParseModule && pdfParseModule.PDFParse && typeof pdfParseModule.PDFParse.setWorker === 'function') {
+      const inlineWorkerData = typeof getData === 'function' ? getData() : null;
+      if (inlineWorkerData) {
+        pdfParseModule.PDFParse.setWorker(inlineWorkerData);
+      } else if (typeof getPath === 'function') {
+        pdfParseModule.PDFParse.setWorker(getPath());
+      }
+    }
+  } catch (err) {
+    console.warn('Notice: PDFParse worker initialization:', err.message);
+  }
+}
+
+// Run immediately on module import
+initPdfWorker();
+
 function normalizeName(name) {
   if (!name) return '';
   return String(name)
@@ -108,23 +128,37 @@ async function parseAccountsPdf(pdfBuffer) {
   let numPages = 1;
   let pdfInfo = {};
 
+  // Ensure worker is configured before instantiating parser
+  initPdfWorker();
+
   try {
-    if (typeof pdfParseModule === 'function') {
-      const data = await pdfParseModule(pdfBuffer);
-      pdfText = data.text || '';
-      numPages = data.numpages || 1;
-      pdfInfo = data.info || {};
-    } else if (pdfParseModule && pdfParseModule.PDFParse) {
+    if (pdfParseModule && pdfParseModule.PDFParse) {
       const parser = new pdfParseModule.PDFParse({ data: pdfBuffer });
       const textResult = await parser.getText();
       pdfText = textResult.text || '';
       numPages = textResult.pages ? textResult.pages.length : (textResult.numpages || 1);
       pdfInfo = textResult.info || {};
+    } else if (typeof pdfParseModule === 'function') {
+      const data = await pdfParseModule(pdfBuffer);
+      pdfText = data.text || '';
+      numPages = data.numpages || 1;
+      pdfInfo = data.info || {};
     } else {
       throw new Error('Unsupported PDF parse module export');
     }
   } catch (err) {
-    throw new Error('Unable to process this PDF. Please verify that the PDF is valid and readable: ' + err.message);
+    const rawMsg = err.message || String(err);
+    if (/worker|Cannot find module|fake worker/i.test(rawMsg)) {
+      console.error('PDF Worker configuration error:', rawMsg);
+      throw new Error('PDF processing is temporarily unavailable. Please try again.');
+    }
+    if (/password|encrypt/i.test(rawMsg)) {
+      throw new Error('This PDF is password-protected or encrypted. Please upload an unprotected PDF.');
+    }
+    if (/format|invalid|corrupt/i.test(rawMsg)) {
+      throw new Error('The uploaded file is corrupt or not a valid PDF document.');
+    }
+    throw new Error('Unable to process this PDF: ' + rawMsg);
   }
 
   if (!pdfText || pdfText.trim().length === 0) {
@@ -141,7 +175,7 @@ async function parseAccountsPdf(pdfBuffer) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (/^(page\s+\d+|salary\s+sheet|accounts\s+department|monthly\s+report|generated\s+on|sr#|sr\.|s\.no|total\s*:)/i.test(line)) {
+    if (/^(page\s+\d+|salary\s+sheet|accounts\s+department|monthly\s+report|generated\s+on|sr#|sr\.|s\.no|total\s*:|--\s*\d+\s+of\s+\d+\s*--)/i.test(line)) {
       continue;
     }
 

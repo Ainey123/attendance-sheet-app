@@ -4,6 +4,8 @@
   "description": "Simple shareable office attendance sheet with location tracking",
   "main": "server.js",
   "scripts": {
+    "dev": "node server.js",
+    "build": "node -e \"console.log('Build completed successfully')\"",
     "dump:supabase": "node ./scripts/dump_supabase_data.js",
     "start": "node server.js"
   },
