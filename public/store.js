@@ -60,11 +60,23 @@ const Store = (function() {
     }
   }
 
+  /**
+   * Clear admin passcode from localStorage.
+   */
+  function clearPasscode() {
+    try {
+      localStorage.removeItem(PASSCODE_KEY);
+    } catch (e) {
+      console.error('Failed to clear admin passcode from localStorage', e);
+    }
+  }
+
   // Expose public API
   return {
     saveEmployees,
     loadEmployees,
     savePasscode,
     loadPasscode,
+    clearPasscode,
   };
 })();

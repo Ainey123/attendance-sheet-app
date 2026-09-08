@@ -129,6 +129,16 @@ module.exports = async (req, res) => {
       db.autoCompleteOldAttendance().catch(e => console.warn('autoCompleteOldAttendance error:', e.message));
     }
 
+    // ── GET /api/health ─────────────────────────────────────────────────────
+    if (path === 'health' && method === 'GET') {
+      return res.json({
+        status: 'ok',
+        version: 'v215-worker-ready',
+        hasWorker: Boolean(globalThis.pdfjsWorker?.WorkerMessageHandler),
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // ── GET /api/stats ──────────────────────────────────────────────────────
     if (path === 'stats' && method === 'GET') {
       return res.json(await db.getDashboardStats());

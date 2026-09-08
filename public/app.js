@@ -1,10 +1,22 @@
 // ==========================================================================
 // STATE MANAGEMENT & GLOBALS
 // ==========================================================================
+const Store = {
+  savePasscode(code) {
+    try { localStorage.setItem('attendance_admin_passcode', code || ''); } catch (e) {}
+  },
+  loadPasscode() {
+    try { return localStorage.getItem('attendance_admin_passcode') || ''; } catch (e) { return ''; }
+  },
+  clearPasscode() {
+    try { localStorage.removeItem('attendance_admin_passcode'); } catch (e) {}
+  }
+};
+
 let allEmployees = [];
 let selectedEmployee = null;
 let userLocation = null;
-let adminPasscode = (typeof Store !== 'undefined' && Store.loadPasscode) ? Store.loadPasscode() : (localStorage.getItem('attendance_admin_passcode') || '');
+let adminPasscode = Store.loadPasscode();
 let currentView = 'employee'; // 'employee' or 'admin'
 let activeShiftTimer = null;
 let currentAdminTab = 'tab-dashboard';
