@@ -1,145 +1,32 @@
 /**
  * pdf-parser-helper.js
- * Intelligent PDF Parser & Employee Expense Comparator
+ * Server-Compatible Intelligent PDF Parser & Bank Statement / Accounts Comparator
  * 
- * Extracts employee names, dates, descriptions, and expense amounts from
- * Accounts Department PDFs without confusing balances, account numbers, or serials.
+ * Works seamlessly in Node.js, Next.js, and Vercel Serverless Functions
+ * with ZERO worker dependencies, ZERO browser fake-worker errors, and ZERO DOMMatrix requirements.
+ * 
+ * Supports:
+ * - Bank Alfalah & other Pakistani Bank Statements of Account (180+ pages)
+ * - Multi-column tabular data (Date, Description, Cheq/Ref#, Debit, Credit, Balance)
+ * - Standard Accounts Department expense sheets (Name: PKR Amount, tabular lists)
+ * - Strict separation of Debit (Expenses) vs Credit (Deposits) vs Running Balance
  */
 
-// Polyfill DOMMatrix, Path2D, and ImageData for Node.js / Vercel Serverless (required by pdfjs-dist / pdf-parse v2)
-if (typeof globalThis.DOMMatrix === 'undefined') {
-  class DOMMatrix {
-    constructor(init) {
-      this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
-      this.m11 = 1; this.m12 = 0; this.m13 = 0; this.m14 = 0;
-      this.m21 = 0; this.m22 = 1; this.m23 = 0; this.m24 = 0;
-      this.m31 = 0; this.m32 = 0; this.m33 = 1; this.m34 = 0;
-      this.m41 = 0; this.m42 = 0; this.m43 = 0; this.m44 = 1;
-      this.is2D = true;
-      this.isIdentity = true;
-
-      if (Array.isArray(init)) {
-        if (init.length === 6) {
-          this.a = this.m11 = init[0];
-          this.b = this.m12 = init[1];
-          this.c = this.m21 = init[2];
-          this.d = this.m22 = init[3];
-          this.e = this.m41 = init[4];
-          this.f = this.m42 = init[5];
-        } else if (init.length === 16) {
-          this.m11 = this.a = init[0]; this.m12 = this.b = init[1]; this.m13 = init[2]; this.m14 = init[3];
-          this.m21 = this.c = init[4]; this.m22 = this.d = init[5]; this.m23 = init[6]; this.m24 = init[7];
-          this.m31 = init[8]; this.m32 = init[9]; this.m33 = init[10]; this.m34 = init[11];
-          this.m41 = this.e = init[12]; this.m42 = this.f = init[13]; this.m43 = init[14]; this.m44 = init[15];
-          this.is2D = false;
-        }
-      }
-    }
-    multiply() { return new DOMMatrix(); }
-    translate() { return new DOMMatrix(); }
-    scale() { return new DOMMatrix(); }
-    rotate() { return new DOMMatrix(); }
-    transformPoint(p) { return p || { x: 0, y: 0, z: 0, w: 1 }; }
-    inverse() { return new DOMMatrix(); }
-    toString() { return `matrix(${this.a}, ${this.b}, ${this.c}, ${this.d}, ${this.e}, ${this.f})`; }
-  }
-  globalThis.DOMMatrix = DOMMatrix;
-  if (typeof global !== 'undefined') global.DOMMatrix = DOMMatrix;
-}
-
-if (typeof globalThis.Path2D === 'undefined') {
-  class Path2D {
-    constructor() {}
-    addPath() {}
-    closePath() {}
-    moveTo() {}
-    lineTo() {}
-    bezierCurveTo() {}
-    quadraticCurveTo() {}
-    arc() {}
-    arcTo() {}
-    ellipse() {}
-    rect() {}
-  }
-  globalThis.Path2D = Path2D;
-  if (typeof global !== 'undefined') global.Path2D = Path2D;
-}
-
-if (typeof globalThis.ImageData === 'undefined') {
-  class ImageData {
-    constructor(width, height) {
-      this.width = width || 1;
-      this.height = height || 1;
-      this.data = new Uint8ClampedArray((this.width * this.height) * 4);
-    }
-  }
-  globalThis.ImageData = ImageData;
-  if (typeof global !== 'undefined') global.ImageData = ImageData;
-}
-
-const pdfParseModule = require('pdf-parse');
-
-let workerInitPromise = null;
-
-// Initialize and bind worker for pdf-parse v2 & pdfjs-dist
-async function ensureWorkerReady() {
-  if (globalThis.pdfjsWorker && globalThis.pdfjsWorker.WorkerMessageHandler) {
-    return;
-  }
-  if (!workerInitPromise) {
-    workerInitPromise = (async () => {
-      // 1. Direct WorkerMessageHandler import for pdfjs-dist in Node.js / Vercel Serverless
-      try {
-        let workerModule = null;
-        try {
-          workerModule = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
-        } catch {
-          try {
-            workerModule = await import('pdfjs-dist/build/pdf.worker.mjs');
-          } catch {}
-        }
-        if (workerModule && workerModule.WorkerMessageHandler) {
-          globalThis.pdfjsWorker = { WorkerMessageHandler: workerModule.WorkerMessageHandler };
-        }
-      } catch (err) {
-        console.warn('WorkerMessageHandler import notice:', err.message);
-      }
-
-      // 2. Worker setup for pdf-parse/worker
-      try {
-        const { getData, getPath } = require('pdf-parse/worker');
-        if (pdfParseModule && pdfParseModule.PDFParse && typeof pdfParseModule.PDFParse.setWorker === 'function') {
-          const inlineWorkerData = typeof getData === 'function' ? getData() : null;
-          if (inlineWorkerData) {
-            pdfParseModule.PDFParse.setWorker(inlineWorkerData);
-          } else if (typeof getPath === 'function') {
-            pdfParseModule.PDFParse.setWorker(getPath());
-          }
-        }
-      } catch (err) {
-        console.warn('PDFParse.setWorker notice:', err.message);
-      }
-    })();
-  }
-  await workerInitPromise;
-}
-
-// Trigger initial worker readiness
-ensureWorkerReady().catch(() => {});
+const pdfParse = require('pdf-parse');
 
 function normalizeName(name) {
   if (!name) return '';
   return String(name)
     .trim()
     .toLowerCase()
-    .replace(/^(mr\.|ms\.|mrs\.|engr\.|dr\.|muhammad\s+engr\.)\s+/i, '')
+    .replace(/^(mr\.|ms\.|mrs\.|engr\.|dr\.|muhammad\s+engr\.|m\.)\s+/i, '')
     .replace(/[^\w\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function parseAmount(amountStr) {
-  if (typeof amountStr === 'number') return isNaN(amountStr) ? 0 : amountStr;
+  if (typeof amountStr === 'number') return isNaN(amountStr) ? 0 : Math.abs(amountStr);
   if (!amountStr) return 0;
   
   const cleaned = String(amountStr)
@@ -151,43 +38,127 @@ function parseAmount(amountStr) {
   return isNaN(val) ? 0 : Math.round(Math.abs(val) * 100) / 100;
 }
 
-async function parseAccountsPdf(pdfBuffer) {
-  let pdfText = '';
-  let numPages = 1;
-  let pdfInfo = {};
+/**
+ * Parses a single line from a Bank Statement
+ */
+function parseBankStatementLine(line) {
+  if (!line || line.length < 5) return null;
 
-  // Ensure worker is fully initialized
-  await ensureWorkerReady();
+  // Check for date pattern at start (DD-MM-YYYY, DD/MM/YYYY, DD-Mon-YYYY, YYYY-MM-DD, etc.)
+  const dateRegex = /^\s*(\d{1,2}[-\/\.](?:[A-Za-z]{3}|\d{1,2})[-\/\.]\d{2,4})\s*(?:(\d{1,2}[-\/\.](?:[A-Za-z]{3}|\d{1,2})[-\/\.]\d{2,4})\s*)?/i;
+  const dateMatch = line.match(dateRegex);
+  if (!dateMatch) return null;
 
-  try {
-    if (pdfParseModule && pdfParseModule.PDFParse) {
-      const parser = new pdfParseModule.PDFParse({ data: pdfBuffer });
-      const textResult = await parser.getText();
-      pdfText = textResult.text || '';
-      numPages = textResult.pages ? textResult.pages.length : (textResult.numpages || 1);
-      pdfInfo = textResult.info || {};
-    } else if (typeof pdfParseModule === 'function') {
-      const data = await pdfParseModule(pdfBuffer);
-      pdfText = data.text || '';
-      numPages = data.numpages || 1;
-      pdfInfo = data.info || {};
+  const postDate = dateMatch[1];
+  const valueDate = dateMatch[2] || postDate;
+  let remaining = line.substring(dateMatch[0].length).trim();
+
+  // Find all number amounts on the line (e.g., 15,000.00, 485,000.00, 0.00)
+  const numberRegex = /(?:\b|\s)([\d,]+\.\d{2}|\b\d{1,3}(?:,\d{3})+(?!\.\d)\b)(?:\b|\s)/g;
+  const numberMatches = [...remaining.matchAll(numberRegex)];
+  
+  if (numberMatches.length === 0) return null;
+
+  const amounts = numberMatches.map(m => {
+    const raw = m[1];
+    const val = parseFloat(raw.replace(/,/g, ''));
+    return { raw, val, index: m.index };
+  }).filter(a => !isNaN(a.val));
+
+  if (amounts.length === 0) return null;
+
+  let debit = 0;
+  let credit = 0;
+  let balance = 0;
+  let descriptionEndIdx = remaining.length;
+
+  if (amounts.length >= 3) {
+    // 3+ columns: Debit, Credit, Balance
+    const balObj = amounts[amounts.length - 1];
+    const credObj = amounts[amounts.length - 2];
+    const debObj = amounts[amounts.length - 3];
+    balance = balObj.val;
+    credit = credObj.val;
+    debit = debObj.val;
+    descriptionEndIdx = debObj.index;
+  } else if (amounts.length === 2) {
+    // 2 columns: either [Debit, Balance] or [Credit, Balance]
+    const balObj = amounts[1];
+    const txObj = amounts[0];
+    balance = balObj.val;
+    descriptionEndIdx = txObj.index;
+    
+    const descText = remaining.substring(0, descriptionEndIdx).toUpperCase();
+    if (/(DEPOSIT|CREDIT|\bCR\b|PROFIT|RECEIV|REFUND)/i.test(descText) && !/(DEBIT|\bDR\b|TRANSFER TO|IBFT TO|PAID|WD)/i.test(descText)) {
+      credit = txObj.val;
     } else {
-      throw new Error('Unsupported PDF parse module export');
+      debit = txObj.val;
     }
+  } else if (amounts.length === 1) {
+    debit = amounts[0].val;
+    descriptionEndIdx = amounts[0].index;
+  }
+
+  let description = remaining.substring(0, descriptionEndIdx).trim();
+
+  // Extract Cheque/Ref #
+  let refNo = '';
+  const refMatch = description.match(/\b(FT\d+|CHQ\s*#?\s*\d+|IBFT\w*|\b\d{6,14}\b)/i);
+  if (refMatch) {
+    refNo = refMatch[0];
+    description = description.replace(refNo, ' ').trim();
+  }
+
+  // Clean description to get clean payee name
+  let cleanName = description
+    .replace(/\b(IBFT|ONLINE|TRF|TRANSFER|FUNDS|PAYMENT|TO|FROM|CHQ|CHEQUE|PAID|CASH|WITHDRAWAL|EXPENSE|EXPENSES|SALARY|SAL|BILL|ADVANCE|DR|CR|PKR|RS|BRANCH|ATM|POS)\b/gi, ' ')
+    .replace(/[^a-zA-Z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    postDate,
+    valueDate,
+    description,
+    cleanName,
+    refNo,
+    debit,
+    credit,
+    balance,
+    amount: debit > 0 ? debit : credit,
+    rawLine: line
+  };
+}
+
+/**
+ * Main parser entry point
+ * @param {Buffer} pdfBuffer - Raw PDF file buffer
+ * @returns {Promise<{ numPages: number, pdfInfo: object, extractedEntries: Array }>}
+ */
+async function parseAccountsPdf(pdfBuffer) {
+  if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer)) {
+    throw new Error('Invalid PDF data provided: expected a Buffer');
+  }
+
+  let data;
+  try {
+    // Pure Node.js in-process extraction via pdf-parse@1.1.1
+    data = await pdfParse(pdfBuffer);
   } catch (err) {
     const rawMsg = err.message || String(err);
-    if (/worker|Cannot find module|fake worker/i.test(rawMsg)) {
-      console.error('PDF Worker configuration error:', rawMsg);
-      throw new Error('PDF processing is temporarily unavailable. Please try again.');
-    }
+    console.error('PDF Parser Internal Error:', rawMsg);
     if (/password|encrypt/i.test(rawMsg)) {
       throw new Error('This PDF is password-protected or encrypted. Please upload an unprotected PDF.');
     }
-    if (/format|invalid|corrupt/i.test(rawMsg)) {
+    if (/format|invalid|bad xref|corrupt/i.test(rawMsg)) {
       throw new Error('The uploaded file is corrupt or not a valid PDF document.');
     }
     throw new Error('Unable to process this PDF: ' + rawMsg);
   }
+
+  const pdfText = data.text || '';
+  const numPages = data.numpages || 1;
+  const pdfInfo = data.info || {};
 
   if (!pdfText || pdfText.trim().length === 0) {
     throw new Error('No readable text found in this PDF. It may be a scanned image without selectable text.');
@@ -203,14 +174,38 @@ async function parseAccountsPdf(pdfBuffer) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (/^(page\s+\d+|salary\s+sheet|accounts\s+department|monthly\s+report|generated\s+on|sr#|sr\.|s\.no|total\s*:|--\s*\d+\s+of\s+\d+\s*--)/i.test(line)) {
+    // Skip statement headers, footers, pagination
+    if (/^(page\s+\d+|statement\s+of\s+account|bank\s+alfalah|account\s+number|branch\s*:|statement\s+period|post\s+date|val\s+date|particulars|sr#|sr\.|s\.no|total\s*:|--\s*\d+\s+of\s+\d+\s*--)/i.test(line)) {
       continue;
     }
 
+    // 1. Try Bank Statement transaction line parsing
+    const bankTx = parseBankStatementLine(line);
+    if (bankTx) {
+      // For expense verification, we are interested in Debit (or expense amounts)
+      const amt = bankTx.debit > 0 ? bankTx.debit : (bankTx.amount > 0 ? bankTx.amount : 0);
+      if (amt > 0 && bankTx.cleanName.length >= 2) {
+        extractedEntries.push({
+          extractedName: bankTx.cleanName,
+          amount: amt,
+          debit: bankTx.debit,
+          credit: bankTx.credit,
+          balance: bankTx.balance,
+          date: bankTx.postDate,
+          refNo: bankTx.refNo,
+          description: bankTx.description,
+          rawLine: line,
+          details: `Date: ${bankTx.postDate} | Debit: PKR ${amt.toLocaleString()} | Bal: PKR ${bankTx.balance.toLocaleString()} | ${bankTx.description}`
+        });
+        continue;
+      }
+    }
+
+    // 2. Try Key-Value Format: "Name: PKR Amount" or "Employee: Amount"
     if (line.includes(':') && /\d+/.test(line)) {
       const parts = line.split(':');
       if (parts.length >= 2) {
-        const potentialName = parts[0].replace(/^(employee|staff|name|emp)\s+/i, '').trim();
+        const potentialName = parts[0].replace(/^(employee|staff|name|emp|payee)\s+/i, '').trim();
         const potentialAmountMatch = parts[parts.length - 1].match(/([\d,]+(?:\.\d{2})?)/);
         if (potentialName.length > 2 && potentialAmountMatch) {
           const amt = parseAmount(potentialAmountMatch[1]);
@@ -218,6 +213,9 @@ async function parseAccountsPdf(pdfBuffer) {
             extractedEntries.push({
               extractedName: potentialName,
               amount: amt,
+              debit: amt,
+              credit: 0,
+              balance: 0,
               rawLine: line,
               details: line
             });
@@ -227,8 +225,8 @@ async function parseAccountsPdf(pdfBuffer) {
       }
     }
 
+    // 3. Try Generic Tabular Row Format: "Name ... Amount"
     const amountMatches = line.match(/(?:pkr|rs\.?|rs)?\s*([\d,]+(?:\.\d{2})?)\s*(?:\/-)?/gi);
-    
     if (amountMatches && amountMatches.length > 0) {
       const validAmounts = [];
       amountMatches.forEach(m => {
@@ -240,7 +238,8 @@ async function parseAccountsPdf(pdfBuffer) {
       });
 
       if (validAmounts.length > 0) {
-        const targetAmount = validAmounts[validAmounts.length - 1].val;
+        // In generic row, first valid amount is transaction amount
+        const targetAmount = validAmounts[0].val;
 
         let namePortion = line;
         validAmounts.forEach(va => {
@@ -258,6 +257,9 @@ async function parseAccountsPdf(pdfBuffer) {
           extractedEntries.push({
             extractedName: namePortion,
             amount: targetAmount,
+            debit: targetAmount,
+            credit: 0,
+            balance: 0,
             rawLine: line,
             details: line
           });
@@ -273,6 +275,9 @@ async function parseAccountsPdf(pdfBuffer) {
   };
 }
 
+/**
+ * Matches extracted PDF entries against employee database and calculates verification summary
+ */
 function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}, manualMappings = {}) {
   const pdfEmployeeMap = new Map();
 
@@ -309,6 +314,7 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
     let confidence = 0;
     let matchType = 'NONE';
 
+    // 1. Check manual admin mappings first
     if (manualMappings && manualMappings[empId]) {
       const mappedNorm = normalizeName(manualMappings[empId]);
       if (pdfEmployeeMap.has(mappedNorm)) {
@@ -319,6 +325,7 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
       }
     }
 
+    // 2. Exact normalized name match
     if (!matchedPdfItem && pdfEmployeeMap.has(empNorm)) {
       matchedPdfItem = pdfEmployeeMap.get(empNorm);
       matchedPdfNorms.add(empNorm);
@@ -326,6 +333,7 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
       matchType = 'EXACT_NAME';
     }
 
+    // 3. Fuzzy token match (e.g. "Muhammad Ali" matches "Ali" or "M Ali" in bank description)
     if (!matchedPdfItem) {
       for (const [normKey, pdfItem] of pdfEmployeeMap.entries()) {
         if (matchedPdfNorms.has(normKey)) continue;
@@ -339,6 +347,15 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
           matchedPdfNorms.add(normKey);
           confidence = 0.85;
           matchType = 'FUZZY_NAME';
+          break;
+        }
+
+        // Substring check
+        if (empNorm.length > 3 && (normKey.includes(empNorm) || empNorm.includes(normKey))) {
+          matchedPdfItem = pdfItem;
+          matchedPdfNorms.add(normKey);
+          confidence = 0.90;
+          matchType = 'SUBSTRING';
           break;
         }
       }
@@ -430,5 +447,7 @@ module.exports = {
   parseAccountsPdf,
   matchAndVerifyExpenses,
   normalizeName,
-  parseAmount
+  parseAmount,
+  parseBankStatementLine
 };
+
