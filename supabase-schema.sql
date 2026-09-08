@@ -114,6 +114,35 @@ CREATE TABLE IF NOT EXISTS employee_evaluations (
   "createdAt"        TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 8. Comments Table
+CREATE TABLE IF NOT EXISTS comments (
+  "id"           TEXT PRIMARY KEY,
+  "employeeId"   TEXT NOT NULL,
+  "employeeName" TEXT NOT NULL,
+  "sender"       TEXT NOT NULL,
+  "senderName"   TEXT NOT NULL,
+  "message"      TEXT NOT NULL,
+  "createdAt"    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "isRead"       BOOLEAN DEFAULT TRUE
+);
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS "isRead" BOOLEAN DEFAULT TRUE;
+
+-- 9. Accounts PDFs Table (Salary Sheet Verification)
+CREATE TABLE IF NOT EXISTS accounts_pdfs (
+  "id"               TEXT PRIMARY KEY,
+  "salaryMonth"      TEXT UNIQUE NOT NULL,
+  "fileName"         TEXT NOT NULL,
+  "fileSize"         INTEGER,
+  "pdfData"          TEXT,
+  "uploadedBy"       TEXT DEFAULT 'Admin',
+  "uploadedAt"       TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "processingStatus" TEXT DEFAULT 'PROCESSED',
+  "extractedData"    JSONB DEFAULT '[]'::jsonb,
+  "summary"          JSONB DEFAULT '{}'::jsonb,
+  "manualMappings"   JSONB DEFAULT '{}'::jsonb,
+  "auditLog"         JSONB DEFAULT '[]'::jsonb
+);
+
 -- ── Indexes for fast lookups (IF NOT EXISTS prevents duplicate errors) ─
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id   ON attendance("employeeId");
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_name ON attendance("employeeName");
@@ -124,15 +153,19 @@ CREATE INDEX IF NOT EXISTS idx_work_records_date        ON work_records("date");
 CREATE INDEX IF NOT EXISTS idx_employees_token          ON employees("token");
 CREATE INDEX IF NOT EXISTS idx_form_submissions_employee_id ON form_submissions("employeeId");
 CREATE INDEX IF NOT EXISTS idx_form_submissions_type    ON form_submissions("formType");
+CREATE INDEX IF NOT EXISTS idx_comments_employee_id     ON comments("employeeId");
+CREATE INDEX IF NOT EXISTS idx_accounts_pdfs_month      ON accounts_pdfs("salaryMonth");
 
 -- ── Row Level Security (RLS) ─────────────────────────────
-ALTER TABLE employees      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE settings       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE work_records   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE work_profiles  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE form_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employees            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE work_records         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE work_profiles        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE form_submissions     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE employee_evaluations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comments             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts_pdfs        ENABLE ROW LEVEL SECURITY;
 
 -- Policies (DO NOTHING if they already exist — avoids errors on re-run)
 DO $$ BEGIN
@@ -156,6 +189,12 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='employee_evaluations' AND policyname='Allow all access for employee_evaluations') THEN
     CREATE POLICY "Allow all access for employee_evaluations" ON employee_evaluations FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='comments' AND policyname='Allow all access for comments') THEN
+    CREATE POLICY "Allow all access for comments" ON comments FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='accounts_pdfs' AND policyname='Allow all access for accounts_pdfs') THEN
+    CREATE POLICY "Allow all access for accounts_pdfs" ON accounts_pdfs FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
