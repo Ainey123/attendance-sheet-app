@@ -2039,6 +2039,221 @@
     </div>
   </div>
 
+  <!-- MODAL: ADMIN 1 EXPENSE VERIFICATION -->
+  <div id="modal-expense-verify" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-content" style="max-width: 520px; background: #161a23; border: 1px solid rgba(59,130,246,0.3); border-radius: 12px; padding: 1.5rem;">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="color:#fff; font-size:1.15rem; margin:0; display:flex; align-items:center; gap:0.5rem;">
+            <span>🔍</span> Admin 1 — Verify Expense
+          </h3>
+          <p id="exp-verify-subtitle" style="font-size:0.82rem; color:var(--text-secondary); margin:0.25rem 0 0 0;">Employee Expense Verification</p>
+        </div>
+        <button type="button" class="btn-close" onclick="closeExpenseVerifyModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:1rem;">
+        <!-- Employee & Claimed Overview -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:0.75rem 1rem; display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+          <div>
+            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Claimed by Employee</div>
+            <div id="exp-verify-claimed" style="font-size:1.1rem; font-weight:700; color:#f87171; font-family:monospace;">PKR 0</div>
+          </div>
+          <div>
+            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Selected Period</div>
+            <div id="exp-verify-period" style="font-size:0.95rem; font-weight:600; color:#fff;">August 2026</div>
+          </div>
+        </div>
+
+        <!-- Itemized Entries Container -->
+        <div id="exp-verify-itemized-container" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); border-radius:6px; padding:0.5rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.05);">
+          <div style="color:var(--text-muted); text-align:center;">Loading daily expense breakdown...</div>
+        </div>
+
+        <!-- Form Inputs -->
+        <div>
+          <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem; font-weight:600;">Verified Amount (PKR) *</label>
+          <input type="number" id="exp-verify-amount-input" class="form-input" min="0" step="any" placeholder="Enter verified amount" style="width:100%; background:#0f172a; border:1px solid #3b82f6; color:#fff; padding:0.55rem 0.75rem; border-radius:6px; font-size:1rem; font-family:monospace;" />
+          <small style="color:var(--text-muted); font-size:0.72rem;">Enter the cross-checked amount verified by Admin 1.</small>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div>
+            <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Admin 1 Name</label>
+            <input type="text" id="exp-verify-admin-name" class="form-input" placeholder="Admin 1" value="Admin 1" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Admin Passcode *</label>
+            <input type="password" id="exp-verify-passcode" class="form-input" placeholder="Passcode (e.g. 1289)" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Verification Notes (Optional)</label>
+          <input type="text" id="exp-verify-notes" class="form-input" placeholder="e.g. Cross-checked with attendance receipts" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+        </div>
+
+        <!-- Audit trail if already verified -->
+        <div id="exp-verify-audit-box" class="hidden" style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.02); padding:0.5rem; border-radius:4px;"></div>
+      </div>
+
+      <div class="modal-footer" style="margin-top:1.25rem; display:flex; justify-content:flex-end; gap:0.75rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeExpenseVerifyModal()" style="padding:0.5rem 1rem;">Cancel</button>
+        <button type="button" id="btn-submit-expense-verify" class="btn btn-primary" onclick="submitExpenseVerification()" style="background:#3b82f6; padding:0.5rem 1.25rem; font-weight:600;">
+          ✓ Confirm Verification
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SENIOR ADMIN EXPENSE APPROVAL -->
+  <div id="modal-expense-approve" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-content" style="max-width: 520px; background: #161a23; border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 1.5rem;">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="color:#fff; font-size:1.15rem; margin:0; display:flex; align-items:center; gap:0.5rem;">
+            <span>🛡️</span> Senior Admin — Approve Expense
+          </h3>
+          <p id="exp-approve-subtitle" style="font-size:0.82rem; color:var(--text-secondary); margin:0.25rem 0 0 0;">Final Expense Approval</p>
+        </div>
+        <button type="button" class="btn-close" onclick="closeExpenseApproveModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:1rem;">
+        <!-- Two-box verification summary -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:0.6rem 0.8rem;">
+            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Claimed by Employee</div>
+            <div id="exp-approve-claimed" style="font-size:1rem; font-weight:700; color:#f87171; font-family:monospace;">PKR 0</div>
+          </div>
+          <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.25); border-radius:8px; padding:0.6rem 0.8rem;">
+            <div style="font-size:0.72rem; color:#93c5fd; text-transform:uppercase;">Verified by Admin 1</div>
+            <div id="exp-approve-verified" style="font-size:1rem; font-weight:700; color:#60a5fa; font-family:monospace;">PKR 0</div>
+            <div id="exp-approve-verified-by" style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">—</div>
+          </div>
+        </div>
+
+        <!-- Rule Alert -->
+        <div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.25); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.75rem; color:#fcd34d; display:flex; gap:0.5rem; align-items:center;">
+          <span>⚠️</span>
+          <span>Approved amount cannot exceed the verified amount (<strong id="exp-approve-max-hint">PKR 0</strong>).</span>
+        </div>
+
+        <!-- Amount Input -->
+        <div>
+          <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem; font-weight:600;">Approved Amount (PKR) *</label>
+          <input type="number" id="exp-approve-amount-input" class="form-input" min="0" step="any" placeholder="Enter approved amount" style="width:100%; background:#0f172a; border:1px solid #10b981; color:#fff; padding:0.55rem 0.75rem; border-radius:6px; font-size:1rem; font-family:monospace;" />
+          <small style="color:var(--text-muted); font-size:0.72rem;">This amount will be deducted from Net Salary.</small>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div>
+            <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Senior Admin Name</label>
+            <input type="text" id="exp-approve-senior-name" class="form-input" placeholder="Senior Admin" value="Senior Admin" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Senior Admin Passcode *</label>
+            <input type="password" id="exp-approve-passcode" class="form-input" placeholder="Passcode (9999)" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Approval Remarks (Optional)</label>
+          <input type="text" id="exp-approve-notes" class="form-input" placeholder="e.g. Approved for monthly salary disbursement" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+        </div>
+
+        <div id="exp-approve-audit-box" class="hidden" style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.02); padding:0.5rem; border-radius:4px;"></div>
+      </div>
+
+      <div class="modal-footer" style="margin-top:1.25rem; display:flex; justify-content:flex-end; gap:0.75rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeExpenseApproveModal()" style="padding:0.5rem 1rem;">Cancel</button>
+        <button type="button" id="btn-submit-expense-approve" class="btn btn-primary" onclick="submitExpenseApproval()" style="background:#10b981; padding:0.5rem 1.25rem; font-weight:600;">
+          🛡️ Confirm Approval
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EMPLOYEE CREDIT & EXPENSE HISTORY -->
+  <div id="modal-credit-history" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-content" style="max-width: 750px; background: #161a23; border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; padding: 1.5rem;">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="color:#fff; font-size:1.15rem; margin:0; display:flex; align-items:center; gap:0.5rem;">
+            <span>📜</span> Employee Bank Credit &amp; Expense History
+          </h3>
+          <p id="credit-history-subtitle" style="font-size:0.82rem; color:var(--text-secondary); margin:0.25rem 0 0 0;">Historical transactions and monthly breakdown</p>
+        </div>
+        <button type="button" class="btn-close" onclick="closeCreditHistoryModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:1.25rem;">
+        <!-- Top Metric Summary Cards -->
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:0.75rem;">
+          <div style="background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:0.75rem; text-align:center;">
+            <div style="font-size:0.72rem; color:#a5b4fc; text-transform:uppercase;">All-Time Bank Credits</div>
+            <div id="hist-stat-all-credits" style="font-size:1.2rem; font-weight:700; color:#6ee7b7; font-family:monospace; margin-top:2px;">PKR 0</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:0.75rem; text-align:center;">
+            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Current Month (<span id="hist-current-month-name">Aug</span>)</div>
+            <div id="hist-stat-current-month" style="font-size:1.2rem; font-weight:700; color:#fff; font-family:monospace; margin-top:2px;">PKR 0</div>
+          </div>
+          <div style="background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.25); border-radius:8px; padding:0.75rem; text-align:center;">
+            <div style="font-size:0.72rem; color:#fda4af; text-transform:uppercase;">Total Credit Transactions</div>
+            <div id="hist-stat-total-tx" style="font-size:1.2rem; font-weight:700; color:#cbd5e1; font-family:monospace; margin-top:2px;">0 TX</div>
+          </div>
+        </div>
+
+        <!-- Section 1: Month-by-Month Summary -->
+        <div>
+          <h4 style="font-size:0.88rem; color:#cbd5e1; margin-bottom:0.5rem;">📅 Month-by-Month Summary</h4>
+          <div style="max-height:160px; overflow-y:auto; border:1px solid rgba(255,255,255,0.08); border-radius:6px;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.8rem; text-align:left;">
+              <thead style="background:rgba(255,255,255,0.05); color:var(--text-secondary);">
+                <tr>
+                  <th style="padding:6px 10px;">Month</th>
+                  <th style="padding:6px 10px; text-align:right;">Bank Credits</th>
+                  <th style="padding:6px 10px; text-align:right;">Claimed Exp</th>
+                  <th style="padding:6px 10px; text-align:right;">Verified Exp</th>
+                  <th style="padding:6px 10px; text-align:right;">Approved Exp</th>
+                  <th style="padding:6px 10px; text-align:center;">Status</th>
+                </tr>
+              </thead>
+              <tbody id="hist-monthly-summary-tbody">
+                <tr><td colspan="6" style="padding:10px; text-align:center; color:var(--text-muted);">Loading monthly summary...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 2: All Bank Credit Transactions -->
+        <div>
+          <h4 style="font-size:0.88rem; color:#cbd5e1; margin-bottom:0.5rem;">💳 All Extracted Bank Statement Credits</h4>
+          <div style="max-height:220px; overflow-y:auto; border:1px solid rgba(255,255,255,0.08); border-radius:6px;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.8rem; text-align:left;">
+              <thead style="background:rgba(255,255,255,0.05); color:var(--text-secondary);">
+                <tr>
+                  <th style="padding:6px 10px;">Date</th>
+                  <th style="padding:6px 10px;">Description</th>
+                  <th style="padding:6px 10px;">Ref / Cheq #</th>
+                  <th style="padding:6px 10px; text-align:right;">Credit (PKR)</th>
+                  <th style="padding:6px 10px; text-align:right;">Running Bal</th>
+                </tr>
+              </thead>
+              <tbody id="hist-transactions-tbody">
+                <tr><td colspan="5" style="padding:10px; text-align:center; color:var(--text-muted);">Loading transactions...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="margin-top:1.25rem; display:flex; justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="closeCreditHistoryModal()" style="padding:0.5rem 1.25rem;">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Notification Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
@@ -2059,6 +2274,6 @@
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=218"></script>
+  <script src="app.js?v=220"></script>
 </body>
 </html>

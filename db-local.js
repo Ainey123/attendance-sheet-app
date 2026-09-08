@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load existing data or create default
-let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [], accountsPdfs: [] };
+let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [] };
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
@@ -11,7 +11,7 @@ function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const fileData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [], accountsPdfs: fileData.accountsPdfs || [] };
+      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [], accountsPdfs: fileData.accountsPdfs || [], salaryApprovals: fileData.salaryApprovals || [], expenseVerifications: fileData.expenseVerifications || [] };
     }
   } catch (e) {
     console.error('Error loading data:', e.message);
@@ -121,7 +121,13 @@ const db = {
 
   // --- Settings Methods ---
   async getSettings() {
-    return data.settings || { adminPasscode: '1234', officeName: 'My Office' };
+    const s = data.settings || {};
+    return {
+      adminPasscode: s.adminPasscode || '1234',
+      seniorAdminPasscode: s.seniorAdminPasscode || '9999',
+      officeName: s.officeName || 'My Office',
+      adminToken: s.adminToken || null
+    };
   },
 
   async updateSettings(newSettings) {
@@ -833,8 +839,32 @@ const db = {
     }
 
     const list = data.accountsPdfs || [];
-    const found = list.find(p => p.salaryMonth === month);
-    if (!found) return null;
+    let found = list.find(p => p.salaryMonth === month);
+    if (!found) {
+      // Check if any existing uploaded accounts PDF has transactions for this month
+      const multiMonthPdf = list.find(p => Array.isArray(p.extractedEntries) && p.extractedEntries.some(e => e.date && e.date.startsWith(month)));
+      if (multiMonthPdf) {
+        found = {
+          id: generateId('acct_pdf'),
+          salaryMonth: month,
+          fileName: multiMonthPdf.fileName,
+          uploadedAt: multiMonthPdf.uploadedAt || new Date().toISOString(),
+          uploadedBy: multiMonthPdf.uploadedBy || 'System',
+          fileSize: multiMonthPdf.fileSize,
+          parsedTextPreview: multiMonthPdf.parsedTextPreview,
+          extractedEntries: multiMonthPdf.extractedEntries,
+          manualMappings: {},
+          verificationResults: [],
+          unmatchedPdfEntries: [],
+          summary: {},
+          isDerivative: true
+        };
+        list.push(found);
+        saveData();
+      } else {
+        return null;
+      }
+    }
 
     return await this.reverifyAccountsPdf(month);
   },
@@ -1095,6 +1125,270 @@ const db = {
     });
     saveData();
     return true;
+  },
+
+  // ─── Expense Verification & Approval Methods ────────────────────────────────
+  async verifyExpense({ employeeId, employeeName, salaryMonth, claimedAmount, verifiedAmount, verifiedBy = 'Admin 1', notes = '' }) {
+    if (!employeeId || !salaryMonth) {
+      throw new Error('employeeId and salaryMonth are required');
+    }
+    const vAmt = parseFloat(verifiedAmount);
+    if (isNaN(vAmt) || vAmt < 0) {
+      throw new Error('Valid verifiedAmount is required');
+    }
+
+    const nowIso = new Date().toISOString();
+    if (!data.expenseVerifications) data.expenseVerifications = [];
+
+    let existing = data.expenseVerifications.find(v => v.employeeId === employeeId && v.salaryMonth === salaryMonth);
+    const auditEntry = {
+      action: existing ? 'RE-VERIFIED' : 'VERIFIED',
+      oldVerifiedAmount: existing ? existing.verifiedAmount : null,
+      verifiedAmount: vAmt,
+      by: verifiedBy,
+      at: nowIso,
+      notes: notes || ''
+    };
+
+    if (existing) {
+      existing.employeeName = employeeName || existing.employeeName;
+      existing.claimedAmount = (claimedAmount !== undefined && claimedAmount !== null) ? Number(claimedAmount) : existing.claimedAmount;
+      existing.verifiedAmount = vAmt;
+      existing.verifiedBy = verifiedBy;
+      existing.verifiedAt = nowIso;
+      existing.verificationStatus = 'VERIFIED';
+      existing.notes = notes || existing.notes;
+      existing.updatedAt = nowIso;
+      if (!existing.auditLog) existing.auditLog = [];
+      existing.auditLog.push(auditEntry);
+    } else {
+      existing = {
+        id: generateId('expv'),
+        employeeId,
+        employeeName: employeeName || '',
+        salaryMonth,
+        claimedAmount: (claimedAmount !== undefined && claimedAmount !== null) ? Number(claimedAmount) : 0,
+        verifiedAmount: vAmt,
+        verifiedBy,
+        verifiedAt: nowIso,
+        verificationStatus: 'VERIFIED',
+        approvedAmount: null,
+        approvedBy: null,
+        approvedAt: null,
+        approvalStatus: 'PENDING',
+        notes: notes || '',
+        auditLog: [auditEntry],
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      data.expenseVerifications.push(existing);
+    }
+
+    saveData();
+    return existing;
+  },
+
+  async approveExpense({ employeeId, employeeName, salaryMonth, claimedAmount, approvedAmount, approvedBy = 'Senior Admin', notes = '' }) {
+    if (!employeeId || !salaryMonth) {
+      throw new Error('employeeId and salaryMonth are required');
+    }
+    const aAmt = parseFloat(approvedAmount);
+    if (isNaN(aAmt) || aAmt < 0) {
+      throw new Error('Valid approvedAmount is required');
+    }
+
+    const nowIso = new Date().toISOString();
+    if (!data.expenseVerifications) data.expenseVerifications = [];
+
+    let existing = data.expenseVerifications.find(v => v.employeeId === employeeId && v.salaryMonth === salaryMonth);
+
+    // Business rule: Approved amount cannot exceed verified amount if verified amount exists
+    if (existing && existing.verifiedAmount !== null && existing.verifiedAmount !== undefined) {
+      if (aAmt > existing.verifiedAmount) {
+        throw new Error(`Approved amount (PKR ${aAmt.toLocaleString()}) cannot exceed verified amount (PKR ${existing.verifiedAmount.toLocaleString()})`);
+      }
+    }
+
+    const auditEntry = {
+      action: existing && existing.approvalStatus === 'APPROVED' ? 'RE-APPROVED' : 'APPROVED',
+      oldApprovedAmount: existing ? existing.approvedAmount : null,
+      approvedAmount: aAmt,
+      by: approvedBy,
+      at: nowIso,
+      notes: notes || ''
+    };
+
+    if (existing) {
+      existing.employeeName = employeeName || existing.employeeName;
+      existing.claimedAmount = (claimedAmount !== undefined && claimedAmount !== null) ? Number(claimedAmount) : existing.claimedAmount;
+      existing.approvedAmount = aAmt;
+      existing.approvedBy = approvedBy;
+      existing.approvedAt = nowIso;
+      existing.approvalStatus = 'APPROVED';
+      existing.notes = notes || existing.notes;
+      existing.updatedAt = nowIso;
+      if (!existing.auditLog) existing.auditLog = [];
+      existing.auditLog.push(auditEntry);
+    } else {
+      existing = {
+        id: generateId('expv'),
+        employeeId,
+        employeeName: employeeName || '',
+        salaryMonth,
+        claimedAmount: (claimedAmount !== undefined && claimedAmount !== null) ? Number(claimedAmount) : aAmt,
+        verifiedAmount: aAmt,
+        verifiedBy: `Auto-Verified by ${approvedBy}`,
+        verifiedAt: nowIso,
+        verificationStatus: 'VERIFIED',
+        approvedAmount: aAmt,
+        approvedBy,
+        approvedAt: nowIso,
+        approvalStatus: 'APPROVED',
+        notes: notes || '',
+        auditLog: [auditEntry],
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      data.expenseVerifications.push(existing);
+    }
+
+    saveData();
+    return existing;
+  },
+
+  async getExpenseVerifications(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return (data.expenseVerifications || []).filter(v => v.salaryMonth === month);
+  },
+
+  async getExpenseVerification(employeeId, month) {
+    const list = await this.getExpenseVerifications(month);
+    return list.find(v => v.employeeId === employeeId) || null;
+  },
+
+  async revokeExpenseVerification(employeeId, month, reason = '', adminUser = 'Admin') {
+    const nowIso = new Date().toISOString();
+    const existing = (data.expenseVerifications || []).find(v => v.employeeId === employeeId && v.salaryMonth === month);
+    if (!existing) return true;
+
+    existing.verificationStatus = 'REVOKED';
+    existing.updatedAt = nowIso;
+    if (!existing.auditLog) existing.auditLog = [];
+    existing.auditLog.push({
+      action: 'VERIFICATION_REVOKED',
+      by: adminUser,
+      at: nowIso,
+      reason
+    });
+    saveData();
+    return true;
+  },
+
+  async revokeExpenseApproval(employeeId, month, reason = '', adminUser = 'Senior Admin') {
+    const nowIso = new Date().toISOString();
+    const existing = (data.expenseVerifications || []).find(v => v.employeeId === employeeId && v.salaryMonth === month);
+    if (!existing) return true;
+
+    existing.approvalStatus = 'REVOKED';
+    existing.updatedAt = nowIso;
+    if (!existing.auditLog) existing.auditLog = [];
+    existing.auditLog.push({
+      action: 'APPROVAL_REVOKED',
+      by: adminUser,
+      at: nowIso,
+      reason
+    });
+    saveData();
+    return true;
+  },
+
+  async getEmployeeCreditHistory(employeeId) {
+    if (!employeeId) throw new Error('employeeId is required');
+    const employees = await this.getEmployees(true);
+    const emp = employees.find(e => e.id === employeeId);
+    const empName = emp ? emp.name : 'Unknown';
+
+    const list = data.accountsPdfs || [];
+    const allEntries = [];
+    const seenTxKeys = new Set();
+    const { isNameMatch } = require('./pdf-parser-helper');
+
+    list.forEach(pdf => {
+      const entries = Array.isArray(pdf.extractedEntries) ? pdf.extractedEntries : [];
+      entries.forEach(entry => {
+        let isMatch = false;
+        if (pdf.manualMappings && pdf.manualMappings[employeeId] === entry.rawPayee) {
+          isMatch = true;
+        } else if (emp && isNameMatch(entry.rawPayee || entry.description, emp.name)) {
+          isMatch = true;
+        }
+
+        if (isMatch) {
+          const creditAmt = Number(entry.credit) || 0;
+          const debitAmt = Number(entry.debit) || 0;
+          const txAmt = Number(entry.amount) || (creditAmt > 0 ? creditAmt : debitAmt);
+          const isCredit = (creditAmt > 0) || (entry.type === 'CREDIT') || (txAmt > 0 && debitAmt === 0 && !/debit|dr\b/i.test(entry.description || ''));
+
+          if (isCredit && txAmt > 0) {
+            const key = `${entry.date}_${entry.refNo || ''}_${txAmt}`;
+            if (!seenTxKeys.has(key)) {
+              seenTxKeys.add(key);
+              allEntries.push({
+                date: entry.date,
+                month: entry.date ? entry.date.substring(0, 7) : 'Unknown',
+                description: entry.description || entry.rawLine || 'Bank Credit',
+                refNo: entry.refNo || '—',
+                amount: txAmt,
+                balance: entry.balance || 0,
+                type: 'CREDIT',
+                source: pdf.fileName || 'Bank PDF'
+              });
+            }
+          }
+        }
+      });
+    });
+
+    allEntries.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+    const creditsByMonth = {};
+    let totalCreditsAllTime = 0;
+    allEntries.forEach(e => {
+      creditsByMonth[e.month] = (creditsByMonth[e.month] || 0) + e.amount;
+      totalCreditsAllTime += e.amount;
+    });
+
+    const verifications = (data.expenseVerifications || []).filter(v => v.employeeId === employeeId);
+    const verifByMonth = {};
+    verifications.forEach(v => { verifByMonth[v.salaryMonth] = v; });
+
+    const monthsSet = new Set([...Object.keys(creditsByMonth), ...Object.keys(verifByMonth)]);
+    const monthlySummary = Array.from(monthsSet).sort().reverse().map(m => {
+      const v = verifByMonth[m] || {};
+      return {
+        month: m,
+        bankCredits: creditsByMonth[m] || 0,
+        claimedAmount: v.claimedAmount || 0,
+        verifiedAmount: v.verifiedAmount !== undefined ? v.verifiedAmount : null,
+        approvedAmount: v.approvedAmount !== undefined ? v.approvedAmount : null,
+        verificationStatus: v.verificationStatus || 'PENDING',
+        approvalStatus: v.approvalStatus || 'PENDING',
+        verifiedBy: v.verifiedBy || null,
+        approvedBy: v.approvedBy || null
+      };
+    });
+
+    return {
+      employeeId,
+      employeeName: empName,
+      totalCreditsAllTime,
+      creditsByMonth,
+      allCreditTransactions: allEntries,
+      monthlySummary
+    };
   }
 };
 

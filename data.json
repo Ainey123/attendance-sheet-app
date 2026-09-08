@@ -184,5 +184,7 @@
       "netSalary": 0
     }
   ],
-  "accountsPdfs": []
+  "accountsPdfs": [],
+  "salaryApprovals": [],
+  "expenseVerifications": []
 }

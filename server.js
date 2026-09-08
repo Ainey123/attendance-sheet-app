@@ -28,9 +28,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Helper to check admin password
 const checkAdminAuth = async (req, res, next) => {
-  const passcode = req.headers['x-admin-passcode'];
+  const passcode = req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'];
   const settings = await db.getSettings();
-  if (passcode === settings.adminPasscode) {
+  if (passcode === settings.adminPasscode || passcode === settings.seniorAdminPasscode) {
     next();
   } else {
     res.status(401).json({ error: 'Unauthorized. Invalid admin passcode.' });
@@ -697,6 +697,115 @@ app.delete('/api/salary/approve', checkAdminAuth, async (req, res) => {
     if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
     await db.revokeSalaryApproval(employeeId, month, reason, 'Admin');
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Expense Verification & Senior Admin Approval Routes ─────────────────────
+
+// GET /api/salary/expense-verifications?month=YYYY-MM
+app.get('/api/salary/expense-verifications', checkAdminAuth, async (req, res) => {
+  try {
+    const list = await db.getExpenseVerifications(req.query.month);
+    res.json({ success: true, verifications: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/expense/verify (Admin 1 verification)
+app.post('/api/salary/expense/verify', async (req, res) => {
+  try {
+    const { employeeId, employeeName, salaryMonth, month, claimedAmount, verifiedAmount, verifiedBy, notes, passcode } = req.body;
+    const settings = await db.getSettings();
+    const provided = passcode || req.headers['x-admin-passcode'];
+    if (provided !== settings.adminPasscode && provided !== settings.seniorAdminPasscode) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+    }
+
+    const verification = await db.verifyExpense({
+      employeeId,
+      employeeName,
+      salaryMonth: salaryMonth || month,
+      claimedAmount,
+      verifiedAmount,
+      verifiedBy: verifiedBy || 'Admin 1',
+      notes
+    });
+    res.json({ success: true, verification });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/expense/approve (Senior Admin approval)
+app.post('/api/salary/expense/approve', async (req, res) => {
+  try {
+    const { employeeId, employeeName, salaryMonth, month, claimedAmount, approvedAmount, notes, passcode, seniorPasscode } = req.body;
+    const settings = await db.getSettings();
+    const provided = passcode || seniorPasscode || req.headers['x-senior-passcode'] || req.headers['x-admin-passcode'];
+    const validSenior = settings.seniorAdminPasscode || '9999';
+
+    if (provided !== validSenior) {
+      return res.status(403).json({ error: 'Forbidden: Only Senior Admin can approve expenses. Passcode is invalid.' });
+    }
+
+    const approval = await db.approveExpense({
+      employeeId,
+      employeeName,
+      salaryMonth: salaryMonth || month,
+      claimedAmount,
+      approvedAmount,
+      approvedBy: req.body.approvedBy || 'Senior Admin',
+      notes
+    });
+    res.json({ success: true, approval });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE /api/salary/expense/verify
+app.delete('/api/salary/expense/verify', checkAdminAuth, async (req, res) => {
+  try {
+    const employeeId = req.query.employeeId || req.body.employeeId;
+    const month = req.query.month || req.body.month || req.body.salaryMonth;
+    const reason = req.query.reason || req.body.reason || '';
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    await db.revokeExpenseVerification(employeeId, month, reason, 'Admin 1');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/salary/expense/approve
+app.delete('/api/salary/expense/approve', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const seniorPasscode = req.body.passcode || req.headers['x-senior-passcode'] || req.headers['x-admin-passcode'];
+    if (seniorPasscode !== (settings.seniorAdminPasscode || '9999')) {
+      return res.status(403).json({ error: 'Forbidden: Only Senior Admin can revoke approvals' });
+    }
+    const employeeId = req.query.employeeId || req.body.employeeId;
+    const month = req.query.month || req.body.month || req.body.salaryMonth;
+    const reason = req.query.reason || req.body.reason || '';
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    await db.revokeExpenseApproval(employeeId, month, reason, 'Senior Admin');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/salary/employee-credit-history?employeeId=...
+app.get('/api/salary/employee-credit-history', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+    const history = await db.getEmployeeCreditHistory(employeeId);
+    res.json({ success: true, history });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

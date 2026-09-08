@@ -157,6 +157,22 @@ const API = {
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify({ employeeId, month, reason })
   }),
+  getExpenseVerifications: (month) => fetchJson(`/api/salary/expense-verifications?month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
+  verifyExpense: (data) => fetchJson('/api/salary/expense/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  approveExpense: (data) => fetchJson('/api/salary/expense/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode, 'X-Senior-Passcode': (data && (data.passcode || data.seniorPasscode)) || '' },
+    body: JSON.stringify(data)
+  }),
+  getEmployeeCreditHistory: (employeeId) => fetchJson(`/api/salary/employee-credit-history?employeeId=${encodeURIComponent(employeeId)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
   resolveAttendance: (body) => fetchJson('/api/attendance/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
@@ -5297,12 +5313,13 @@ async function loadSalarySheet(monthOverride) {
   if (statMonth) statMonth.textContent = month;
 
   try {
-    // Fetch employees, salaries, Accounts PDF, and salary approvals in parallel
-    const [empRes, salRes, accPdfRes, apprRes] = await Promise.all([
+    // Fetch employees, salaries, Accounts PDF, salary approvals, and expense verifications in parallel
+    const [empRes, salRes, accPdfRes, apprRes, expVerRes] = await Promise.all([
       API.getEmployees(),
       API.getSalaries(month),
       API.getAccountsPdf(month).catch(() => ({ success: false, accountsPdf: null })),
-      API.getSalaryApprovals(month).catch(() => ({ success: false, approvals: [] }))
+      API.getSalaryApprovals(month).catch(() => ({ success: false, approvals: [] })),
+      API.getExpenseVerifications(month).catch(() => ({ success: false, verifications: [] }))
     ]);
 
     const employees = empRes.employees || empRes || [];
@@ -5312,6 +5329,11 @@ async function loadSalarySheet(monthOverride) {
     const approvalsList = (apprRes && apprRes.approvals) ? apprRes.approvals : [];
     const approvalsMap = {};
     approvalsList.forEach(a => { approvalsMap[a.employeeId] = a; });
+
+    const expVerList = (expVerRes && expVerRes.verifications) ? expVerRes.verifications : [];
+    const expVerMap = {};
+    expVerList.forEach(v => { expVerMap[v.employeeId] = v; });
+    currentExpenseVerifications = expVerMap;
 
     // Render the Accounts PDF Verification Panel
     renderAccountsPdfPanel(currentAccountsPdf);
@@ -5349,10 +5371,23 @@ async function loadSalarySheet(monthOverride) {
       const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (perDay * sundayDays);
       const earnedSalary = sal.earnedSalary !== undefined ? sal.earnedSalary : (perDay * totalPresentDays);
       const expenses = sal.totalExpenses !== undefined ? sal.totalExpenses : 0;
-      const netSalary = sal.netSalary !== undefined ? sal.netSalary : (earnedSalary - expenses);
+
+      // Expense Verification & Senior Admin Approval integration
+      const expVer = expVerMap[emp.id];
+      const isExpVerified = Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
+      const isExpApproved = Boolean(expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined)));
+
+      let effectiveExpense = expenses;
+      if (isExpApproved && typeof expVer.approvedAmount === 'number') {
+        effectiveExpense = expVer.approvedAmount;
+      } else if (isExpVerified && typeof expVer.verifiedAmount === 'number') {
+        effectiveExpense = expVer.verifiedAmount;
+      }
+
+      const netSalary = earnedSalary - effectiveExpense;
 
       if (typeof netSalary === 'number') totalPayable += netSalary;
-      if (typeof expenses === 'number') totalExpenses += expenses;
+      if (typeof effectiveExpense === 'number') totalExpenses += effectiveExpense;
 
       const netClass = typeof netSalary === 'number' ? (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative') : '';
       const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : (v !== null && v !== undefined ? v : '—');
@@ -5412,6 +5447,69 @@ async function loadSalarySheet(monthOverride) {
         `;
       }
 
+      // Expense Section Action Buttons
+      let verifyBtnHtml = '';
+      if (isExpVerified) {
+        verifyBtnHtml = `
+          <button type="button" class="btn btn-sm" style="background:rgba(59,130,246,0.18); color:#60a5fa; border:1px solid rgba(59,130,246,0.5); font-size:0.72rem; font-weight:700; padding:0.22rem 0.45rem; border-radius:4px; cursor:pointer; white-space:nowrap;"
+            onclick="openExpenseVerifyModal('${emp.id}')" title="Verified by ${escapeHtml(expVer.verifiedBy || 'Admin 1')}: PKR ${fmtNum(expVer.verifiedAmount)}">
+            ✓ Ver: ${fmtNum(expVer.verifiedAmount)}
+          </button>
+        `;
+      } else {
+        verifyBtnHtml = `
+          <button type="button" class="btn btn-sm" style="background:#3b82f6; color:#fff; font-size:0.72rem; font-weight:600; padding:0.22rem 0.45rem; border-radius:4px; border:none; cursor:pointer; white-space:nowrap;"
+            onclick="openExpenseVerifyModal('${emp.id}')" title="Admin 1: Verify Claimed Expense">
+            🔍 Verify
+          </button>
+        `;
+      }
+
+      let approveBtnHtml = '';
+      if (isExpApproved) {
+        approveBtnHtml = `
+          <button type="button" class="btn btn-sm" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.5); font-size:0.72rem; font-weight:700; padding:0.22rem 0.45rem; border-radius:4px; cursor:pointer; white-space:nowrap;"
+            onclick="openExpenseApproveModal('${emp.id}')" title="Approved by ${escapeHtml(expVer.approvedBy || 'Senior Admin')}: PKR ${fmtNum(expVer.approvedAmount)}">
+            ✅ Appr: ${fmtNum(expVer.approvedAmount)}
+          </button>
+        `;
+      } else {
+        approveBtnHtml = `
+          <button type="button" class="btn btn-sm" style="background:#10b981; color:#fff; font-size:0.72rem; font-weight:600; padding:0.22rem 0.45rem; border-radius:4px; border:none; cursor:pointer; white-space:nowrap;"
+            onclick="openExpenseApproveModal('${emp.id}')" title="Senior Admin: Approve Expense">
+            🛡️ Approve
+          </button>
+        `;
+      }
+
+      const expenseCellHtml = `
+        <td class="cell-expenses" style="min-width:180px; padding:6px 8px; vertical-align:middle;">
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
+              <span style="color:var(--text-muted); font-size:0.74rem;">Claimed:</span>
+              <strong style="font-family:monospace; color:#f87171;">${expenses > 0 ? 'PKR ' + fmtNum(expenses) : '0'}</strong>
+            </div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              ${verifyBtnHtml}
+              ${approveBtnHtml}
+            </div>
+          </div>
+        </td>
+      `;
+
+      const bankCreditsCellHtml = `
+        <td style="text-align:right; background:rgba(99,102,241,0.04); min-width:130px; padding:6px 8px;">
+          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
+            ${pdfExpHtml}
+            <button type="button" onclick="openCreditHistoryModal('${emp.id}')"
+              style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; text-decoration:underline; cursor:pointer; padding:0;"
+              title="View all-time credits across all months (June, July, August, etc.)">
+              📜 All Credits
+            </button>
+          </div>
+        </td>
+      `;
+
       const tr = document.createElement('tr');
       tr.id = `sal-row-${emp.id}`;
       tr.innerHTML = `
@@ -5435,10 +5533,10 @@ async function loadSalarySheet(monthOverride) {
           ${sundayDays > 0 ? '☀️ +' + fmtNum(sundayBonus) : '—'}
         </td>
         <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
-        <td class="cell-expenses" style="text-align:right; font-family:monospace; color:#f87171;">${expenses > 0 ? '−' + fmtNum(expenses) : '0'}</td>
+        ${expenseCellHtml}
         <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
         <!-- Verification & Approval Columns -->
-        <td style="text-align:right; background:rgba(99,102,241,0.04);">${pdfExpHtml}</td>
+        ${bankCreditsCellHtml}
         <td style="text-align:right; background:rgba(99,102,241,0.04);">${diffHtml}</td>
         <td style="text-align:center; background:rgba(99,102,241,0.04);">${statusHtml}</td>
         <td style="text-align:center; background:rgba(16,185,129,0.04);">${approvalHtml}</td>
@@ -6328,4 +6426,407 @@ function printSalarySheet() {
     return;
   }
   window.print();
+}
+
+// ─── Expense Verification & Senior Admin Approval UI Logic ───────────────────
+let currentExpVerifyEmpId = null;
+let currentExpApproveEmpId = null;
+
+async function openExpenseVerifyModal(empId) {
+  currentExpVerifyEmpId = empId;
+  const emp = (currentSalaryEmployees || []).find(e => e.id === empId);
+  const expVer = (currentExpenseVerifications && currentExpenseVerifications[empId]) || null;
+  const salRow = document.getElementById(`sal-row-${empId}`);
+  
+  const modal = document.getElementById('modal-expense-verify');
+  if (!modal) return;
+
+  const subtitleEl = document.getElementById('exp-verify-subtitle');
+  const claimedEl = document.getElementById('exp-verify-claimed');
+  const periodEl = document.getElementById('exp-verify-period');
+  const itemizedEl = document.getElementById('exp-verify-itemized-container');
+  const amtInput = document.getElementById('exp-verify-amount-input');
+  const adminNameInput = document.getElementById('exp-verify-admin-name');
+  const passcodeInput = document.getElementById('exp-verify-passcode');
+  const notesInput = document.getElementById('exp-verify-notes');
+  const auditBox = document.getElementById('exp-verify-audit-box');
+
+  const empName = emp ? emp.name : 'Employee';
+  if (subtitleEl) subtitleEl.textContent = `${empName} • ${currentSalaryMonth}`;
+  if (periodEl) periodEl.textContent = currentSalaryMonth;
+
+  let claimed = 0;
+  if (expVer && typeof expVer.claimedAmount === 'number') {
+    claimed = expVer.claimedAmount;
+  } else if (salRow) {
+    const input = salRow.querySelector('.salary-basic-input');
+    claimed = input ? (parseFloat(input.dataset.expenses) || 0) : 0;
+  }
+  if (claimedEl) claimedEl.textContent = 'PKR ' + claimed.toLocaleString();
+
+  // Itemized breakdown from server
+  if (itemizedEl) {
+    itemizedEl.innerHTML = '<div style="color:var(--text-muted); text-align:center;">Loading daily expense breakdown...</div>';
+    try {
+      const res = await API.getEmployeeExpensesDetail(empId, currentSalaryMonth);
+      const entries = (res && res.details && res.details.entries) || [];
+      if (entries.length === 0) {
+        itemizedEl.innerHTML = '<div style="color:var(--text-muted); text-align:center;">No individual expense entries recorded for this month.</div>';
+      } else {
+        itemizedEl.innerHTML = `
+          <table style="width:100%; border-collapse:collapse; font-size:0.75rem;">
+            <thead>
+              <tr style="color:var(--text-muted); border-bottom:1px solid rgba(255,255,255,0.06);">
+                <th style="text-align:left; padding:3px 6px;">Date</th>
+                <th style="text-align:left; padding:3px 6px;">Description</th>
+                <th style="text-align:right; padding:3px 6px;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries.map(e => `
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
+                  <td style="padding:3px 6px; color:#cbd5e1;">${escapeHtml(e.date)}</td>
+                  <td style="padding:3px 6px; color:var(--text-muted);">${escapeHtml(e.description || e.source || 'Expense')}</td>
+                  <td style="padding:3px 6px; text-align:right; font-family:monospace; color:#f87171;">PKR ${(e.amount||0).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+    } catch (e) {
+      itemizedEl.innerHTML = `<div style="color:#f87171; text-align:center;">Error loading details: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  // Pre-fill amount
+  if (amtInput) {
+    if (expVer && typeof expVer.verifiedAmount === 'number') {
+      amtInput.value = expVer.verifiedAmount;
+    } else {
+      amtInput.value = claimed > 0 ? claimed : '';
+    }
+  }
+
+  if (adminNameInput) {
+    adminNameInput.value = (expVer && expVer.verifiedBy) || 'Admin 1';
+  }
+  if (passcodeInput) {
+    passcodeInput.value = adminPasscode || '';
+  }
+  if (notesInput) {
+    notesInput.value = (expVer && expVer.notes) || '';
+  }
+
+  // Audit history
+  if (auditBox) {
+    if (expVer && Array.isArray(expVer.auditLog) && expVer.auditLog.length > 0) {
+      auditBox.classList.remove('hidden');
+      const last = expVer.auditLog[expVer.auditLog.length - 1];
+      auditBox.innerHTML = `<strong>Last Activity:</strong> ${escapeHtml(last.action || 'VERIFIED')} by ${escapeHtml(last.by || 'Admin')} on ${new Date(last.at).toLocaleString()}${last.notes ? ` (Note: ${escapeHtml(last.notes)})` : ''}`;
+    } else {
+      auditBox.classList.add('hidden');
+    }
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeExpenseVerifyModal() {
+  const modal = document.getElementById('modal-expense-verify');
+  if (modal) modal.classList.add('hidden');
+  currentExpVerifyEmpId = null;
+}
+
+async function submitExpenseVerification() {
+  if (!currentExpVerifyEmpId) return;
+
+  const amtInput = document.getElementById('exp-verify-amount-input');
+  const passcodeInput = document.getElementById('exp-verify-passcode');
+  const adminNameInput = document.getElementById('exp-verify-admin-name');
+  const notesInput = document.getElementById('exp-verify-notes');
+
+  const amt = parseFloat(amtInput ? amtInput.value : '');
+  if (isNaN(amt) || amt < 0) {
+    showToast('Please enter a valid verified amount (0 or more).', 'warning');
+    if (amtInput) amtInput.focus();
+    return;
+  }
+
+  const passcode = passcodeInput ? passcodeInput.value.trim() : '';
+  if (!passcode) {
+    showToast('Please enter the Admin passcode.', 'warning');
+    if (passcodeInput) passcodeInput.focus();
+    return;
+  }
+
+  const adminName = (adminNameInput && adminNameInput.value.trim()) || 'Admin 1';
+  const notes = notesInput ? notesInput.value.trim() : '';
+  const emp = (currentSalaryEmployees || []).find(e => e.id === currentExpVerifyEmpId);
+  const expVer = (currentExpenseVerifications && currentExpenseVerifications[currentExpVerifyEmpId]) || null;
+  const claimed = expVer ? expVer.claimedAmount : 0;
+
+  const btn = document.getElementById('btn-submit-expense-verify');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  try {
+    const res = await API.verifyExpense({
+      employeeId: currentExpVerifyEmpId,
+      employeeName: emp ? emp.name : '',
+      salaryMonth: currentSalaryMonth,
+      claimedAmount: claimed,
+      verifiedAmount: amt,
+      verifiedBy: adminName,
+      notes,
+      passcode
+    });
+
+    if (res && res.success) {
+      showToast(`✓ Expense verified by ${adminName}: PKR ${amt.toLocaleString()}`, 'success');
+      closeExpenseVerifyModal();
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to verify expense', 'error');
+    }
+  } catch (err) {
+    showToast('Verification failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Confirm Verification'; }
+  }
+}
+
+async function openExpenseApproveModal(empId) {
+  currentExpApproveEmpId = empId;
+  const emp = (currentSalaryEmployees || []).find(e => e.id === empId);
+  const expVer = (currentExpenseVerifications && currentExpenseVerifications[empId]) || null;
+  const salRow = document.getElementById(`sal-row-${empId}`);
+
+  const modal = document.getElementById('modal-expense-approve');
+  if (!modal) return;
+
+  const subtitleEl = document.getElementById('exp-approve-subtitle');
+  const claimedEl = document.getElementById('exp-approve-claimed');
+  const verifiedEl = document.getElementById('exp-approve-verified');
+  const verifiedByEl = document.getElementById('exp-approve-verified-by');
+  const maxHintEl = document.getElementById('exp-approve-max-hint');
+  const amtInput = document.getElementById('exp-approve-amount-input');
+  const seniorNameInput = document.getElementById('exp-approve-senior-name');
+  const passcodeInput = document.getElementById('exp-approve-passcode');
+  const notesInput = document.getElementById('exp-approve-notes');
+  const auditBox = document.getElementById('exp-approve-audit-box');
+
+  const empName = emp ? emp.name : 'Employee';
+  if (subtitleEl) subtitleEl.textContent = `${empName} • ${currentSalaryMonth}`;
+
+  let claimed = 0;
+  if (expVer && typeof expVer.claimedAmount === 'number') {
+    claimed = expVer.claimedAmount;
+  } else if (salRow) {
+    const input = salRow.querySelector('.salary-basic-input');
+    claimed = input ? (parseFloat(input.dataset.expenses) || 0) : 0;
+  }
+  if (claimedEl) claimedEl.textContent = 'PKR ' + claimed.toLocaleString();
+
+  const verifiedAmt = (expVer && typeof expVer.verifiedAmount === 'number') ? expVer.verifiedAmount : claimed;
+  if (verifiedEl) verifiedEl.textContent = 'PKR ' + verifiedAmt.toLocaleString();
+  if (verifiedByEl) {
+    if (expVer && expVer.verifiedBy) {
+      verifiedByEl.textContent = `By ${expVer.verifiedBy} on ${new Date(expVer.verifiedAt || Date.now()).toLocaleDateString()}`;
+    } else {
+      verifiedByEl.textContent = 'Pending Admin 1 verification';
+    }
+  }
+  if (maxHintEl) maxHintEl.textContent = 'PKR ' + verifiedAmt.toLocaleString();
+
+  // Pre-fill approved amount
+  if (amtInput) {
+    if (expVer && typeof expVer.approvedAmount === 'number') {
+      amtInput.value = expVer.approvedAmount;
+    } else {
+      amtInput.value = verifiedAmt;
+    }
+    amtInput.max = verifiedAmt;
+  }
+
+  if (seniorNameInput) {
+    seniorNameInput.value = (expVer && expVer.approvedBy) || 'Senior Admin';
+  }
+  if (passcodeInput) {
+    passcodeInput.value = '';
+  }
+  if (notesInput) {
+    notesInput.value = (expVer && expVer.notes) || '';
+  }
+
+  if (auditBox) {
+    if (expVer && Array.isArray(expVer.auditLog) && expVer.auditLog.length > 0) {
+      auditBox.classList.remove('hidden');
+      auditBox.innerHTML = `<strong>Approval History:</strong><ul style="margin:4px 0 0 16px; padding:0;">${
+        expVer.auditLog.map(a => `<li>${escapeHtml(a.action)}: PKR ${(a.approvedAmount||a.verifiedAmount||0).toLocaleString()} by ${escapeHtml(a.by||'Admin')} (${new Date(a.at).toLocaleDateString()})</li>`).join('')
+      }</ul>`;
+    } else {
+      auditBox.classList.add('hidden');
+    }
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeExpenseApproveModal() {
+  const modal = document.getElementById('modal-expense-approve');
+  if (modal) modal.classList.add('hidden');
+  currentExpApproveEmpId = null;
+}
+
+async function submitExpenseApproval() {
+  if (!currentExpApproveEmpId) return;
+
+  const amtInput = document.getElementById('exp-approve-amount-input');
+  const passcodeInput = document.getElementById('exp-approve-passcode');
+  const seniorNameInput = document.getElementById('exp-approve-senior-name');
+  const notesInput = document.getElementById('exp-approve-notes');
+
+  const amt = parseFloat(amtInput ? amtInput.value : '');
+  if (isNaN(amt) || amt < 0) {
+    showToast('Please enter a valid approved amount (0 or more).', 'warning');
+    if (amtInput) amtInput.focus();
+    return;
+  }
+
+  const expVer = (currentExpenseVerifications && currentExpenseVerifications[currentExpApproveEmpId]) || null;
+  const verifiedLimit = (expVer && typeof expVer.verifiedAmount === 'number') ? expVer.verifiedAmount : null;
+
+  if (verifiedLimit !== null && amt > verifiedLimit) {
+    showToast(`Approved amount (PKR ${amt.toLocaleString()}) cannot exceed verified amount (PKR ${verifiedLimit.toLocaleString()}).`, 'error');
+    if (amtInput) amtInput.focus();
+    return;
+  }
+
+  const passcode = passcodeInput ? passcodeInput.value.trim() : '';
+  if (!passcode) {
+    showToast('Please enter the Senior Admin passcode (default 9999).', 'warning');
+    if (passcodeInput) passcodeInput.focus();
+    return;
+  }
+
+  const seniorName = (seniorNameInput && seniorNameInput.value.trim()) || 'Senior Admin';
+  const notes = notesInput ? notesInput.value.trim() : '';
+  const emp = (currentSalaryEmployees || []).find(e => e.id === currentExpApproveEmpId);
+
+  const btn = document.getElementById('btn-submit-expense-approve');
+  if (btn) { btn.disabled = true; btn.textContent = 'Approving...'; }
+
+  try {
+    const res = await API.approveExpense({
+      employeeId: currentExpApproveEmpId,
+      employeeName: emp ? emp.name : '',
+      salaryMonth: currentSalaryMonth,
+      claimedAmount: expVer ? expVer.claimedAmount : amt,
+      approvedAmount: amt,
+      approvedBy: seniorName,
+      notes,
+      passcode
+    });
+
+    if (res && res.success) {
+      showToast(`🛡️ Expense approved by ${seniorName}: PKR ${amt.toLocaleString()}`, 'success');
+      closeExpenseApproveModal();
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to approve expense', 'error');
+    }
+  } catch (err) {
+    showToast('Approval failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🛡️ Confirm Approval'; }
+  }
+}
+
+async function openCreditHistoryModal(employeeId) {
+  const emp = (currentSalaryEmployees || []).find(e => e.id === employeeId);
+  const empName = emp ? emp.name : 'Employee';
+
+  const modal = document.getElementById('modal-credit-history');
+  if (!modal) return;
+
+  const subtitleEl = document.getElementById('credit-history-subtitle');
+  if (subtitleEl) subtitleEl.textContent = `${empName} (${emp ? (emp.role || 'Staff') : ''}) • All-Time Bank Credit History`;
+
+  const statAllCredits = document.getElementById('hist-stat-all-credits');
+  const statMonthName = document.getElementById('hist-current-month-name');
+  const statCurrentMonth = document.getElementById('hist-stat-current-month');
+  const statTotalTx = document.getElementById('hist-stat-total-tx');
+  const monthlyTbody = document.getElementById('hist-monthly-summary-tbody');
+  const txTbody = document.getElementById('hist-transactions-tbody');
+
+  if (statMonthName) statMonthName.textContent = currentSalaryMonth;
+  if (monthlyTbody) monthlyTbody.innerHTML = '<tr><td colspan="6" style="padding:10px; text-align:center; color:var(--text-muted);">Loading monthly summary...</td></tr>';
+  if (txTbody) txTbody.innerHTML = '<tr><td colspan="5" style="padding:10px; text-align:center; color:var(--text-muted);">Loading transactions...</td></tr>';
+
+  modal.classList.remove('hidden');
+
+  try {
+    const res = await API.getEmployeeCreditHistory(employeeId);
+    if (!res || !res.success || !res.history) {
+      if (txTbody) txTbody.innerHTML = '<tr><td colspan="5" style="padding:10px; text-align:center; color:var(--text-muted);">No credit history found.</td></tr>';
+      return;
+    }
+
+    const hist = res.history;
+    if (statAllCredits) statAllCredits.textContent = 'PKR ' + (hist.totalCreditsAllTime || 0).toLocaleString();
+    if (statCurrentMonth) statCurrentMonth.textContent = 'PKR ' + ((hist.creditsByMonth && hist.creditsByMonth[currentSalaryMonth]) || 0).toLocaleString();
+    if (statTotalTx) statTotalTx.textContent = `${(hist.allCreditTransactions || []).length} TX`;
+
+    // Monthly summary table
+    if (monthlyTbody) {
+      const summaries = hist.monthlySummary || [];
+      if (summaries.length === 0) {
+        monthlyTbody.innerHTML = '<tr><td colspan="6" style="padding:10px; text-align:center; color:var(--text-muted);">No monthly summary available.</td></tr>';
+      } else {
+        monthlyTbody.innerHTML = summaries.map(s => {
+          const isSelectedMonth = s.month === currentSalaryMonth;
+          const bg = isSelectedMonth ? 'background:rgba(99,102,241,0.12); font-weight:600;' : '';
+          const statusColor = s.approvalStatus === 'APPROVED' ? '#34d399' : (s.verificationStatus === 'VERIFIED' ? '#60a5fa' : '#94a3b8');
+          const statusText = s.approvalStatus === 'APPROVED' ? `✅ Approved` : (s.verificationStatus === 'VERIFIED' ? `✓ Verified` : `Pending`);
+
+          return `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.04); ${bg}">
+              <td style="padding:6px 10px; color:#fff;">${escapeHtml(s.month)}${isSelectedMonth ? ' 👈' : ''}</td>
+              <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#6ee7b7;">PKR ${(s.bankCredits||0).toLocaleString()}</td>
+              <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#f87171;">${s.claimedAmount ? 'PKR ' + s.claimedAmount.toLocaleString() : '—'}</td>
+              <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#60a5fa;">${s.verifiedAmount !== null && s.verifiedAmount !== undefined ? 'PKR ' + s.verifiedAmount.toLocaleString() : '—'}</td>
+              <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#34d399; font-weight:700;">${s.approvedAmount !== null && s.approvedAmount !== undefined ? 'PKR ' + s.approvedAmount.toLocaleString() : '—'}</td>
+              <td style="padding:6px 10px; text-align:center;"><span style="color:${statusColor}; font-size:0.75rem;">${statusText}</span></td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // Individual transactions table
+    if (txTbody) {
+      const txs = hist.allCreditTransactions || [];
+      if (txs.length === 0) {
+        txTbody.innerHTML = '<tr><td colspan="5" style="padding:10px; text-align:center; color:var(--text-muted);">No credit transactions found in uploaded bank statements.</td></tr>';
+      } else {
+        txTbody.innerHTML = txs.map(t => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
+            <td style="padding:6px 10px; color:#cbd5e1; font-family:monospace;">${escapeHtml(t.date || '—')}</td>
+            <td style="padding:6px 10px; color:var(--text-secondary); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(t.description)}">${escapeHtml(t.description || '—')}</td>
+            <td style="padding:6px 10px; color:var(--text-muted); font-family:monospace;">${escapeHtml(t.refNo || '—')}</td>
+            <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#6ee7b7; font-weight:700;">PKR ${(t.amount||0).toLocaleString()}</td>
+            <td style="padding:6px 10px; text-align:right; font-family:monospace; color:var(--text-muted);">${t.balance ? 'PKR ' + t.balance.toLocaleString() : '—'}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+  } catch (err) {
+    if (txTbody) txTbody.innerHTML = `<tr><td colspan="5" style="padding:10px; text-align:center; color:#f87171;">Error loading history: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function closeCreditHistoryModal() {
+  const modal = document.getElementById('modal-credit-history');
+  if (modal) modal.classList.add('hidden');
 }
