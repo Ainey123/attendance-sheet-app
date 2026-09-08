@@ -2070,7 +2070,7 @@ const db = {
       throw new Error('PDF data is required');
     }
 
-    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    const cleanBase64 = String(pdfBase64).replace(/^data:.*?;base64,/, '').replace(/\s+/g, '');
     const pdfBuffer = Buffer.from(cleanBase64, 'base64');
     const fileSize = pdfBuffer.length;
 

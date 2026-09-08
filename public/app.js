@@ -4,7 +4,7 @@
 let allEmployees = [];
 let selectedEmployee = null;
 let userLocation = null;
-let adminPasscode = '';
+let adminPasscode = (typeof Store !== 'undefined' && Store.loadPasscode) ? Store.loadPasscode() : (localStorage.getItem('attendance_admin_passcode') || '');
 let currentView = 'employee'; // 'employee' or 'admin'
 let activeShiftTimer = null;
 let currentAdminTab = 'tab-dashboard';
@@ -5453,6 +5453,11 @@ function renderAccountsPdfPanel(pdf) {
 // Upload Accounts PDF
 async function handleAccountsPdfUpload(file, replace = false) {
   if (!file) return;
+  if (!adminPasscode) {
+    showToast('Please authenticate as Admin first.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
   if (!currentSalaryMonth) {
     showToast('Please select a salary month first.', 'warning');
     return;
@@ -5476,7 +5481,12 @@ async function handleAccountsPdfUpload(file, replace = false) {
         showToast((res && res.error) || 'Failed to process Accounts PDF', 'error');
       }
     } catch (err) {
-      showToast('Error uploading Accounts PDF: ' + err.message, 'error');
+      if (err.message && err.message.includes('Unauthorized')) {
+        showToast('Admin session expired. Please unlock Admin mode again.', 'error');
+        openAdminAuthModal();
+      } else {
+        showToast('Error uploading Accounts PDF: ' + err.message, 'error');
+      }
     }
   };
   reader.readAsDataURL(file);
@@ -5484,6 +5494,11 @@ async function handleAccountsPdfUpload(file, replace = false) {
 
 // Re-verify Accounts PDF
 async function handleReverifyAccountsPdf() {
+  if (!adminPasscode) {
+    showToast('Please authenticate as Admin first.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
   if (!currentSalaryMonth) return;
   showToast('Re-verifying against latest attendance records...', 'info');
   try {
@@ -5495,12 +5510,22 @@ async function handleReverifyAccountsPdf() {
       showToast((res && res.error) || 'Failed to reverify', 'error');
     }
   } catch (err) {
-    showToast('Error reverifying: ' + err.message, 'error');
+    if (err.message && err.message.includes('Unauthorized')) {
+      showToast('Admin session expired. Please unlock Admin mode again.', 'error');
+      openAdminAuthModal();
+    } else {
+      showToast('Error reverifying: ' + err.message, 'error');
+    }
   }
 }
 
 // Delete Accounts PDF
 async function handleDeleteAccountsPdf() {
+  if (!adminPasscode) {
+    showToast('Please authenticate as Admin first.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
   if (!currentSalaryMonth) return;
   if (!confirm(`Are you sure you want to remove the Accounts PDF for ${currentSalaryMonth}?\n\nThis will clear the verification columns for this month. (Your employee attendance and salaries will NOT be affected).`)) {
     return;
@@ -5516,7 +5541,12 @@ async function handleDeleteAccountsPdf() {
       showToast((res && res.error) || 'Failed to remove', 'error');
     }
   } catch (err) {
-    showToast('Error removing: ' + err.message, 'error');
+    if (err.message && err.message.includes('Unauthorized')) {
+      showToast('Admin session expired. Please unlock Admin mode again.', 'error');
+      openAdminAuthModal();
+    } else {
+      showToast('Error removing: ' + err.message, 'error');
+    }
   }
 }
 
@@ -5668,6 +5698,11 @@ async function openDiscrepancyModal(employeeId) {
 
 // Manual Mapping Save
 async function handleSaveManualMapping() {
+  if (!adminPasscode) {
+    showToast('Please authenticate as Admin first.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
   if (!currentSelectedEmployeeIdForMapping || !currentSalaryMonth) return;
   const select = document.getElementById('disc-modal-unmatched-select');
   const extractedName = select ? select.value : '';
@@ -5688,7 +5723,12 @@ async function handleSaveManualMapping() {
       showToast((res && res.error) || 'Failed to map', 'error');
     }
   } catch (err) {
-    showToast('Error mapping employee: ' + err.message, 'error');
+    if (err.message && err.message.includes('Unauthorized')) {
+      showToast('Admin session expired. Please unlock Admin mode again.', 'error');
+      openAdminAuthModal();
+    } else {
+      showToast('Error mapping employee: ' + err.message, 'error');
+    }
   }
 }
 
