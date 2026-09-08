@@ -655,6 +655,53 @@ app.get('/api/salary/employee-expenses-detail', checkAdminAuth, async (req, res)
   }
 });
 
+// POST /api/salary/approve
+app.post('/api/salary/approve', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, employeeName, salaryMonth, month, bankTotal, applicationTotal, difference, approvedAmount, notes, verificationRecordId, adminUser } = req.body;
+    const approval = await db.approveSalary({
+      employeeId,
+      employeeName,
+      salaryMonth: salaryMonth || month,
+      bankTotal,
+      applicationTotal,
+      difference,
+      approvedAmount,
+      notes,
+      verificationRecordId,
+      adminUser: adminUser || 'Admin'
+    });
+    res.json({ success: true, approval });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/salary/approvals?month=YYYY-MM
+app.get('/api/salary/approvals', checkAdminAuth, async (req, res) => {
+  try {
+    const month = req.query.month;
+    const approvals = await db.getSalaryApprovals(month);
+    res.json({ success: true, approvals });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/salary/approve
+app.delete('/api/salary/approve', checkAdminAuth, async (req, res) => {
+  try {
+    const employeeId = req.query.employeeId || req.body.employeeId;
+    const month = req.query.month || req.body.month || req.body.salaryMonth;
+    const reason = req.query.reason || req.body.reason || '';
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    await db.revokeSalaryApproval(employeeId, month, reason, 'Admin');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/salary/:employeeId?month=YYYY-MM (Generic fallback for single employee salary)
 app.get('/api/salary/:employeeId', checkAdminAuth, async (req, res) => {
   try {

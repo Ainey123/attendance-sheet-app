@@ -393,22 +393,19 @@ function finalizeTransaction(tx) {
 }
 
 /**
- * Matches extracted PDF entries against employee database and calculates date-level verification summary
- * Accepts both small and capital letters (case-insensitive) and cross-checks exact dates.
+ * Matches extracted PDF entries against employee database and calculates month-specific verification summary.
+ * 
+ * Rules:
+ * 1. Strict month filtering: only transactions in targetMonth (e.g. 2026-08) are INCLUDED.
+ * 2. Case-insensitive name matching with phonetic tolerance.
+ * 3. Distinguishes actual transaction credits from running balances.
+ * 4. De-duplicates transactions (date + refNo + amount).
+ * 5. Compares Bank Credit Total against Application Payable Total.
+ * 6. Generates full audit details for every transaction and application record.
  */
-function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}, manualMappings = {}, targetMonth = null) {
+function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}, manualMappings = {}, targetMonth = null, salariesMap = {}) {
   const verificationResults = [];
-  const matchedPdfIndices = new Set();
-
-  // 1. Filter PDF entries by targetMonth (if provided)
-  const monthFilteredEntries = (extractedEntries || []).filter(entry => {
-    if (!targetMonth || !/^\d{4}-\d{2}$/.test(targetMonth)) return true;
-    if (entry.date && entry.date.startsWith(targetMonth)) return true;
-    return false;
-  });
-
-  // Fall back to all entries if month filter yielded 0 (e.g. general expense sheet without dates)
-  const activeEntries = monthFilteredEntries.length > 0 ? monthFilteredEntries : (extractedEntries || []);
+  const allParsedEntries = extractedEntries || [];
 
   (employees || []).forEach(emp => {
     const empId = emp.id;
@@ -417,170 +414,256 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
     const appData = appExpensesMap[empId] || { totalExpense: 0, entries: [] };
     const appExpense = Number(appData.totalExpense) || 0;
     const appEntries = appData.entries || [];
+    const sal = salariesMap[empId] || {};
 
-    // Find all matching PDF entries for this employee
-    const matchedEntries = [];
-    let confidence = 0;
-    let matchType = 'NONE';
+    // 1. Calculate Application / Salary Total according to existing rules
+    const basicSalary = sal.basicSalary || 0;
+    const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0);
+    const sundayDays = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
+    const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
+    const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : (perDay * regularDays);
+    const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (perDay * sundayDays);
+    const totalEarned = sal.earnedSalary !== undefined ? sal.earnedSalary : (regularEarned + sundayBonus);
+    
+    // Net Salary payable
+    let applicationTotal = 0;
+    if (sal.netSalary !== undefined && typeof sal.netSalary === 'number') {
+      applicationTotal = sal.netSalary;
+    } else if (totalEarned > 0) {
+      applicationTotal = Math.max(0, totalEarned - appExpense);
+    } else if (appExpense > 0) {
+      applicationTotal = -appExpense;
+    }
 
-    activeEntries.forEach((entry, idx) => {
-      let isMatch = false;
+    // Build Itemized Application Records
+    const itemizedAppRecords = [];
+    if (regularDays > 0) {
+      itemizedAppRecords.push({
+        date: targetMonth || '—',
+        description: `Regular Attendance (${regularDays} Present Days @ PKR ${perDay.toLocaleString()}/day)`,
+        amount: regularEarned,
+        type: 'EARNING',
+        status: 'INCLUDED'
+      });
+    }
+    if (sundayDays > 0) {
+      itemizedAppRecords.push({
+        date: targetMonth || '—',
+        description: `Sunday Bonus (${sundayDays} Sunday Days Worked @ PKR ${perDay.toLocaleString()}/day)`,
+        amount: sundayBonus,
+        type: 'BONUS',
+        status: 'INCLUDED'
+      });
+    }
+    appEntries.forEach(ae => {
+      itemizedAppRecords.push({
+        date: ae.date || targetMonth || '—',
+        description: ae.description || 'Clock-Out Expense Deduction',
+        amount: -(Number(ae.amount) || 0),
+        type: 'DEDUCTION',
+        status: 'INCLUDED'
+      });
+    });
 
-      // 1. Check manual admin mappings first
+    // 2. Classify and Audit all Bank PDF Transactions for this employee
+    const bankTransactions = [];
+    const seenTxKeys = new Set();
+    let bankCreditTotal = 0;
+    let bankDebitTotal = 0;
+    let hasReviewRequired = false;
+
+    allParsedEntries.forEach(entry => {
+      const entryName = entry.payee || entry.extractedName || '';
+      const rawText = entry.rawLine || entry.description || '';
+      let isEmployeeMatch = false;
+      let matchType = 'NONE';
+
+      // Check manual admin mappings first
       if (manualMappings && manualMappings[empId]) {
         const mappedNorm = normalizeName(manualMappings[empId]);
-        if (entry.normalizedName === mappedNorm || normalizeName(entry.extractedName) === mappedNorm) {
-          isMatch = true;
-          confidence = 1.0;
+        if (entry.normalizedName === mappedNorm || normalizeName(entryName) === mappedNorm) {
+          isEmployeeMatch = true;
           matchType = 'MANUAL';
         }
       }
 
-      // 2. Case-insensitive Name & Alias matching
-      if (!isMatch && isNameMatch(empName, entry.payee || entry.extractedName, entry.rawLine || entry.description)) {
-        isMatch = true;
-        confidence = 0.95;
+      // Case-insensitive name matching
+      if (!isEmployeeMatch && isNameMatch(empName, entryName, rawText)) {
+        isEmployeeMatch = true;
         matchType = 'NAME_MATCH';
       }
 
-      if (isMatch) {
-        matchedEntries.push(entry);
-        matchedPdfIndices.add(idx);
+      // If not matching this employee at all, skip from their transaction list
+      if (!isEmployeeMatch) return;
+
+      const txDate = entry.date || '';
+      const isMonthMatch = Boolean(targetMonth && txDate && txDate.startsWith(targetMonth));
+      const creditAmt = Number(entry.credit) || 0;
+      const debitAmt = Number(entry.debit) || 0;
+      const txAmt = Number(entry.amount) || (creditAmt > 0 ? creditAmt : debitAmt);
+
+      // Determine transaction type
+      const isCredit = (creditAmt > 0) || (entry.type === 'CREDIT') || (txAmt > 0 && debitAmt === 0 && !/debit|dr\b/i.test(entry.description || ''));
+      const isDebit = !isCredit && (debitAmt > 0 || /debit|dr\b/i.test(entry.description || ''));
+
+      // Generate robust de-duplication key
+      const txKey = `${txDate}_${entry.refNo || normalizeName(entry.description || '').substring(0, 30)}_${txAmt}`;
+      const isDuplicate = seenTxKeys.has(txKey);
+
+      let txStatus = 'INCLUDED';
+      let reason = `Verified qualifying credit for ${targetMonth || 'selected period'}`;
+
+      if (!isMonthMatch && targetMonth) {
+        txStatus = 'EXCLUDED_MONTH';
+        reason = `Transaction date (${txDate || 'Unknown'}) is outside ${targetMonth}`;
+      } else if (isDuplicate) {
+        txStatus = 'EXCLUDED_DUPLICATE';
+        reason = `Duplicate transaction detected (${txKey})`;
+      } else if (isDebit) {
+        // In company statement, debits sent to employee represent employee credits
+        // If explicitly a non-qualifying debit on employee statement:
+        if (entry.isEmployeeStatement && isDebit) {
+          txStatus = 'EXCLUDED_DEBIT';
+          reason = `Debit transaction (PKR ${debitAmt.toLocaleString()})`;
+        } else {
+          // Company account transfer to employee -> qualifying payment credit
+          txStatus = 'INCLUDED';
+          reason = `Salary payment transfer in ${targetMonth}`;
+        }
       }
+
+      if (txStatus === 'INCLUDED') {
+        seenTxKeys.add(txKey);
+        bankCreditTotal += txAmt;
+      } else if (isDebit) {
+        bankDebitTotal += debitAmt;
+      }
+
+      bankTransactions.push({
+        date: txDate,
+        rawDate: entry.rawDate || txDate,
+        description: entry.description || entry.rawLine || 'Bank Transaction',
+        refNo: entry.refNo || '—',
+        credit: isCredit ? txAmt : 0,
+        debit: isDebit ? txAmt : 0,
+        amount: txAmt,
+        balance: entry.balance || 0,
+        type: isCredit ? 'CREDIT' : 'DEBIT',
+        source: 'Bank PDF',
+        employeeMatch: isEmployeeMatch,
+        matchType,
+        status: txStatus,
+        reason
+      });
     });
 
-    const isFoundInPdf = matchedEntries.length > 0;
-    const pdfExpense = isFoundInPdf ? matchedEntries.reduce((sum, e) => sum + (Number(e.amount) || Number(e.debit) || 0), 0) : 0;
-    const roundedPdfExpense = Math.round(pdfExpense * 100) / 100;
-    const difference = isFoundInPdf ? Math.round((appExpense - roundedPdfExpense) * 100) / 100 : appExpense;
+    // Sort transactions chronologically
+    bankTransactions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
-    // Build Date-by-Date cross-check reconciliation
-    const dateReconciliation = [];
-    const usedPdfIndexesForDate = new Set();
+    // 3. Compare Bank Credit Total against Application Total
+    const roundedBankCreditTotal = Math.round(bankCreditTotal * 100) / 100;
+    const roundedAppTotal = Math.round(applicationTotal * 100) / 100;
+    const difference = Math.round(Math.abs(roundedBankCreditTotal - roundedAppTotal) * 100) / 100;
 
-    appEntries.forEach(appEntry => {
-      const appDate = appEntry.date;
-      const appAmt = Number(appEntry.amount) || 0;
+    let differenceDirection = 'Equal';
+    if (roundedBankCreditTotal > roundedAppTotal) {
+      differenceDirection = 'Bank > Application';
+    } else if (roundedAppTotal > roundedBankCreditTotal) {
+      differenceDirection = 'Application > Bank';
+    }
 
-      // Find matching PDF entry on the exact same date
-      const exactDateMatchIdx = matchedEntries.findIndex((pe, pIdx) => !usedPdfIndexesForDate.has(pIdx) && pe.date === appDate);
-      if (exactDateMatchIdx !== -1) {
-        const pe = matchedEntries[exactDateMatchIdx];
-        usedPdfIndexesForDate.add(exactDateMatchIdx);
-        const peAmt = Number(pe.amount) || Number(pe.debit) || 0;
-        const diff = Math.round((appAmt - peAmt) * 100) / 100;
+    let verificationStatus = 'NOT VERIFIED';
+    const includedTxCount = bankTransactions.filter(t => t.status === 'INCLUDED').length;
 
-        dateReconciliation.push({
-          date: appDate,
-          appAmount: appAmt,
-          pdfAmount: peAmt,
-          difference: diff,
-          status: Math.abs(diff) < 0.01 ? 'EXACT_MATCH' : 'AMOUNT_DIFF',
-          appNotes: appEntry.description || 'Clock-Out Expense',
-          pdfDetails: pe.details || pe.description || `Debit: PKR ${peAmt.toLocaleString()}`
-        });
-      } else {
-        dateReconciliation.push({
-          date: appDate,
-          appAmount: appAmt,
-          pdfAmount: 0,
-          difference: appAmt,
-          status: 'APP_ONLY',
-          appNotes: appEntry.description || 'Clock-Out Expense',
-          pdfDetails: 'No corresponding entry in PDF on this date'
-        });
-      }
-    });
-
-    // Add remaining PDF entries that had no matching App date
-    matchedEntries.forEach((pe, pIdx) => {
-      if (!usedPdfIndexesForDate.has(pIdx)) {
-        const peAmt = Number(pe.amount) || Number(pe.debit) || 0;
-        dateReconciliation.push({
-          date: pe.date || '—',
-          appAmount: 0,
-          pdfAmount: peAmt,
-          difference: -peAmt,
-          status: 'PDF_ONLY',
-          appNotes: 'No attendance expense logged on this date',
-          pdfDetails: pe.details || pe.description || `Debit: PKR ${peAmt.toLocaleString()}`
-        });
-      }
-    });
-
-    // Sort reconciliation by date
-    dateReconciliation.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-
-    let status = 'NOT_FOUND';
-    if (isFoundInPdf) {
-      if (Math.abs(difference) < 0.01) {
-        status = 'MATCHED';
-      } else {
-        status = 'DISCREPANCY';
-      }
-    } else if (appExpense === 0) {
-      status = 'MATCHED_ZERO';
+    if (allParsedEntries.length === 0) {
+      verificationStatus = 'NOT VERIFIED';
+    } else if (hasReviewRequired) {
+      verificationStatus = 'REVIEW_REQUIRED';
+    } else if (includedTxCount === 0 && roundedAppTotal > 0) {
+      verificationStatus = 'NO TRANSACTIONS FOUND';
+    } else if (roundedAppTotal === 0 && includedTxCount === 0) {
+      verificationStatus = 'VERIFIED / MATCHED';
+    } else if (roundedAppTotal === 0 && includedTxCount > 0) {
+      verificationStatus = 'APPLICATION DATA INCOMPLETE';
+    } else if (difference < 1.0) {
+      verificationStatus = 'VERIFIED / MATCHED';
+    } else {
+      verificationStatus = 'MISMATCH';
     }
 
     verificationResults.push({
       employeeId: empId,
       employeeName: empName,
       role: emp.role || 'Staff',
+      salaryMonth: targetMonth,
+      bankCreditTotal: roundedBankCreditTotal,
+      applicationTotal: roundedAppTotal,
+      difference,
+      differenceDirection,
+      verificationStatus,
+      // Legacy compatibility fields
       appExpense,
-      pdfExpense: isFoundInPdf ? roundedPdfExpense : null,
-      difference: isFoundInPdf ? difference : null,
-      status,
-      confidence,
-      matchType,
-      isFoundInPdf,
-      pdfExtractedName: isFoundInPdf ? (matchedEntries[0].payee || matchedEntries[0].extractedName) : null,
-      pdfEntries: matchedEntries,
-      appEntries,
-      dateReconciliation
+      pdfExpense: roundedBankCreditTotal > 0 ? roundedBankCreditTotal : null,
+      status: (verificationStatus === 'VERIFIED / MATCHED') ? 'MATCHED' : (verificationStatus === 'MISMATCH' ? 'DISCREPANCY' : 'NOT_FOUND'),
+      isFoundInPdf: includedTxCount > 0,
+      bankTransactions,
+      includedTransactionsCount: includedTxCount,
+      totalBankTransactionsCount: bankTransactions.length,
+      applicationBreakdown: {
+        basicSalary,
+        regularDays,
+        sundayDays,
+        perDaySalary: perDay,
+        regularEarned,
+        sundayBonus,
+        totalEarned,
+        expenses: appExpense,
+        netSalary: roundedAppTotal,
+        itemizedRecords: itemizedAppRecords
+      },
+      dateReconciliation: bankTransactions.map(bt => ({
+        date: bt.date,
+        appAmount: 0,
+        pdfAmount: bt.amount,
+        difference: bt.amount,
+        status: bt.status,
+        appNotes: bt.reason,
+        pdfDetails: `${bt.description} | ${bt.type}: PKR ${bt.amount.toLocaleString()} | Bal: PKR ${(bt.balance||0).toLocaleString()}`
+      }))
     });
-  });
-
-  const unmatchedPdfEntries = [];
-  activeEntries.forEach((entry, idx) => {
-    if (!matchedPdfIndices.has(idx)) {
-      unmatchedPdfEntries.push(entry);
-    }
   });
 
   let totalMatched = 0;
   let totalDiscrepancies = 0;
   let totalNotFound = 0;
-  let totalAppExpenses = 0;
-  let totalPdfExpenses = 0;
+  let totalBankCredits = 0;
+  let totalAppSalaries = 0;
 
   verificationResults.forEach(r => {
-    totalAppExpenses += r.appExpense || 0;
-    if (r.pdfExpense !== null) {
-      totalPdfExpenses += r.pdfExpense;
-    }
-    if (r.status === 'MATCHED' || r.status === 'MATCHED_ZERO') {
+    totalBankCredits += r.bankCreditTotal || 0;
+    totalAppSalaries += r.applicationTotal || 0;
+    if (r.verificationStatus === 'VERIFIED / MATCHED') {
       totalMatched++;
-    } else if (r.status === 'DISCREPANCY') {
+    } else if (r.verificationStatus === 'MISMATCH') {
       totalDiscrepancies++;
-    } else if (r.status === 'NOT_FOUND') {
+    } else {
       totalNotFound++;
     }
   });
 
-  const totalDifference = Math.round(Math.abs(totalAppExpenses - totalPdfExpenses) * 100) / 100;
+  const totalDifference = Math.round(Math.abs(totalBankCredits - totalAppSalaries) * 100) / 100;
 
   return {
     verificationResults,
-    unmatchedPdfEntries,
+    unmatchedPdfEntries: [],
     summary: {
       targetMonth,
       totalEmployees: employees.length,
       totalMatched,
       totalDiscrepancies,
       totalNotFound,
-      totalUnmatchedInPdf: unmatchedPdfEntries.length,
-      totalAppExpenses: Math.round(totalAppExpenses),
-      totalPdfExpenses: Math.round(totalPdfExpenses),
+      totalBankCredits: Math.round(totalBankCredits),
+      totalAppSalaries: Math.round(totalAppSalaries),
       totalDifference
     }
   };

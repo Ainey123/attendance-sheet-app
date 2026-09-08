@@ -1563,15 +1563,16 @@
                       <th>Total Salary</th>
                       <th>Expenses (−)</th>
                       <th>Net Salary</th>
-                      <!-- New Accounts PDF Verification Columns -->
-                      <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Accounts PDF Exp</th>
+                      <!-- Accounts PDF Verification & Approval Columns -->
+                      <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Bank Credits</th>
                       <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Difference</th>
                       <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Verification Status</th>
+                      <th style="background:rgba(16,185,129,0.15); color:#6ee7b7;">Approval</th>
                       <th class="no-print">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="salary-table-body">
-                    <tr><td colspan="16" class="table-empty">Select a month and click "Load Sheet" to begin.</td></tr>
+                    <tr><td colspan="17" class="table-empty">Select a month and click "Load Sheet" to begin.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1766,29 +1767,34 @@
   <!-- DISCREPANCY & VERIFICATION DETAIL MODAL -->
   <div id="modal-discrepancy-detail" class="modal-overlay hidden" style="z-index: 9999;">
     <div class="modal-content" style="max-width: 780px; width: 95%; background: #131722; border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,0.7); max-height: 90vh; display: flex; flex-direction: column;">
-      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding: 1rem 1.25rem;">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding: 1rem 1.25rem; display:flex; justify-content:space-between; align-items:center;">
         <div>
-          <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem; font-size:1.1rem; color:#fff;">
-            <span>🔍</span> Expense Verification Breakdown
+          <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem; font-size:1.1rem; color:#fff; margin:0;">
+            <span>🔍</span> Salary &amp; Bank PDF Verification Audit
           </h3>
           <p id="disc-modal-emp-info" style="margin: 0.2rem 0 0; font-size: 0.82rem; color: var(--text-muted);">Employee: —</p>
         </div>
-        <button id="btn-close-disc-modal" class="btn-close">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button type="button" id="btn-disc-open-approval" class="btn btn-primary" style="padding:0.35rem 0.85rem; font-size:0.82rem; font-weight:600; background:#10b981; border:none; cursor:pointer;" onclick="if(currentSelectedEmployeeIdForMapping) openSalaryApprovalModal(currentSelectedEmployeeIdForMapping);">
+            🛡️ Approve Salary
+          </button>
+          <button id="btn-close-disc-modal" class="btn-close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="modal-body" style="padding: 1.25rem; overflow-y: auto; flex: 1;">
         <!-- Comparison Summary Cards -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
           <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 8px; padding: 0.85rem;">
-            <div style="font-size: 0.75rem; color: #a5b4fc; text-transform: uppercase; font-weight: 600;">App Clock-Out Expense</div>
+            <div style="font-size: 0.75rem; color: #a5b4fc; text-transform: uppercase; font-weight: 600;">Application Total Salary</div>
             <div id="disc-modal-app-total" style="font-size: 1.3rem; font-weight: 700; color: #fff; margin-top: 0.2rem;">PKR 0</div>
           </div>
           <div style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); border-radius: 8px; padding: 0.85rem;">
-            <div style="font-size: 0.75rem; color: #6ee7b7; text-transform: uppercase; font-weight: 600;">Accounts PDF Recorded</div>
+            <div style="font-size: 0.75rem; color: #6ee7b7; text-transform: uppercase; font-weight: 600;">Bank Credit Total (PDF)</div>
             <div id="disc-modal-pdf-total" style="font-size: 1.3rem; font-weight: 700; color: #fff; margin-top: 0.2rem;">PKR 0</div>
           </div>
           <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 0.85rem;">
@@ -1796,8 +1802,34 @@
             <div id="disc-modal-diff" style="font-size: 1.3rem; font-weight: 700; color: #f59e0b; margin-top: 0.2rem;">PKR 0</div>
           </div>
           <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.85rem;">
-            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Status</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Verification Status</div>
             <div id="disc-modal-status-badge" style="margin-top: 0.35rem;">—</div>
+          </div>
+        </div>
+
+        <!-- Bank Statement Transactions Audit Section -->
+        <div style="margin-bottom: 1rem; background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem;">
+          <h4 style="margin: 0 0 0.6rem; font-size: 0.88rem; color: #a5b4fc; display:flex; justify-content:space-between; align-items:center;">
+            <span>🏦 Bank PDF Transactions Audit (Selected Month Only)</span>
+            <span id="disc-modal-bank-tx-badge" style="font-size:0.75rem; color:var(--text-muted);">0 transactions</span>
+          </h4>
+          <div style="overflow-x: auto; max-height: 220px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.78rem; text-align: left;">
+              <thead>
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary);">
+                  <th style="padding: 0.35rem 0.5rem;">Date</th>
+                  <th style="padding: 0.35rem 0.5rem;">Description / Ref</th>
+                  <th style="padding: 0.35rem 0.5rem; text-align: right;">Credit</th>
+                  <th style="padding: 0.35rem 0.5rem; text-align: right;">Debit</th>
+                  <th style="padding: 0.35rem 0.5rem; text-align: right;">Balance</th>
+                  <th style="padding: 0.35rem 0.5rem; text-align: center;">Status</th>
+                  <th style="padding: 0.35rem 0.5rem;">Audit Reason</th>
+                </tr>
+              </thead>
+              <tbody id="disc-modal-bank-tx-tbody">
+                <tr><td colspan="7" class="text-muted" style="text-align:center; padding:0.6rem;">No transactions recorded.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -1806,10 +1838,10 @@
           <!-- Left: Application Entries -->
           <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem;">
             <h4 style="margin: 0 0 0.6rem; font-size: 0.88rem; color: #a5b4fc; display:flex; justify-content:space-between;">
-              <span>📱 Application Entries</span>
+              <span>📱 Application Salary Breakdown</span>
               <span id="disc-modal-app-count" style="font-size:0.75rem; color:var(--text-muted);">(0 entries)</span>
             </h4>
-            <div id="disc-modal-app-list" style="font-size: 0.82rem; max-height: 220px; overflow-y: auto;">
+            <div id="disc-modal-app-list" style="font-size: 0.82rem; max-height: 200px; overflow-y: auto;">
               <p class="text-muted" style="font-size:0.8rem;">No expense entries found in application records.</p>
             </div>
           </div>
@@ -1820,7 +1852,7 @@
               <span>📄 Accounts PDF Lines</span>
               <span id="disc-modal-pdf-count" style="font-size:0.75rem; color:var(--text-muted);">(0 entries)</span>
             </h4>
-            <div id="disc-modal-pdf-list" style="font-size: 0.82rem; max-height: 220px; overflow-y: auto;">
+            <div id="disc-modal-pdf-list" style="font-size: 0.82rem; max-height: 200px; overflow-y: auto;">
               <p class="text-muted" style="font-size:0.8rem;">No matching entries found in Accounts PDF.</p>
             </div>
           </div>
@@ -1832,7 +1864,7 @@
             <span>📅 Exact Date-by-Date Cross-Check (Attendance vs Accounts PDF)</span>
             <span id="disc-modal-recon-badge" style="font-size:0.75rem; color:var(--text-muted);"></span>
           </h4>
-          <div style="overflow-x: auto; max-height: 240px; overflow-y: auto;">
+          <div style="overflow-x: auto; max-height: 200px; overflow-y: auto;">
             <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
               <thead>
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary);">
@@ -1868,6 +1900,97 @@
         <div style="margin-top: 1rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
           ℹ️ <strong>Safety Guarantee:</strong> Accounts PDF Verification is an external inspection tool. Uploading or verifying a PDF will <strong>never</strong> modify employee clock-out entries or actual basic salaries.
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALARY APPROVAL MODAL -->
+  <div id="modal-salary-approval" class="modal-overlay hidden" style="z-index: 10001;">
+    <div class="modal-content" style="max-width: 580px; width: 95%; background: #111827; border: 1px solid var(--border-color); border-radius: 14px; padding: 1.5rem; box-shadow: 0 16px 40px rgba(0,0,0,0.7);">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.85rem;">
+        <div>
+          <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem; font-size:1.15rem; color:#fff; margin:0;">
+            <span>🛡️</span> Admin Salary Approval
+          </h3>
+          <p id="sal-appr-emp-info" style="margin: 0.25rem 0 0; font-size: 0.83rem; color: var(--text-muted);">Employee: — • Month: —</p>
+        </div>
+        <button id="btn-close-sal-appr-modal" class="btn-close" type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 0;">
+        <!-- Comparison Overview Cards -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+          <div style="background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 0.75rem;">
+            <div style="font-size: 0.72rem; color: #a5b4fc; text-transform: uppercase; font-weight: 600;">Bank Credit Total (PDF)</div>
+            <div id="sal-appr-bank-total" style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-top: 0.15rem;">PKR 0</div>
+            <div id="sal-appr-bank-tx-count" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">0 qualifying credits</div>
+          </div>
+          <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 0.75rem;">
+            <div style="font-size: 0.72rem; color: #6ee7b7; text-transform: uppercase; font-weight: 600;">Application Total Salary</div>
+            <div id="sal-appr-app-total" style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-top: 0.15rem;">PKR 0</div>
+            <div id="sal-appr-app-breakdown" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">Earned salary − expenses</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+          <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 0.75rem;">
+            <div style="font-size: 0.72rem; color: #fcd34d; text-transform: uppercase; font-weight: 600;">Difference</div>
+            <div id="sal-appr-diff-amount" style="font-size: 1.15rem; font-weight: 700; color: #f59e0b; margin-top: 0.15rem;">PKR 0</div>
+            <div id="sal-appr-diff-dir" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">Equal</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.75rem;">
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Verification Status</div>
+            <div id="sal-appr-status-badge" style="margin-top: 0.25rem;">—</div>
+          </div>
+        </div>
+
+        <!-- Prior Approval Notice (if already approved) -->
+        <div id="sal-appr-existing-banner" class="hidden" style="margin-bottom: 1rem; padding: 0.75rem 0.9rem; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.35); border-radius: 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight: 600; color: #4ade80; font-size: 0.85rem;">
+              ✅ Currently Approved: <span id="sal-appr-existing-amt">PKR 0</span>
+            </div>
+            <button type="button" id="btn-sal-appr-revoke" class="btn btn-danger" style="padding: 0.2rem 0.6rem; font-size: 0.75rem;">Revoke Approval</button>
+          </div>
+          <div id="sal-appr-existing-meta" style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.25rem;">Approved by Admin</div>
+        </div>
+
+        <!-- Approval Form -->
+        <form id="form-salary-approval" onsubmit="event.preventDefault(); handleConfirmSalaryApproval();">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label style="display:block; font-size:0.83rem; font-weight:600; color:#e2e8f0; margin-bottom:0.35rem;">
+              Approved Amount (PKR) <span style="color:#f87171;">*</span>
+            </label>
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.4rem;">
+              <input type="number" id="sal-appr-amount-input" step="any" min="0" required placeholder="Enter approved amount"
+                style="flex:1; background:rgba(0,0,0,0.4); border:1px solid var(--border-color); color:#fff; border-radius:6px; padding:0.55rem 0.75rem; font-size:1rem; font-family:monospace; font-weight:700;" />
+              <button type="button" id="btn-use-bank-total" class="btn btn-secondary" style="font-size:0.75rem; padding:0.4rem 0.6rem; white-space:nowrap;">Use Bank</button>
+              <button type="button" id="btn-use-app-total" class="btn btn-secondary" style="font-size:0.75rem; padding:0.4rem 0.6rem; white-space:nowrap;">Use App</button>
+            </div>
+            <div style="font-size:0.74rem; color:var(--text-muted);">
+              Admin confirms payout amount for this employee in the selected month.
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label style="display:block; font-size:0.83rem; font-weight:600; color:#e2e8f0; margin-bottom:0.35rem;">
+              Admin Remarks / Notes (Optional)
+            </label>
+            <textarea id="sal-appr-notes-input" rows="2" placeholder="e.g. Verified against Bank statement. Approved for disbursement."
+              style="width:100%; background:rgba(0,0,0,0.4); border:1px solid var(--border-color); color:#fff; border-radius:6px; padding:0.5rem 0.75rem; font-size:0.82rem; resize:vertical; box-sizing:border-box;"></textarea>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:0.75rem; border-top:1px solid rgba(255,255,255,0.08); padding-top:1rem;">
+            <button type="button" id="btn-cancel-sal-appr" class="btn btn-secondary" style="padding:0.55rem 1.1rem; font-size:0.88rem;">Cancel</button>
+            <button type="submit" id="btn-confirm-sal-appr" class="btn btn-primary" style="padding:0.55rem 1.3rem; font-size:0.88rem; font-weight:600; background:#10b981; border-color:#059669;">
+              ✓ Confirm &amp; Approve Salary
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -1936,6 +2059,6 @@
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=217"></script>
+  <script src="app.js?v=218"></script>
 </body>
 </html>

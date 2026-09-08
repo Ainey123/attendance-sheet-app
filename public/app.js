@@ -144,6 +144,19 @@ const API = {
   getEmployeeExpensesDetail: (employeeId, month) => fetchJson(`/api/salary/employee-expenses-detail?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}`, {
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
+  approveSalary: (data) => fetchJson('/api/salary/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  getSalaryApprovals: (month) => fetchJson(`/api/salary/approvals?month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
+  revokeSalaryApproval: (employeeId, month, reason) => fetchJson('/api/salary/approve', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month, reason })
+  }),
   resolveAttendance: (body) => fetchJson('/api/attendance/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
@@ -5236,6 +5249,27 @@ function initSalaryTab() {
   if (btnSaveMap) {
     btnSaveMap.addEventListener('click', handleSaveManualMapping);
   }
+
+  // Salary Approval Modal close & actions
+  const btnCloseAppr = document.getElementById('btn-close-sal-appr-modal');
+  const btnCancelAppr = document.getElementById('btn-cancel-sal-appr');
+  const btnRevokeAppr = document.getElementById('btn-sal-appr-revoke');
+  const modalAppr = document.getElementById('modal-salary-approval');
+
+  if (btnCloseAppr && modalAppr) {
+    btnCloseAppr.addEventListener('click', () => modalAppr.classList.add('hidden'));
+  }
+  if (btnCancelAppr && modalAppr) {
+    btnCancelAppr.addEventListener('click', () => modalAppr.classList.add('hidden'));
+  }
+  if (btnRevokeAppr) {
+    btnRevokeAppr.addEventListener('click', handleRevokeSalaryApproval);
+  }
+  if (modalAppr) {
+    modalAppr.addEventListener('click', (e) => {
+      if (e.target === modalAppr) modalAppr.classList.add('hidden');
+    });
+  }
 }
 
 async function loadSalarySheet(monthOverride) {
@@ -5246,7 +5280,7 @@ async function loadSalarySheet(monthOverride) {
 
   const tbody = document.getElementById('salary-table-body');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="16" class="table-empty">Loading salary and verification data...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="17" class="table-empty">Loading salary and verification data...</td></tr>';
 
   // Update header info
   const orgNameEl = document.getElementById('salary-sheet-org-name');
@@ -5263,17 +5297,21 @@ async function loadSalarySheet(monthOverride) {
   if (statMonth) statMonth.textContent = month;
 
   try {
-    // Fetch employees, salaries, and Accounts PDF in parallel
-    const [empRes, salRes, accPdfRes] = await Promise.all([
+    // Fetch employees, salaries, Accounts PDF, and salary approvals in parallel
+    const [empRes, salRes, accPdfRes, apprRes] = await Promise.all([
       API.getEmployees(),
       API.getSalaries(month),
-      API.getAccountsPdf(month).catch(() => ({ success: false, accountsPdf: null }))
+      API.getAccountsPdf(month).catch(() => ({ success: false, accountsPdf: null })),
+      API.getSalaryApprovals(month).catch(() => ({ success: false, approvals: [] }))
     ]);
 
     const employees = empRes.employees || empRes || [];
     currentSalaryEmployees = employees;
     const salaries = (salRes && salRes.salaries) ? salRes.salaries : [];
     currentAccountsPdf = (accPdfRes && accPdfRes.accountsPdf) ? accPdfRes.accountsPdf : null;
+    const approvalsList = (apprRes && apprRes.approvals) ? apprRes.approvals : [];
+    const approvalsMap = {};
+    approvalsList.forEach(a => { approvalsMap[a.employeeId] = a; });
 
     // Render the Accounts PDF Verification Panel
     renderAccountsPdfPanel(currentAccountsPdf);
@@ -5290,7 +5328,7 @@ async function loadSalarySheet(monthOverride) {
     }
 
     if (!employees.length) {
-      tbody.innerHTML = '<tr><td colspan="16" class="table-empty">No employees found in roster.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="17" class="table-empty">No employees found in roster.</td></tr>';
       return;
     }
 
@@ -5319,35 +5357,59 @@ async function loadSalarySheet(monthOverride) {
       const netClass = typeof netSalary === 'number' ? (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative') : '';
       const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : (v !== null && v !== undefined ? v : '—');
 
-      // Accounts PDF Verification columns
+      // Accounts PDF Verification & Admin Approval columns
       const verif = verifMap[emp.id];
+      const approval = (verif && verif.approval) || approvalsMap[emp.id];
+      const isApproved = Boolean(approval && approval.approvalStatus === 'APPROVED');
+
       let pdfExpHtml = '<span class="verif-none">—</span>';
       let diffHtml = '<span class="verif-none">—</span>';
       let statusHtml = '<span class="verif-none">—</span>';
+      let approvalHtml = '<span class="verif-none">—</span>';
 
       if (currentAccountsPdf) {
-        if (verif && verif.isFoundInPdf) {
-          pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">${fmtNum(verif.pdfExpense)}</span>`;
-          const diffVal = verif.difference;
-          const diffColor = Math.abs(diffVal) < 0.01 ? '#4ade80' : '#fbbf24';
-          const diffSign = diffVal > 0 ? '+' : '';
-          diffHtml = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;">${diffSign}${fmtNum(diffVal)}</span>`;
+        if (verif && (verif.isFoundInPdf || verif.includedTransactionsCount > 0)) {
+          const bankCredits = verif.bankCreditTotal !== undefined ? verif.bankCreditTotal : (verif.pdfExpense || 0);
+          pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">PKR ${fmtNum(bankCredits)}</span>`;
+          const diffVal = verif.difference !== undefined ? verif.difference : Math.abs(bankCredits - netSalary);
+          const diffColor = Math.abs(diffVal) < 1.0 ? '#4ade80' : '#fbbf24';
+          const diffDir = verif.differenceDirection || (bankCredits > netSalary ? 'Bank > Application' : (netSalary > bankCredits ? 'Application > Bank' : 'Equal'));
+          const diffPrefix = diffDir === 'Bank > Application' ? '+B ' : (diffDir === 'Application > Bank' ? '+A ' : '');
+          diffHtml = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;" title="${diffDir}">${diffPrefix}PKR ${fmtNum(diffVal)}</span>`;
 
-          if (verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
+          if (verif.verificationStatus === 'VERIFIED / MATCHED' || verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
             statusHtml = `<span class="verif-badge verif-matched clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view full breakdown">✓ MATCHED</span>`;
+          } else if (verif.verificationStatus === 'MISMATCH' || verif.status === 'DISCREPANCY') {
+            statusHtml = `<span class="verif-badge verif-discrepancy clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view discrepancy details">⚠ MISMATCH</span>`;
           } else {
-            statusHtml = `<span class="verif-badge verif-discrepancy clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view discrepancy details">⚠ DISCREPANCY</span>`;
+            statusHtml = `<span class="verif-badge verif-notfound clickable" onclick="openDiscrepancyModal('${emp.id}')" title="View details">? ${escapeHtml(verif.verificationStatus || 'REVIEW')}</span>`;
           }
         } else {
-          pdfExpHtml = '<span style="font-family:monospace; color:var(--text-muted);">0</span>';
-          if (expenses > 0) {
-            diffHtml = `<span style="font-family:monospace; color:#f87171; font-weight:700;">+${fmtNum(expenses)}</span>`;
-            statusHtml = `<span class="verif-badge verif-notfound clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Employee not found in Accounts PDF">? NOT IN PDF</span>`;
+          pdfExpHtml = '<span style="font-family:monospace; color:var(--text-muted);">PKR 0</span>';
+          if (netSalary > 0) {
+            diffHtml = `<span style="font-family:monospace; color:#f87171; font-weight:700;">+A PKR ${fmtNum(netSalary)}</span>`;
+            statusHtml = `<span class="verif-badge verif-notfound clickable" onclick="openDiscrepancyModal('${emp.id}')" title="No qualifying transactions in PDF">? NOT IN PDF</span>`;
           } else {
-            diffHtml = '<span style="font-family:monospace; color:#4ade80;">0</span>';
-            statusHtml = `<span class="verif-badge verif-matched clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Zero expenses recorded">✓ MATCHED (0)</span>`;
+            diffHtml = '<span style="font-family:monospace; color:#4ade80;">PKR 0</span>';
+            statusHtml = `<span class="verif-badge verif-matched clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Zero net salary">✓ MATCHED (0)</span>`;
           }
         }
+      }
+
+      if (isApproved) {
+        approvalHtml = `
+          <button type="button" class="btn btn-sm" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.75rem; font-weight:700; padding:0.25rem 0.55rem; border-radius:4px; cursor:pointer;"
+            onclick="openSalaryApprovalModal('${emp.id}')" title="Approved PKR ${fmtNum(approval.approvedAmount)} by ${escapeHtml(approval.approvedBy || 'Admin')} on ${new Date(approval.approvedAt).toLocaleDateString()}">
+            ✅ PKR ${fmtNum(approval.approvedAmount)}
+          </button>
+        `;
+      } else {
+        approvalHtml = `
+          <button type="button" class="btn btn-sm" style="background:#10b981; color:#fff; font-size:0.75rem; font-weight:600; padding:0.25rem 0.55rem; border-radius:4px; border:none; cursor:pointer;"
+            onclick="openSalaryApprovalModal('${emp.id}')" title="Review & Approve Salary for ${escapeHtml(emp.name)}">
+            🛡️ Approve
+          </button>
+        `;
       }
 
       const tr = document.createElement('tr');
@@ -5375,10 +5437,11 @@ async function loadSalarySheet(monthOverride) {
         <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
         <td class="cell-expenses" style="text-align:right; font-family:monospace; color:#f87171;">${expenses > 0 ? '−' + fmtNum(expenses) : '0'}</td>
         <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
-        <!-- Verification Columns -->
+        <!-- Verification & Approval Columns -->
         <td style="text-align:right; background:rgba(99,102,241,0.04);">${pdfExpHtml}</td>
         <td style="text-align:right; background:rgba(99,102,241,0.04);">${diffHtml}</td>
         <td style="text-align:center; background:rgba(99,102,241,0.04);">${statusHtml}</td>
+        <td style="text-align:center; background:rgba(16,185,129,0.04);">${approvalHtml}</td>
         <td class="no-print">
           <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
             title="Recalculate from attendance">⚡ Recalc</button>
@@ -5673,10 +5736,16 @@ async function openDiscrepancyModal(employeeId) {
   const verif = verifResults.find(v => v.employeeId === employeeId) || {
     appExpense: 0,
     pdfExpense: 0,
+    bankCreditTotal: 0,
+    applicationTotal: 0,
     difference: 0,
+    differenceDirection: 'Equal',
     status: 'NOT_FOUND',
+    verificationStatus: 'NOT VERIFIED',
     pdfEntries: [],
-    appEntries: []
+    appEntries: [],
+    bankTransactions: [],
+    includedTransactionsCount: 0
   };
 
   currentSelectedEmployeeIdForMapping = employeeId;
@@ -5697,58 +5766,143 @@ async function openDiscrepancyModal(employeeId) {
     empInfoEl.textContent = `Employee: ${emp.name} (${emp.role || 'Staff'}) • Month: ${currentSalaryMonth}`;
   }
 
-  const appExp = verif.appExpense || 0;
-  const pdfExp = verif.pdfExpense !== null && verif.pdfExpense !== undefined ? verif.pdfExpense : 0;
-  const diff = verif.difference !== null && verif.difference !== undefined ? verif.difference : (appExp - pdfExp);
+  const appTotal = verif.applicationTotal !== undefined ? verif.applicationTotal : (verif.appExpense || 0);
+  const bankTotal = verif.bankCreditTotal !== undefined ? verif.bankCreditTotal : (verif.pdfExpense || 0);
+  const diff = verif.difference !== undefined ? verif.difference : Math.abs(bankTotal - appTotal);
 
-  if (appTotalEl) appTotalEl.textContent = 'PKR ' + appExp.toLocaleString();
-  if (pdfTotalEl) pdfTotalEl.textContent = 'PKR ' + pdfExp.toLocaleString();
+  if (appTotalEl) appTotalEl.textContent = 'PKR ' + appTotal.toLocaleString();
+  if (pdfTotalEl) pdfTotalEl.textContent = 'PKR ' + bankTotal.toLocaleString();
   if (diffEl) {
-    const sign = diff > 0 ? '+' : '';
-    diffEl.textContent = 'PKR ' + sign + diff.toLocaleString();
-    diffEl.style.color = Math.abs(diff) < 0.01 ? '#4ade80' : '#fbbf24';
+    const diffDir = verif.differenceDirection || (bankTotal > appTotal ? 'Bank > Application' : (appTotal > bankTotal ? 'Application > Bank' : 'Equal'));
+    const prefix = diffDir === 'Bank > Application' ? '+B ' : (diffDir === 'Application > Bank' ? '+A ' : '');
+    diffEl.textContent = prefix + 'PKR ' + diff.toLocaleString();
+    diffEl.style.color = Math.abs(diff) < 1.0 ? '#4ade80' : '#fbbf24';
   }
 
   if (statusBadgeEl) {
-    if (verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
+    if (verif.verificationStatus === 'VERIFIED / MATCHED' || verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
       statusBadgeEl.innerHTML = '<span class="verif-badge verif-matched">✓ MATCHED (PKR 0 Diff)</span>';
-    } else if (verif.status === 'DISCREPANCY') {
-      statusBadgeEl.innerHTML = '<span class="verif-badge verif-discrepancy">⚠ DISCREPANCY DETECTED</span>';
+    } else if (verif.verificationStatus === 'MISMATCH' || verif.status === 'DISCREPANCY') {
+      statusBadgeEl.innerHTML = `<span class="verif-badge verif-discrepancy">⚠ MISMATCH (${verif.differenceDirection || 'Diff'})</span>`;
     } else {
-      statusBadgeEl.innerHTML = '<span class="verif-badge verif-notfound">? NOT IN ACCOUNTS PDF</span>';
+      statusBadgeEl.innerHTML = `<span class="verif-badge verif-notfound">? ${escapeHtml(verif.verificationStatus || 'NOT IN ACCOUNTS PDF')}</span>`;
     }
   }
 
-  // Load detailed clock-out entries from server
+  // Populate Bank PDF Transactions Audit Table
+  const bankTxTbody = document.getElementById('disc-modal-bank-tx-tbody');
+  const bankTxBadge = document.getElementById('disc-modal-bank-tx-badge');
+  const bankTransactions = verif.bankTransactions || [];
+
+  if (bankTxBadge) {
+    const incCount = bankTransactions.filter(t => t.status === 'INCLUDED').length;
+    bankTxBadge.textContent = `${bankTransactions.length} tx (${incCount} qualifying credits in ${currentSalaryMonth})`;
+  }
+
+  if (bankTxTbody) {
+    if (bankTransactions.length === 0) {
+      bankTxTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="text-align:center; padding:0.6rem;">No bank transactions found for this employee in the PDF.</td></tr>';
+    } else {
+      bankTxTbody.innerHTML = bankTransactions.map(bt => {
+        let badge = '<span style="color:var(--text-muted);">—</span>';
+        if (bt.status === 'INCLUDED') {
+          badge = '<span style="background:rgba(34,197,94,0.2); color:#4ade80; padding:2px 6px; border-radius:4px; font-weight:700; font-size:0.72rem;">✓ INCLUDED</span>';
+        } else if (bt.status === 'EXCLUDED_MONTH') {
+          badge = '<span style="background:rgba(148,163,184,0.15); color:#94a3b8; padding:2px 6px; border-radius:4px; font-size:0.72rem;">⏳ EXCLUDED (MONTH)</span>';
+        } else if (bt.status === 'EXCLUDED_DUPLICATE') {
+          badge = '<span style="background:rgba(245,158,11,0.2); color:#fbbf24; padding:2px 6px; border-radius:4px; font-size:0.72rem;">⚠️ DUPLICATE</span>';
+        } else if (bt.status === 'EXCLUDED_DEBIT') {
+          badge = '<span style="background:rgba(99,102,241,0.2); color:#a5b4fc; padding:2px 6px; border-radius:4px; font-size:0.72rem;">ℹ️ DEBIT</span>';
+        }
+
+        return `
+          <tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">
+            <td style="padding:0.35rem 0.5rem; font-weight:600; color:#e2e8f0; white-space:nowrap;">${escapeHtml(bt.date || bt.rawDate || '—')}</td>
+            <td style="padding:0.35rem 0.5rem;">
+              <div style="font-weight:600; color:#fff;">${escapeHtml(bt.description || 'Transaction')}</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Ref: ${escapeHtml(bt.refNo || '—')}</div>
+            </td>
+            <td style="padding:0.35rem 0.5rem; text-align:right; font-family:monospace; color:${bt.credit > 0 ? '#4ade80' : 'var(--text-muted)'}; font-weight:600;">
+              ${bt.credit > 0 ? 'PKR ' + bt.credit.toLocaleString() : '—'}
+            </td>
+            <td style="padding:0.35rem 0.5rem; text-align:right; font-family:monospace; color:${bt.debit > 0 ? '#f87171' : 'var(--text-muted)'};">
+              ${bt.debit > 0 ? 'PKR ' + bt.debit.toLocaleString() : '—'}
+            </td>
+            <td style="padding:0.35rem 0.5rem; text-align:right; font-family:monospace; color:#cbd5e1;">
+              ${bt.balance ? 'PKR ' + bt.balance.toLocaleString() : '—'}
+            </td>
+            <td style="padding:0.35rem 0.5rem; text-align:center; white-space:nowrap;">
+              ${badge}
+            </td>
+            <td style="padding:0.35rem 0.5rem; font-size:0.72rem; color:var(--text-secondary);">
+              ${escapeHtml(bt.reason || '')}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  // Populate Application Salary Breakdown
   if (appListEl) {
-    appListEl.innerHTML = '<p class="text-muted" style="font-size:0.8rem;">Loading application clock-out records...</p>';
+    const brk = verif.applicationBreakdown;
+    let brkSummary = '';
+    if (brk) {
+      brkSummary = `
+        <div style="padding:0.5rem 0.75rem; background:rgba(255,255,255,0.04); border-radius:6px; margin-bottom:0.5rem; font-size:0.8rem;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">Basic Salary:</span>
+            <strong style="color:#fff;">PKR ${(brk.basicSalary || 0).toLocaleString()}</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">Present Days:</span>
+            <strong style="color:#22c55e;">${brk.regularDays || 0} days (Earned: PKR ${(brk.regularEarned || 0).toLocaleString()})</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">☀️ Sunday Bonus:</span>
+            <strong style="color:#fbbf24;">${brk.sundayDays || 0} Sundays (PKR ${(brk.sundayBonus || 0).toLocaleString()})</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">Expenses Deductions:</span>
+            <strong style="color:#f87171;">− PKR ${(brk.expenses || 0).toLocaleString()}</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.08); padding-top:0.35rem; margin-top:0.35rem;">
+            <span style="font-weight:700; color:#a5b4fc;">Net Application Total:</span>
+            <strong style="font-size:0.92rem; color:#a5b4fc; font-family:monospace;">PKR ${(brk.netSalary !== undefined ? brk.netSalary : appTotal).toLocaleString()}</strong>
+          </div>
+        </div>
+      `;
+    }
+
     try {
       const detailRes = await API.getEmployeeExpensesDetail(employeeId, currentSalaryMonth);
       const entries = (detailRes && detailRes.details && detailRes.details.entries) || [];
-      if (appCountEl) appCountEl.textContent = `(${entries.length} entries)`;
+      if (appCountEl) appCountEl.textContent = `(${entries.length} expenses)`;
 
+      let entriesHtml = '';
       if (entries.length === 0) {
-        appListEl.innerHTML = '<p class="text-muted" style="font-size:0.8rem; margin:0.5rem 0;">No expense entries recorded in application clock-outs.</p>';
+        entriesHtml = '<p class="text-muted" style="font-size:0.78rem; margin:0.35rem 0;">No individual clock-out expense deductions.</p>';
       } else {
-        appListEl.innerHTML = entries.map(e => `
-          <div style="padding:0.45rem 0.6rem; background:rgba(255,255,255,0.04); border-radius:6px; margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
+        entriesHtml = entries.map(e => `
+          <div style="padding:0.4rem 0.55rem; background:rgba(255,255,255,0.03); border-radius:5px; margin-bottom:0.35rem; display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <div style="font-weight:600; color:#fff;">${escapeHtml(e.date)}</div>
-              <div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(e.description || 'Clock-Out')}</div>
+              <div style="font-weight:600; color:#fff; font-size:0.8rem;">${escapeHtml(e.date)}</div>
+              <div style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(e.description || 'Expense')}</div>
             </div>
-            <div style="font-family:monospace; font-weight:700; color:#f87171;">PKR ${(e.amount || 0).toLocaleString()}</div>
+            <div style="font-family:monospace; font-weight:700; color:#f87171; font-size:0.8rem;">PKR ${(e.amount || 0).toLocaleString()}</div>
           </div>
         `).join('');
       }
+      appListEl.innerHTML = brkSummary + entriesHtml;
     } catch (e) {
-      appListEl.innerHTML = '<p style="color:#f87171; font-size:0.8rem;">Failed to load entries.</p>';
+      appListEl.innerHTML = brkSummary || '<p style="color:#f87171; font-size:0.8rem;">Failed to load entries.</p>';
     }
   }
 
   // Populate PDF Lines
   if (pdfListEl) {
     const pdfEntries = verif.pdfEntries || [];
-    if (pdfCountEl) pdfCountEl.textContent = `(${pdfEntries.length} entries)`;
+    if (pdfCountEl) pdfCountEl.textContent = `(${pdfEntries.length} lines)`;
 
     if (pdfEntries.length === 0) {
       pdfListEl.innerHTML = '<p class="text-muted" style="font-size:0.8rem; margin:0.5rem 0;">No matching entries found in Accounts PDF for this name.</p>';
@@ -5767,78 +5921,78 @@ async function openDiscrepancyModal(employeeId) {
     }
   }
 
-    // Populate Date-by-Date Cross-Check Comparison Table
-    const reconTbody = document.getElementById('disc-modal-recon-tbody');
-    const reconBadge = document.getElementById('disc-modal-recon-badge');
-    const dateRecon = verif.dateReconciliation || [];
+  // Populate Date-by-Date Cross-Check Comparison Table
+  const reconTbody = document.getElementById('disc-modal-recon-tbody');
+  const reconBadge = document.getElementById('disc-modal-recon-badge');
+  const dateRecon = verif.dateReconciliation || [];
 
-    if (reconBadge) {
-      const exactMatches = dateRecon.filter(d => d.status === 'EXACT_MATCH').length;
-      reconBadge.textContent = `${dateRecon.length} dates checked • ${exactMatches} matched`;
-    }
-
-    if (reconTbody) {
-      if (dateRecon.length === 0) {
-        reconTbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center; padding:0.6rem;">No expense activity recorded on either side for this month.</td></tr>';
-      } else {
-        reconTbody.innerHTML = dateRecon.map(d => {
-          let statusBadge = '<span style="color:var(--text-muted);">—</span>';
-          let diffColor = '#94a3b8';
-          let diffSign = d.difference > 0 ? '+' : '';
-
-          if (d.status === 'EXACT_MATCH') {
-            statusBadge = '<span style="background:rgba(34,197,94,0.18); color:#4ade80; padding:2px 6px; border-radius:4px; font-weight:600; font-size:0.75rem;">✓ Matched</span>';
-            diffColor = '#4ade80';
-          } else if (d.status === 'AMOUNT_DIFF') {
-            statusBadge = '<span style="background:rgba(245,158,11,0.18); color:#fbbf24; padding:2px 6px; border-radius:4px; font-weight:600; font-size:0.75rem;">⚠ Amount Diff</span>';
-            diffColor = '#fbbf24';
-          } else if (d.status === 'APP_ONLY') {
-            statusBadge = '<span style="background:rgba(148,163,184,0.15); color:#94a3b8; padding:2px 6px; border-radius:4px; font-size:0.75rem;">📱 App Only</span>';
-            diffColor = '#f87171';
-          } else if (d.status === 'PDF_ONLY') {
-            statusBadge = '<span style="background:rgba(129,140,248,0.18); color:#a5b4fc; padding:2px 6px; border-radius:4px; font-size:0.75rem;">📄 PDF Only</span>';
-            diffColor = '#60a5fa';
-          }
-
-          return `
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-              <td style="padding:0.4rem 0.5rem; font-weight:600; color:#e2e8f0; white-space:nowrap;">
-                ${escapeHtml(d.date)}
-              </td>
-              <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:${d.appAmount > 0 ? '#f87171' : 'var(--text-muted)'};">
-                ${d.appAmount > 0 ? 'PKR ' + d.appAmount.toLocaleString() : '—'}
-                <div style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-sans);">${escapeHtml(d.appNotes || '')}</div>
-              </td>
-              <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:${d.pdfAmount > 0 ? '#6ee7b7' : 'var(--text-muted)'};">
-                ${d.pdfAmount > 0 ? 'PKR ' + d.pdfAmount.toLocaleString() : '—'}
-                <div style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-sans);">${escapeHtml(d.pdfDetails || '')}</div>
-              </td>
-              <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; font-weight:700; color:${diffColor};">
-                ${d.difference !== 0 ? diffSign + 'PKR ' + Math.abs(d.difference).toLocaleString() : 'PKR 0'}
-              </td>
-              <td style="padding:0.4rem 0.5rem; text-align:center; white-space:nowrap;">
-                ${statusBadge}
-              </td>
-            </tr>
-          `;
-        }).join('');
-      }
-    }
-
-    // Populate Unmatched PDF names dropdown
-    if (unmatchedSelect) {
-      const unmatched = (currentAccountsPdf && currentAccountsPdf.unmatchedPdfEntries) || [];
-      unmatchedSelect.innerHTML = '<option value="">-- Select an unmatched name from PDF to link --</option>';
-      unmatched.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.extractedName;
-        opt.textContent = `${u.extractedName} (PKR ${(u.totalAmount || 0).toLocaleString()})`;
-        unmatchedSelect.appendChild(opt);
-      });
-    }
-
-    if (modal) modal.classList.remove('hidden');
+  if (reconBadge) {
+    const exactMatches = dateRecon.filter(d => d.status === 'EXACT_MATCH' || d.status === 'INCLUDED').length;
+    reconBadge.textContent = `${dateRecon.length} dates checked • ${exactMatches} matched`;
   }
+
+  if (reconTbody) {
+    if (dateRecon.length === 0) {
+      reconTbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center; padding:0.6rem;">No date records available.</td></tr>';
+    } else {
+      reconTbody.innerHTML = dateRecon.map(d => {
+        let statusBadge = '<span style="color:var(--text-muted);">—</span>';
+        let diffColor = '#94a3b8';
+        let diffSign = d.difference > 0 ? '+' : '';
+
+        if (d.status === 'EXACT_MATCH' || d.status === 'INCLUDED') {
+          statusBadge = '<span style="background:rgba(34,197,94,0.18); color:#4ade80; padding:2px 6px; border-radius:4px; font-weight:600; font-size:0.75rem;">✓ Matched</span>';
+          diffColor = '#4ade80';
+        } else if (d.status === 'AMOUNT_DIFF' || d.status === 'MISMATCH') {
+          statusBadge = '<span style="background:rgba(245,158,11,0.18); color:#fbbf24; padding:2px 6px; border-radius:4px; font-weight:600; font-size:0.75rem;">⚠ Amount Diff</span>';
+          diffColor = '#fbbf24';
+        } else if (d.status === 'APP_ONLY') {
+          statusBadge = '<span style="background:rgba(148,163,184,0.15); color:#94a3b8; padding:2px 6px; border-radius:4px; font-size:0.75rem;">📱 App Only</span>';
+          diffColor = '#f87171';
+        } else {
+          statusBadge = '<span style="background:rgba(129,140,248,0.18); color:#a5b4fc; padding:2px 6px; border-radius:4px; font-size:0.75rem;">📄 Bank PDF</span>';
+          diffColor = '#60a5fa';
+        }
+
+        return `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+            <td style="padding:0.4rem 0.5rem; font-weight:600; color:#e2e8f0; white-space:nowrap;">
+              ${escapeHtml(d.date || '—')}
+            </td>
+            <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:${d.appAmount > 0 ? '#f87171' : 'var(--text-muted)'};">
+              ${d.appAmount > 0 ? 'PKR ' + d.appAmount.toLocaleString() : '—'}
+              <div style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-sans);">${escapeHtml(d.appNotes || '')}</div>
+            </td>
+            <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:${d.pdfAmount > 0 ? '#6ee7b7' : 'var(--text-muted)'};">
+              ${d.pdfAmount > 0 ? 'PKR ' + d.pdfAmount.toLocaleString() : '—'}
+              <div style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-sans);">${escapeHtml(d.pdfDetails || '')}</div>
+            </td>
+            <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; font-weight:700; color:${diffColor};">
+              ${d.difference !== 0 ? diffSign + 'PKR ' + Math.abs(d.difference).toLocaleString() : 'PKR 0'}
+            </td>
+            <td style="padding:0.4rem 0.5rem; text-align:center; white-space:nowrap;">
+              ${statusBadge}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  // Populate Unmatched PDF names dropdown
+  if (unmatchedSelect) {
+    const unmatched = (currentAccountsPdf && currentAccountsPdf.unmatchedPdfEntries) || [];
+    unmatchedSelect.innerHTML = '<option value="">-- Select an unmatched name from PDF to link --</option>';
+    unmatched.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.extractedName;
+      opt.textContent = `${u.extractedName} (PKR ${(u.totalAmount || 0).toLocaleString()})`;
+      unmatchedSelect.appendChild(opt);
+    });
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
 
 // Manual Mapping Save
 async function handleSaveManualMapping() {
@@ -5873,6 +6027,199 @@ async function handleSaveManualMapping() {
     } else {
       showToast('Error mapping employee: ' + err.message, 'error');
     }
+  }
+}
+
+// Salary Approval Modal & Confirmation Handlers
+let currentApprovingEmployeeId = null;
+
+async function openSalaryApprovalModal(employeeId) {
+  if (!adminPasscode) {
+    showToast('Admin authentication required to approve salaries.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
+
+  const emp = (currentSalaryEmployees || []).find(e => e.id === employeeId);
+  if (!emp) return;
+
+  currentApprovingEmployeeId = employeeId;
+
+  const verifResults = (currentAccountsPdf && currentAccountsPdf.verificationResults) || [];
+  const verif = verifResults.find(v => v.employeeId === employeeId) || {
+    bankCreditTotal: 0,
+    applicationTotal: 0,
+    difference: 0,
+    differenceDirection: 'Equal',
+    verificationStatus: 'NOT VERIFIED',
+    includedTransactionsCount: 0
+  };
+
+  const modal = document.getElementById('modal-salary-approval');
+  const empInfoEl = document.getElementById('sal-appr-emp-info');
+  const bankTotalEl = document.getElementById('sal-appr-bank-total');
+  const bankTxCountEl = document.getElementById('sal-appr-bank-tx-count');
+  const appTotalEl = document.getElementById('sal-appr-app-total');
+  const appBreakdownEl = document.getElementById('sal-appr-app-breakdown');
+  const diffAmtEl = document.getElementById('sal-appr-diff-amount');
+  const diffDirEl = document.getElementById('sal-appr-diff-dir');
+  const statusBadgeEl = document.getElementById('sal-appr-status-badge');
+  const amountInput = document.getElementById('sal-appr-amount-input');
+  const notesInput = document.getElementById('sal-appr-notes-input');
+  const existingBanner = document.getElementById('sal-appr-existing-banner');
+  const existingAmtEl = document.getElementById('sal-appr-existing-amt');
+  const existingMetaEl = document.getElementById('sal-appr-existing-meta');
+
+  if (empInfoEl) {
+    empInfoEl.textContent = `Employee: ${emp.name} (${emp.role || 'Staff'}) • Month: ${currentSalaryMonth}`;
+  }
+
+  const bankTotal = verif.bankCreditTotal !== undefined ? verif.bankCreditTotal : (verif.pdfExpense || 0);
+  const appTotal = verif.applicationTotal !== undefined ? verif.applicationTotal : (verif.appExpense || 0);
+  const diffVal = verif.difference !== undefined ? verif.difference : Math.abs(bankTotal - appTotal);
+
+  if (bankTotalEl) bankTotalEl.textContent = 'PKR ' + bankTotal.toLocaleString();
+  if (bankTxCountEl) bankTxCountEl.textContent = `${verif.includedTransactionsCount || 0} qualifying credit(s) in ${currentSalaryMonth}`;
+  if (appTotalEl) appTotalEl.textContent = 'PKR ' + appTotal.toLocaleString();
+  if (appBreakdownEl) {
+    const brk = verif.applicationBreakdown || {};
+    appBreakdownEl.textContent = `Earned: PKR ${(brk.totalEarned || appTotal).toLocaleString()} − Exp: PKR ${(brk.expenses || 0).toLocaleString()}`;
+  }
+  if (diffAmtEl) {
+    diffAmtEl.textContent = 'PKR ' + diffVal.toLocaleString();
+    diffAmtEl.style.color = Math.abs(diffVal) < 1.0 ? '#4ade80' : '#fbbf24';
+  }
+  if (diffDirEl) {
+    diffDirEl.textContent = verif.differenceDirection || (diffVal < 1.0 ? 'Equal' : 'Difference');
+  }
+
+  if (statusBadgeEl) {
+    if (verif.verificationStatus === 'VERIFIED / MATCHED' || verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
+      statusBadgeEl.innerHTML = '<span class="verif-badge verif-matched">✓ VERIFIED / MATCHED</span>';
+    } else if (verif.verificationStatus === 'MISMATCH' || verif.status === 'DISCREPANCY') {
+      statusBadgeEl.innerHTML = `<span class="verif-badge verif-discrepancy">⚠ MISMATCH (${verif.differenceDirection || 'Amount Diff'})</span>`;
+    } else {
+      statusBadgeEl.innerHTML = `<span class="verif-badge verif-notfound">? ${verif.verificationStatus || 'NOT VERIFIED'}</span>`;
+    }
+  }
+
+  // Check if already approved
+  const approval = verif.approval;
+  if (approval && approval.approvalStatus === 'APPROVED') {
+    if (existingBanner) existingBanner.classList.remove('hidden');
+    if (existingAmtEl) existingAmtEl.textContent = 'PKR ' + (approval.approvedAmount || 0).toLocaleString();
+    if (existingMetaEl) {
+      const d = approval.approvedAt ? new Date(approval.approvedAt).toLocaleString() : '—';
+      existingMetaEl.textContent = `Approved by ${approval.approvedBy || 'Admin'} on ${d}${approval.notes ? ' • Notes: ' + approval.notes : ''}`;
+    }
+    if (amountInput) amountInput.value = approval.approvedAmount;
+    if (notesInput) notesInput.value = approval.notes || '';
+  } else {
+    if (existingBanner) existingBanner.classList.add('hidden');
+    if (amountInput) {
+      amountInput.value = (bankTotal > 0) ? bankTotal : (appTotal > 0 ? appTotal : '');
+    }
+    if (notesInput) notesInput.value = '';
+  }
+
+  // Quick-fill buttons
+  const btnUseBank = document.getElementById('btn-use-bank-total');
+  if (btnUseBank) {
+    btnUseBank.onclick = () => { if (amountInput) amountInput.value = bankTotal; };
+  }
+  const btnUseApp = document.getElementById('btn-use-app-total');
+  if (btnUseApp) {
+    btnUseApp.onclick = () => { if (amountInput) amountInput.value = appTotal; };
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+async function handleConfirmSalaryApproval() {
+  if (!adminPasscode) {
+    showToast('Admin authentication required.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
+
+  if (!currentApprovingEmployeeId || !currentSalaryMonth) {
+    showToast('Missing employee or month.', 'error');
+    return;
+  }
+
+  const emp = (currentSalaryEmployees || []).find(e => e.id === currentApprovingEmployeeId);
+  const verifResults = (currentAccountsPdf && currentAccountsPdf.verificationResults) || [];
+  const verif = verifResults.find(v => v.employeeId === currentApprovingEmployeeId) || {};
+
+  const amountInput = document.getElementById('sal-appr-amount-input');
+  const notesInput = document.getElementById('sal-appr-notes-input');
+
+  const amt = parseFloat(amountInput ? amountInput.value : 0);
+  if (isNaN(amt) || amt < 0) {
+    showToast('Please enter a valid positive approval amount.', 'warning');
+    if (amountInput) amountInput.focus();
+    return;
+  }
+
+  const notes = notesInput ? notesInput.value.trim() : '';
+
+  try {
+    showToast('Saving approval...', 'info');
+    const res = await API.approveSalary({
+      employeeId: currentApprovingEmployeeId,
+      employeeName: emp ? emp.name : '',
+      salaryMonth: currentSalaryMonth,
+      bankTotal: verif.bankCreditTotal || 0,
+      applicationTotal: verif.applicationTotal || 0,
+      difference: verif.difference || 0,
+      approvedAmount: amt,
+      notes,
+      verificationRecordId: currentAccountsPdf ? currentAccountsPdf.id : null,
+      adminUser: 'Admin'
+    });
+
+    if (res && res.success) {
+      showToast(`✅ Salary approved for ${emp ? emp.name : 'employee'}: PKR ${amt.toLocaleString()}`, 'success');
+      const modal = document.getElementById('modal-salary-approval');
+      if (modal) modal.classList.add('hidden');
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to approve salary', 'error');
+    }
+  } catch (err) {
+    showToast('Error approving salary: ' + err.message, 'error');
+  }
+}
+
+async function handleRevokeSalaryApproval() {
+  if (!adminPasscode) {
+    showToast('Admin authentication required.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
+
+  if (!currentApprovingEmployeeId || !currentSalaryMonth) return;
+
+  const emp = (currentSalaryEmployees || []).find(e => e.id === currentApprovingEmployeeId);
+  const empName = emp ? emp.name : 'this employee';
+
+  if (!confirm(`Are you sure you want to revoke the salary approval for ${empName} for ${currentSalaryMonth}?`)) {
+    return;
+  }
+
+  try {
+    showToast('Revoking approval...', 'info');
+    const res = await API.revokeSalaryApproval(currentApprovingEmployeeId, currentSalaryMonth, 'Revoked by admin');
+    if (res && res.success) {
+      showToast(`Approval revoked for ${empName}.`, 'info');
+      const modal = document.getElementById('modal-salary-approval');
+      if (modal) modal.classList.add('hidden');
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to revoke approval', 'error');
+    }
+  } catch (err) {
+    showToast('Error revoking approval: ' + err.message, 'error');
   }
 }
 

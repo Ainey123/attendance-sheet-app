@@ -80,11 +80,12 @@ function loadLocalData() {
         employeeEvaluations: file.employeeEvaluations || [],
         comments: file.comments || [],
         salaries: file.salaries || [],
-        accountsPdfs: file.accountsPdfs || []
+        accountsPdfs: file.accountsPdfs || [],
+        salaryApprovals: file.salaryApprovals || []
       };
     }
   } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [] };
+  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [] };
 }
 
 function saveLocalData(data) {
@@ -2107,6 +2108,9 @@ const db = {
 
     const employees = await this.getEmployees(false);
     const appExpensesMap = await this.getAppExpensesMap(month);
+    const salaries = await this.getAllSalaries(month);
+    const salariesMap = {};
+    (salaries || []).forEach(s => { salariesMap[s.employeeId] = s; });
 
     let existing = null;
     if (!useLocalFallback && supabase) {
@@ -2128,7 +2132,8 @@ const db = {
       employees,
       appExpensesMap,
       manualMappings,
-      month
+      month,
+      salariesMap
     );
 
     const nowIso = new Date().toISOString();
@@ -2248,14 +2253,37 @@ const db = {
 
     const employees = await this.getEmployees(false);
     const appExpensesMap = await this.getAppExpensesMap(month);
+    const salaries = await this.getAllSalaries(month);
+    const salariesMap = {};
+    (salaries || []).forEach(s => { salariesMap[s.employeeId] = s; });
 
     const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
       pdfRecord.extractedData || [],
       employees,
       appExpensesMap,
       pdfRecord.manualMappings || {},
-      month
+      month,
+      salariesMap
     );
+
+    // Merge existing salary approvals for this month
+    const approvals = await this.getSalaryApprovals(month);
+    const approvalsMap = {};
+    approvals.forEach(a => { approvalsMap[a.employeeId] = a; });
+
+    verificationResults.forEach(r => {
+      const app = approvalsMap[r.employeeId];
+      if (app) {
+        r.approval = app;
+        r.approvalStatus = app.approvalStatus || 'APPROVED';
+        r.approvedAmount = app.approvedAmount;
+        r.approvedBy = app.approvedBy;
+        r.approvedAt = app.approvedAt;
+      } else {
+        r.approval = null;
+        r.approvalStatus = 'NOT_APPROVED';
+      }
+    });
 
     pdfRecord.verificationResults = verificationResults;
     pdfRecord.unmatchedPdfEntries = unmatchedPdfEntries;
@@ -2328,6 +2356,157 @@ const db = {
         await supabase.from('accounts_pdfs').delete().eq('salaryMonth', month);
       } catch (e) {}
     }
+    return true;
+  },
+
+  // ─── Salary Approval & Verification Methods ─────────────────────────────────
+
+  async approveSalary({ employeeId, employeeName, salaryMonth, bankTotal, applicationTotal, difference, approvedAmount, notes, verificationRecordId, adminUser = 'Admin' }) {
+    if (!employeeId || !salaryMonth) {
+      throw new Error('employeeId and salaryMonth are required');
+    }
+    const amt = parseFloat(approvedAmount);
+    if (isNaN(amt) || amt < 0) {
+      throw new Error('Valid approvedAmount is required');
+    }
+
+    const nowIso = new Date().toISOString();
+    const data = loadLocalData();
+    if (!data.salaryApprovals) data.salaryApprovals = [];
+
+    let existing = data.salaryApprovals.find(a => a.employeeId === employeeId && a.salaryMonth === salaryMonth);
+    const auditEntry = {
+      action: existing ? 'UPDATED' : 'APPROVED',
+      oldAmount: existing ? existing.approvedAmount : null,
+      approvedAmount: amt,
+      by: adminUser,
+      at: nowIso,
+      notes: notes || ''
+    };
+
+    if (existing) {
+      existing.employeeName = employeeName || existing.employeeName;
+      existing.bankTotal = Number(bankTotal) !== undefined ? Number(bankTotal) : existing.bankTotal;
+      existing.applicationTotal = Number(applicationTotal) !== undefined ? Number(applicationTotal) : existing.applicationTotal;
+      existing.difference = Number(difference) !== undefined ? Number(difference) : existing.difference;
+      existing.approvedAmount = amt;
+      existing.approvalStatus = 'APPROVED';
+      existing.approvedBy = adminUser;
+      existing.approvedAt = nowIso;
+      existing.notes = notes || existing.notes;
+      existing.verificationRecordId = verificationRecordId || existing.verificationRecordId;
+      existing.updatedAt = nowIso;
+      if (!existing.auditLog) existing.auditLog = [];
+      existing.auditLog.push(auditEntry);
+    } else {
+      existing = {
+        id: generateId('appr'),
+        employeeId,
+        employeeName: employeeName || '',
+        salaryMonth,
+        bankTotal: Number(bankTotal) || 0,
+        applicationTotal: Number(applicationTotal) || 0,
+        difference: Number(difference) || 0,
+        approvedAmount: amt,
+        approvalStatus: 'APPROVED',
+        approvedBy: adminUser,
+        approvedAt: nowIso,
+        verificationRecordId: verificationRecordId || null,
+        notes: notes || '',
+        auditLog: [auditEntry],
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      data.salaryApprovals.push(existing);
+    }
+
+    saveLocalData(data);
+
+    // Sync to Supabase
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('salary_approvals').upsert({
+          id: existing.id,
+          employeeId: existing.employeeId,
+          employeeName: existing.employeeName,
+          salaryMonth: existing.salaryMonth,
+          bankTotal: existing.bankTotal,
+          applicationTotal: existing.applicationTotal,
+          difference: existing.difference,
+          approvedAmount: existing.approvedAmount,
+          approvalStatus: existing.approvalStatus,
+          approvedBy: existing.approvedBy,
+          approvedAt: existing.approvedAt,
+          verificationRecordId: existing.verificationRecordId,
+          notes: existing.notes,
+          auditLog: existing.auditLog,
+          createdAt: existing.createdAt,
+          updatedAt: existing.updatedAt
+        });
+      } catch (err) {
+        console.warn('Supabase salary_approvals sync notice:', err.message);
+      }
+    }
+
+    return existing;
+  },
+
+  async getSalaryApprovals(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    let list = [];
+    if (!useLocalFallback && supabase) {
+      try {
+        const { data, error } = await supabase.from('salary_approvals').select('*').eq('salaryMonth', month);
+        if (data && !error && data.length > 0) {
+          list = data;
+        }
+      } catch (e) {}
+    }
+
+    if (list.length === 0) {
+      const localData = loadLocalData();
+      list = (localData.salaryApprovals || []).filter(a => a.salaryMonth === month);
+    }
+
+    return list;
+  },
+
+  async getSalaryApproval(employeeId, month) {
+    const list = await this.getSalaryApprovals(month);
+    return list.find(a => a.employeeId === employeeId) || null;
+  },
+
+  async revokeSalaryApproval(employeeId, month, reason = '', adminUser = 'Admin') {
+    const nowIso = new Date().toISOString();
+    const data = loadLocalData();
+    const existing = (data.salaryApprovals || []).find(a => a.employeeId === employeeId && a.salaryMonth === month);
+    if (!existing) return true;
+
+    existing.approvalStatus = 'REVOKED';
+    existing.updatedAt = nowIso;
+    if (!existing.auditLog) existing.auditLog = [];
+    existing.auditLog.push({
+      action: 'REVOKED',
+      by: adminUser,
+      at: nowIso,
+      reason
+    });
+    saveLocalData(data);
+
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('salary_approvals').update({
+          approvalStatus: 'REVOKED',
+          auditLog: existing.auditLog,
+          updatedAt: nowIso
+        }).eq('employeeId', employeeId).eq('salaryMonth', month);
+      } catch (e) {}
+    }
+
     return true;
   }
 };

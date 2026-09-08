@@ -495,6 +495,49 @@ module.exports = async (req, res) => {
       return res.json({ success: true, details: data });
     }
 
+    // ── Salary Approval Routes ────────────────────────────────────────────────
+    if (path === 'salary/approvals' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const approvals = await db.getSalaryApprovals(query.month);
+      return res.json({ success: true, approvals });
+    }
+
+    if (path === 'salary/approve' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      try {
+        const approval = await db.approveSalary({
+          employeeId: body.employeeId,
+          employeeName: body.employeeName,
+          salaryMonth: body.salaryMonth || body.month,
+          bankTotal: body.bankTotal,
+          applicationTotal: body.applicationTotal,
+          difference: body.difference,
+          approvedAmount: body.approvedAmount,
+          notes: body.notes,
+          verificationRecordId: body.verificationRecordId,
+          adminUser: body.adminUser || 'Admin'
+        });
+        return res.json({ success: true, approval });
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+
+    if (path === 'salary/approve' && method === 'DELETE') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req).catch(() => ({}));
+      const employeeId = query.employeeId || body.employeeId;
+      const month = query.month || body.month || body.salaryMonth;
+      const reason = query.reason || body.reason || '';
+      if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+      await db.revokeSalaryApproval(employeeId, month, reason, 'Admin');
+      return res.json({ success: true });
+    }
+
     // ── GET /api/salary/:employeeId (Generic fallback for single employee salary) ──
     if (path.startsWith('salary/') && method === 'GET') {
       const settings = await db.getSettings();
