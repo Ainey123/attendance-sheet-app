@@ -772,11 +772,22 @@ const db = {
     }
 
     const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
-    const attendanceLogs = (data.attendance || []).filter(a =>
+    
+    const [allAttendance, allWorkRecords, employees] = await Promise.all([
+      this.getAttendance().catch(() => []),
+      this.getWorkRecords(null, month).catch(() => []),
+      this.getEmployees(true).catch(() => [])
+    ]);
+
+    const attendanceLogs = (allAttendance || []).filter(a =>
       a.date && a.date.startsWith(month) && !isLeave(a)
     );
 
     const map = {};
+
+    (employees || []).forEach(emp => {
+      map[emp.id] = { totalExpense: 0, entries: [] };
+    });
 
     attendanceLogs.forEach(a => {
       const empId = a.employeeId;
@@ -793,31 +804,24 @@ const db = {
       }
     });
 
-    const employees = await this.getEmployees(true);
-    for (const emp of employees) {
-      if (!map[emp.id]) map[emp.id] = { totalExpense: 0, entries: [] };
-      let wrList = [];
-      try {
-        wrList = await this.getWorkRecords(emp.id, month);
-      } catch (e) {
-        wrList = [];
-      }
-      (wrList || []).forEach(wr => {
-        const exp = Number(wr.expenseAmount) || 0;
-        if (exp > 0) {
-          const alreadyAdded = map[emp.id].entries.some(e => e.date === wr.date && e.amount === exp);
-          if (!alreadyAdded) {
-            map[emp.id].totalExpense += exp;
-            map[emp.id].entries.push({
-              date: wr.date,
-              amount: exp,
-              description: wr.performedWork || 'Work Record Expense',
-              source: 'Work Record'
-            });
-          }
+    (allWorkRecords || []).forEach(wr => {
+      const empId = wr.employeeId;
+      if (!empId) return;
+      if (!map[empId]) map[empId] = { totalExpense: 0, entries: [] };
+      const exp = Number(wr.expenseAmount) || 0;
+      if (exp > 0) {
+        const alreadyAdded = map[empId].entries.some(e => e.date === wr.date && e.amount === exp);
+        if (!alreadyAdded) {
+          map[empId].totalExpense += exp;
+          map[empId].entries.push({
+            date: wr.date,
+            amount: exp,
+            description: wr.performedWork || 'Work Record Expense',
+            source: 'Work Record'
+          });
         }
-      });
-    }
+      }
+    });
 
     return map;
   },

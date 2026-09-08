@@ -4,7 +4,17 @@ const db = require('../db');
 // Parse request body
 function parseBody(req) {
   return new Promise((resolve) => {
-    if (req.body && typeof req.body === 'object') return resolve(req.body);
+    if (req.body) {
+      if (typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return resolve(req.body);
+      if (typeof req.body === 'string') {
+        try { return resolve(JSON.parse(req.body)); }
+        catch { return resolve({}); }
+      }
+      if (Buffer.isBuffer(req.body)) {
+        try { return resolve(JSON.parse(req.body.toString('utf8'))); }
+        catch { return resolve({}); }
+      }
+    }
     let data = '';
     req.on('data', chunk => { data += chunk; });
     req.on('end', () => {
@@ -379,13 +389,6 @@ module.exports = async (req, res) => {
       return res.json({ success: true, salaries: records });
     }
 
-    // ── GET /api/salary/:employeeId ──────────────────────────────────────────
-    if (path.startsWith('salary/') && method === 'GET') {
-      const empId = path.replace('salary/', '');
-      const record = await db.getSalaryRecord(empId, query.month || null);
-      return res.json({ success: true, salary: record });
-    }
-
     // ── POST /api/salary/set-basic ───────────────────────────────────────────
     if (path === 'salary/set-basic' && method === 'POST') {
       const settings = await db.getSettings();
@@ -480,6 +483,15 @@ module.exports = async (req, res) => {
       const map = await db.getAppExpensesMap(month);
       const data = map[employeeId] || { totalExpense: 0, entries: [] };
       return res.json({ success: true, details: data });
+    }
+
+    // ── GET /api/salary/:employeeId (Generic fallback for single employee salary) ──
+    if (path.startsWith('salary/') && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const empId = path.replace('salary/', '');
+      const record = await db.getSalaryRecord(empId, query.month || null);
+      return res.json({ success: true, salary: record });
     }
 
     // ── 404 fallback ──────────────────────────────────────────────────────────

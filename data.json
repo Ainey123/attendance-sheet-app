@@ -160,7 +160,29 @@
       "submittedAt": "2026-07-06T06:46:38.273+00:00"
     }
   ],
+  "employeeEvaluations": [],
   "comments": [],
-  "salaries": [],
+  "salaries": [
+    {
+      "id": "sal_mts7kat0_sg8iv",
+      "employeeId": "emp_dummy_123",
+      "employeeName": "emp_dummy_123",
+      "role": "Staff",
+      "month": "2026-09",
+      "basicSalary": 0,
+      "generatedAt": "2026-09-08T05:08:20.994Z",
+      "totalDaysInMonth": 30,
+      "workingDays": 30,
+      "regularPresentDays": 0,
+      "sundayPresentDays": 0,
+      "presentDays": 0,
+      "perDaySalary": 0,
+      "regularEarned": 0,
+      "sundayBonus": 0,
+      "earnedSalary": 0,
+      "totalExpenses": 0,
+      "netSalary": 0
+    }
+  ],
   "accountsPdfs": []
 }

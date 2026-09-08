@@ -562,52 +562,6 @@ app.get('/api/salary', checkAdminAuth, async (req, res) => {
   }
 });
 
-// GET /api/salary/:employeeId?month=YYYY-MM
-app.get('/api/salary/:employeeId', checkAdminAuth, async (req, res) => {
-  try {
-    const record = await db.getSalaryRecord(req.params.employeeId, req.query.month || null);
-    res.json({ success: true, salary: record });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/salary/set-basic — admin sets basic salary
-app.post('/api/salary/set-basic', checkAdminAuth, async (req, res) => {
-  try {
-    const { employeeId, month, basicSalary } = req.body;
-    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
-    const rec = await db.setSalaryBasic(employeeId, month, basicSalary || 0);
-    res.json({ success: true, salary: rec });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/salary/generate — generate/recalculate salary for one employee
-app.post('/api/salary/generate', checkAdminAuth, async (req, res) => {
-  try {
-    const { employeeId, month } = req.body;
-    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
-    const rec = await db.generateSalary(employeeId, month);
-    res.json({ success: true, salary: rec });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/salary/generate-all — generate salary for every active employee
-app.post('/api/salary/generate-all', checkAdminAuth, async (req, res) => {
-  try {
-    const { month } = req.body;
-    if (!month) return res.status(400).json({ error: 'month required' });
-    const results = await db.generateAllSalaries(month);
-    res.json({ success: true, salaries: results });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── Accounts PDF Verification API Routes ─────────────────────────────────────
 
 // GET /api/salary/accounts-pdf?month=YYYY-MM
@@ -696,6 +650,16 @@ app.get('/api/salary/employee-expenses-detail', checkAdminAuth, async (req, res)
     const map = await db.getAppExpensesMap(month);
     const data = map[employeeId] || { totalExpense: 0, entries: [] };
     res.json({ success: true, details: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/salary/:employeeId?month=YYYY-MM (Generic fallback for single employee salary)
+app.get('/api/salary/:employeeId', checkAdminAuth, async (req, res) => {
+  try {
+    const record = await db.getSalaryRecord(req.params.employeeId, req.query.month || null);
+    res.json({ success: true, salary: record });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
