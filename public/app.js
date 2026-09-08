@@ -3632,7 +3632,7 @@ function initMonthlySummaryTab() {
     monthInput.value = getCurrentMonthString();
   }
 
-  const btnTriggerUpload = document.getElementById('btn-trigger-pdf-upload');
+  const btnTriggerUpload = document.getElementById('btn-trigger-summary-pdf');
   const fileInput = document.getElementById('summary-pdf-upload');
   const dropzone = document.getElementById('pdf-upload-dropzone');
   const btnGenerate = document.getElementById('btn-generate-monthly-summary');
@@ -5098,43 +5098,63 @@ function initSalaryTab() {
   if (btnPrint) btnPrint.addEventListener('click', printSalarySheet);
 
   // Accounts PDF Handlers
-  const btnTriggerUpload = document.getElementById('btn-trigger-pdf-upload');
+  const btnTriggerUpload = document.getElementById('btn-upload-accounts-pdf');
   const fileInput = document.getElementById('accounts-pdf-file-input');
+  const uploadZone = document.getElementById('accounts-pdf-upload-zone');
+
   if (btnTriggerUpload && fileInput) {
-    btnTriggerUpload.addEventListener('click', () => {
-      isReplacingAccountsPdf = false;
-      fileInput.click();
-    });
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) {
-        handleAccountsPdfUpload(file, isReplacingAccountsPdf);
-        fileInput.value = ''; // reset
+    btnTriggerUpload.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!adminPasscode) {
+        showToast('You do not have permission to upload Accounts PDFs. Please unlock Admin mode first.', 'warning');
+        openAdminAuthModal();
+        return;
       }
+      isReplacingAccountsPdf = false;
+      fileInput.value = '';
+      fileInput.click();
     });
   }
 
-  // Drag & drop onto upload zone
-  const uploadZone = document.getElementById('accounts-pdf-upload-zone');
-  if (uploadZone) {
+  if (uploadZone && fileInput) {
+    uploadZone.addEventListener('click', (e) => {
+      if (e.target !== btnTriggerUpload && !e.target.closest('#btn-upload-accounts-pdf')) {
+        if (!adminPasscode) {
+          showToast('You do not have permission to upload Accounts PDFs. Please unlock Admin mode first.', 'warning');
+          openAdminAuthModal();
+          return;
+        }
+        isReplacingAccountsPdf = false;
+        fileInput.value = '';
+        fileInput.click();
+      }
+    });
+
     uploadZone.addEventListener('dragover', (e) => {
       e.preventDefault();
       uploadZone.style.borderColor = 'var(--color-indigo)';
       uploadZone.style.background = 'rgba(99,102,241,0.12)';
     });
     uploadZone.addEventListener('dragleave', () => {
-      uploadZone.style.borderColor = 'rgba(99,102,241,0.35)';
+      uploadZone.style.borderColor = 'rgba(99,102,241,0.4)';
       uploadZone.style.background = 'rgba(99,102,241,0.04)';
     });
     uploadZone.addEventListener('drop', (e) => {
       e.preventDefault();
-      uploadZone.style.borderColor = 'rgba(99,102,241,0.35)';
+      uploadZone.style.borderColor = 'rgba(99,102,241,0.4)';
       uploadZone.style.background = 'rgba(99,102,241,0.04)';
       const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file && file.type === 'application/pdf') {
+      if (file) {
         handleAccountsPdfUpload(file, false);
-      } else {
-        showToast('Please upload a valid PDF document.', 'warning');
+      }
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        handleAccountsPdfUpload(file, isReplacingAccountsPdf);
       }
     });
   }
@@ -5391,11 +5411,15 @@ async function loadSalarySheet(monthOverride) {
 // Render Accounts PDF Panel & Summary Cards
 function renderAccountsPdfPanel(pdf) {
   const uploadZone = document.getElementById('accounts-pdf-upload-zone');
+  const idleContent = document.getElementById('accounts-pdf-idle-content');
+  const progressBox = document.getElementById('accounts-pdf-upload-progress');
   const activeView = document.getElementById('accounts-pdf-active-view');
   const badgeContainer = document.getElementById('accounts-pdf-status-badge');
 
   if (!pdf) {
     if (uploadZone) uploadZone.style.display = 'block';
+    if (idleContent) idleContent.style.display = 'block';
+    if (progressBox) progressBox.style.display = 'none';
     if (activeView) activeView.style.display = 'none';
     if (badgeContainer) {
       badgeContainer.innerHTML = '<span class="status-indicator" style="background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); font-size:0.78rem;">No PDF Uploaded</span>';
@@ -5453,20 +5477,71 @@ function renderAccountsPdfPanel(pdf) {
 // Upload Accounts PDF
 async function handleAccountsPdfUpload(file, replace = false) {
   if (!file) return;
+
   if (!adminPasscode) {
-    showToast('Please authenticate as Admin first.', 'warning');
+    showToast('You do not have permission to upload Accounts PDFs. Please unlock Admin mode first.', 'warning');
     openAdminAuthModal();
     return;
   }
+
   if (!currentSalaryMonth) {
     showToast('Please select a salary month first.', 'warning');
     return;
   }
 
+  // 1. File Type Validation: accept only PDFs
+  const isPdf = (file.type === 'application/pdf') || file.name.toLowerCase().endsWith('.pdf');
+  if (!isPdf) {
+    showToast('Please select a PDF file.', 'warning');
+    return;
+  }
+
+  // 2. File Size Validation (35MB max)
+  const MAX_FILE_SIZE_MB = 35;
+  if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+    showToast(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed PDF size is ${MAX_FILE_SIZE_MB}MB.`, 'error');
+    return;
+  }
+
+  // 3. UI State: Show uploading state in drop zone
+  const idleContent = document.getElementById('accounts-pdf-idle-content');
+  const progressBox = document.getElementById('accounts-pdf-upload-progress');
+  const filenameEl = document.getElementById('accounts-pdf-upload-filename');
+  const statusEl = document.getElementById('accounts-pdf-upload-status');
+  const iconEl = document.getElementById('accounts-pdf-upload-icon');
+
+  if (idleContent) idleContent.style.display = 'none';
+  if (progressBox) progressBox.style.display = 'block';
+  if (filenameEl) filenameEl.textContent = file.name;
+  if (iconEl) iconEl.textContent = '⏳';
+  if (statusEl) {
+    statusEl.innerHTML = `
+      <span class="spinner" style="display:inline-block; width:13px; height:13px; border:2px solid rgba(129,140,248,0.3); border-top-color:#818cf8; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:5px;"></span>
+      Uploading PDF...
+    `;
+  }
+
+  showToast(`Uploading ${file.name}...`, 'info');
+
   const reader = new FileReader();
+  reader.onerror = () => {
+    showToast('Failed to read file from disk.', 'error');
+    if (idleContent) idleContent.style.display = 'block';
+    if (progressBox) progressBox.style.display = 'none';
+  };
+
   reader.onload = async () => {
     const base64Data = reader.result;
-    showToast(`Processing & verifying ${file.name}...`, 'info');
+
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <span style="color:#34d399; font-weight:600;">✓ PDF Uploaded</span> • 
+        <span style="color:#818cf8;">Processing & verifying...</span>
+      `;
+    }
+    if (iconEl) iconEl.textContent = '🔍';
+    showToast(`✓ PDF Uploaded. Processing & verifying expenses for ${currentSalaryMonth}...`, 'info');
+
     try {
       const res = await API.uploadAccountsPdf({
         month: currentSalaryMonth,
@@ -5474,21 +5549,32 @@ async function handleAccountsPdfUpload(file, replace = false) {
         pdfBase64: base64Data,
         replace
       });
+
       if (res && res.success) {
-        showToast('✅ Accounts PDF parsed & verified successfully!', 'success');
+        if (statusEl) {
+          statusEl.innerHTML = `<span style="color:#34d399; font-weight:700;">✓ PDF Processed</span>`;
+        }
+        if (iconEl) iconEl.textContent = '✅';
+        showToast('✓ PDF Processed & expenses verified!', 'success');
         await loadSalarySheet(currentSalaryMonth);
       } else {
-        showToast((res && res.error) || 'Failed to process Accounts PDF', 'error');
+        const errMsg = (res && res.error) || 'Failed to process Accounts PDF';
+        showToast(errMsg, 'error');
+        if (idleContent) idleContent.style.display = 'block';
+        if (progressBox) progressBox.style.display = 'none';
       }
     } catch (err) {
       if (err.message && err.message.includes('Unauthorized')) {
-        showToast('Admin session expired. Please unlock Admin mode again.', 'error');
+        showToast('You do not have permission to upload Accounts PDFs. Please unlock Admin mode first.', 'error');
         openAdminAuthModal();
       } else {
         showToast('Error uploading Accounts PDF: ' + err.message, 'error');
       }
+      if (idleContent) idleContent.style.display = 'block';
+      if (progressBox) progressBox.style.display = 'none';
     }
   };
+
   reader.readAsDataURL(file);
 }
 
