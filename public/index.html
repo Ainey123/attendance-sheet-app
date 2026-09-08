@@ -1414,7 +1414,7 @@
             </div>
 
             <!-- Salary Info Cards -->
-            <div id="salary-info-cards" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:1.5rem;">
+            <div id="salary-info-cards" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:1.25rem;">
               <div class="stat-card" style="padding:1rem;">
                 <div class="stat-info">
                   <span class="stat-label">Month</span>
@@ -1441,6 +1441,84 @@
               </div>
             </div>
 
+            <!-- ACCOUNTS PDF VERIFICATION PANEL -->
+            <div id="accounts-pdf-panel" class="panel" style="margin-bottom:1.5rem; background:rgba(15,23,42,0.65); border:1px solid var(--border-color); border-radius:12px; padding:1.25rem 1.5rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.75rem;">
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                  <span style="font-size:1.3rem;">📄</span>
+                  <div>
+                    <h3 style="margin:0; font-size:1.05rem; font-weight:700; color:#fff;">Accounts Department PDF Verification</h3>
+                    <p style="margin:0.15rem 0 0; font-size:0.8rem; color:var(--text-muted);">Compare employee clock-out expenses against Accounts Department records for this month</p>
+                  </div>
+                </div>
+                <div id="accounts-pdf-status-badge">
+                  <span class="status-indicator" style="background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); font-size:0.78rem;">No PDF Uploaded</span>
+                </div>
+              </div>
+
+              <!-- Upload Area (Shown when no PDF) -->
+              <div id="accounts-pdf-upload-zone" style="display:block; border:2px dashed rgba(99,102,241,0.35); background:rgba(99,102,241,0.04); border-radius:10px; padding:1.25rem; text-align:center; transition:all 0.2s ease;">
+                <input type="file" id="accounts-pdf-file-input" accept="application/pdf" style="display:none;" />
+                <p style="margin:0 0 0.75rem; font-size:0.88rem; color:var(--text-secondary);">
+                  Upload the official monthly Accounts PDF to auto-verify expenses.
+                </p>
+                <button type="button" id="btn-trigger-pdf-upload" class="btn btn-primary" style="padding:0.45rem 1.25rem; font-size:0.88rem;">
+                  📤 Upload Accounts PDF
+                </button>
+              </div>
+
+              <!-- Metadata & Actions Bar (Shown when PDF uploaded) -->
+              <div id="accounts-pdf-active-view" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; padding:0.75rem 1rem; background:rgba(0,0,0,0.25); border:1px solid var(--border-color); border-radius:8px; margin-bottom:1rem;">
+                  <div>
+                    <div style="font-weight:600; font-size:0.92rem; color:#fff;" id="acc-pdf-file-name">Accounts_Expenses.pdf</div>
+                    <div style="font-size:0.78rem; color:var(--text-muted);" id="acc-pdf-meta">Uploaded: — &bull; By: Admin</div>
+                  </div>
+                  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                    <button type="button" id="btn-view-accounts-pdf" class="btn btn-secondary" style="padding:0.35rem 0.85rem; font-size:0.82rem;">
+                      👁️ View PDF
+                    </button>
+                    <button type="button" id="btn-replace-accounts-pdf" class="btn btn-secondary" style="padding:0.35rem 0.85rem; font-size:0.82rem;">
+                      🔄 Replace PDF
+                    </button>
+                    <button type="button" id="btn-reverify-accounts-pdf" class="btn btn-secondary" style="padding:0.35rem 0.85rem; font-size:0.82rem;">
+                      🔍 Re-Verify
+                    </button>
+                    <button type="button" id="btn-remove-accounts-pdf" class="btn btn-danger" style="padding:0.35rem 0.75rem; font-size:0.82rem;">
+                      🗑️ Remove
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Verification Summary Metric Chips -->
+                <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.75rem; margin-bottom:0.75rem;">
+                  <div style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.25); border-radius:8px; padding:0.6rem 0.85rem; text-align:center;">
+                    <span style="font-size:0.75rem; color:#86efac; text-transform:uppercase; font-weight:600;">✓ Matched</span>
+                    <div id="acc-stat-matched" style="font-size:1.25rem; font-weight:700; color:#22c55e;">0</div>
+                  </div>
+                  <div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.25); border-radius:8px; padding:0.6rem 0.85rem; text-align:center;">
+                    <span style="font-size:0.75rem; color:#fcd34d; text-transform:uppercase; font-weight:600;">⚠ Discrepancies</span>
+                    <div id="acc-stat-discrepancies" style="font-size:1.25rem; font-weight:700; color:#f59e0b;">0</div>
+                  </div>
+                  <div style="background:rgba(148,163,184,0.1); border:1px solid rgba(148,163,184,0.25); border-radius:8px; padding:0.6rem 0.85rem; text-align:center;">
+                    <span style="font-size:0.75rem; color:#cbd5e1; text-transform:uppercase; font-weight:600;">! Not In PDF</span>
+                    <div id="acc-stat-notfound" style="font-size:1.25rem; font-weight:700; color:#94a3b8;">0</div>
+                  </div>
+                  <div style="background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:0.6rem 0.85rem; text-align:center;">
+                    <span style="font-size:0.75rem; color:#a5b4fc; text-transform:uppercase; font-weight:600;">? Unmatched PDF</span>
+                    <div id="acc-stat-unmatched" style="font-size:1.25rem; font-weight:700; color:#818cf8;">0</div>
+                  </div>
+                </div>
+
+                <!-- Financial Totals Line -->
+                <div style="font-size:0.83rem; color:var(--text-secondary); background:rgba(0,0,0,0.2); padding:0.5rem 0.85rem; border-radius:6px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+                  <span>App Expenses: <strong id="acc-stat-app-total" style="color:#fff;">PKR 0</strong></span>
+                  <span>Accounts PDF Expenses: <strong id="acc-stat-pdf-total" style="color:#fff;">PKR 0</strong></span>
+                  <span>Total Difference: <strong id="acc-stat-diff-total" style="color:#f59e0b;">PKR 0</strong></span>
+                </div>
+              </div>
+            </div>
+
             <!-- Salary Table -->
             <div id="salary-table-wrapper" style="overflow-x:auto; border-radius:12px; border:1px solid var(--border-color);">
               <div id="salary-sheet-printable">
@@ -1454,7 +1532,7 @@
                   </div>
                 </div>
 
-                <table class="admin-table" id="salary-sheet-table" style="width:100%; min-width:1000px;">
+                <table class="admin-table" id="salary-sheet-table" style="width:100%; min-width:1200px;">
                   <thead>
                     <tr>
                       <th style="width:36px;">SR</th>
@@ -1469,11 +1547,15 @@
                       <th>Total Salary</th>
                       <th>Expenses (−)</th>
                       <th>Net Salary</th>
+                      <!-- New Accounts PDF Verification Columns -->
+                      <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Accounts PDF Exp</th>
+                      <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Difference</th>
+                      <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Verification Status</th>
                       <th class="no-print">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="salary-table-body">
-                    <tr><td colspan="13" class="table-empty">Select a month and click "Load Sheet" to begin.</td></tr>
+                    <tr><td colspan="16" class="table-empty">Select a month and click "Load Sheet" to begin.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1660,6 +1742,135 @@
         </div>
         <button id="btn-close-link-expiry-modal" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-size: 0.95rem; font-weight: 600; cursor: pointer;">
           Acknowledge &amp; Continue to App
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DISCREPANCY & VERIFICATION DETAIL MODAL -->
+  <div id="modal-discrepancy-detail" class="modal-overlay hidden" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 780px; width: 95%; background: #131722; border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,0.7); max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding: 1rem 1.25rem;">
+        <div>
+          <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem; font-size:1.1rem; color:#fff;">
+            <span>🔍</span> Expense Verification Breakdown
+          </h3>
+          <p id="disc-modal-emp-info" style="margin: 0.2rem 0 0; font-size: 0.82rem; color: var(--text-muted);">Employee: —</p>
+        </div>
+        <button id="btn-close-disc-modal" class="btn-close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem; overflow-y: auto; flex: 1;">
+        <!-- Comparison Summary Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 8px; padding: 0.85rem;">
+            <div style="font-size: 0.75rem; color: #a5b4fc; text-transform: uppercase; font-weight: 600;">App Clock-Out Expense</div>
+            <div id="disc-modal-app-total" style="font-size: 1.3rem; font-weight: 700; color: #fff; margin-top: 0.2rem;">PKR 0</div>
+          </div>
+          <div style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); border-radius: 8px; padding: 0.85rem;">
+            <div style="font-size: 0.75rem; color: #6ee7b7; text-transform: uppercase; font-weight: 600;">Accounts PDF Recorded</div>
+            <div id="disc-modal-pdf-total" style="font-size: 1.3rem; font-weight: 700; color: #fff; margin-top: 0.2rem;">PKR 0</div>
+          </div>
+          <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 0.85rem;">
+            <div style="font-size: 0.75rem; color: #fcd34d; text-transform: uppercase; font-weight: 600;">Difference</div>
+            <div id="disc-modal-diff" style="font-size: 1.3rem; font-weight: 700; color: #f59e0b; margin-top: 0.2rem;">PKR 0</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.85rem;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Status</div>
+            <div id="disc-modal-status-badge" style="margin-top: 0.35rem;">—</div>
+          </div>
+        </div>
+
+        <!-- Two Columns Breakdown -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <!-- Left: Application Entries -->
+          <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem;">
+            <h4 style="margin: 0 0 0.6rem; font-size: 0.88rem; color: #a5b4fc; display:flex; justify-content:space-between;">
+              <span>📱 Application Entries</span>
+              <span id="disc-modal-app-count" style="font-size:0.75rem; color:var(--text-muted);">(0 entries)</span>
+            </h4>
+            <div id="disc-modal-app-list" style="font-size: 0.82rem; max-height: 220px; overflow-y: auto;">
+              <p class="text-muted" style="font-size:0.8rem;">No expense entries found in application records.</p>
+            </div>
+          </div>
+
+          <!-- Right: Accounts PDF Extracted Entries -->
+          <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem;">
+            <h4 style="margin: 0 0 0.6rem; font-size: 0.88rem; color: #6ee7b7; display:flex; justify-content:space-between;">
+              <span>📄 Accounts PDF Lines</span>
+              <span id="disc-modal-pdf-count" style="font-size:0.75rem; color:var(--text-muted);">(0 entries)</span>
+            </h4>
+            <div id="disc-modal-pdf-list" style="font-size: 0.82rem; max-height: 220px; overflow-y: auto;">
+              <p class="text-muted" style="font-size:0.8rem;">No matching entries found in Accounts PDF.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manual Mapping Selector (If needed to link an unmatched name) -->
+        <div id="disc-modal-mapping-section" style="margin-top: 1rem; padding: 0.85rem; background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px;">
+          <div style="font-size: 0.82rem; font-weight: 600; color: #e0e7ff; margin-bottom: 0.4rem;">
+            🔗 Map with an Unmatched Name from PDF:
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <select id="disc-modal-unmatched-select" style="flex:1; background:rgba(0,0,0,0.4); border:1px solid var(--border-color); color:#fff; border-radius:6px; padding:0.35rem 0.6rem; font-size:0.82rem;">
+              <option value="">Select unmatched name from PDF...</option>
+            </select>
+            <button type="button" id="btn-save-manual-map" class="btn btn-secondary" style="padding:0.35rem 0.85rem; font-size:0.82rem;">
+              Link &amp; Re-verify
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+          ℹ️ <strong>Safety Guarantee:</strong> Accounts PDF Verification is an external inspection tool. Uploading or verifying a PDF will <strong>never</strong> modify employee clock-out entries or actual basic salaries.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACCOUNTS PDF IN-BROWSER VIEWER MODAL -->
+  <div id="modal-accounts-pdf-viewer" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-content" style="max-width: 960px; width: 95%; height: 90vh; background: #0f172a; border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+      <div class="modal-header" style="padding: 0.75rem 1.25rem; background: rgba(15,23,42,0.95); border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <h3 class="modal-title" id="pdf-viewer-title" style="font-size: 1rem; color: #fff; margin:0;">Accounts Document Viewer</h3>
+          <p id="pdf-viewer-subtitle" style="margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--text-muted);"></p>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <a id="btn-download-accounts-pdf" href="#" download="Accounts.pdf" class="btn btn-secondary" style="padding:0.3rem 0.75rem; font-size:0.8rem; text-decoration:none;">
+            📥 Download
+          </a>
+          <button id="btn-close-pdf-viewer-modal" class="btn-close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body" style="flex: 1; padding: 0; background: #1e293b; position: relative;">
+        <iframe id="accounts-pdf-iframe" src="" style="width: 100%; height: 100%; border: none;"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPLACE PDF CONFIRMATION MODAL -->
+  <div id="modal-replace-pdf-confirm" class="modal-overlay hidden" style="z-index: 10000;">
+    <div class="modal-content" style="max-width: 440px; text-align: center; border: 1px solid var(--border-color); background: #161a23; border-radius: 12px; padding: 1.5rem;">
+      <div style="font-size: 2.4rem; margin-bottom: 0.5rem;">🔄</div>
+      <h3 style="color:#fff; font-size:1.15rem; margin-bottom:0.5rem;">Replace Accounts PDF?</h3>
+      <p id="replace-pdf-confirm-text" style="font-size:0.88rem; color:var(--text-secondary); margin-bottom:1.25rem;">
+        An Accounts PDF is already uploaded for this month. Replacing it will re-process the new PDF and update verification metrics. Previous employee expense records will remain untouched.
+      </p>
+      <div style="display:flex; gap:0.75rem; justify-content:center;">
+        <button type="button" id="btn-cancel-replace-pdf" class="btn btn-secondary" style="flex:1; padding:0.6rem;">
+          Cancel
+        </button>
+        <button type="button" id="btn-proceed-replace-pdf" class="btn btn-primary" style="flex:1; padding:0.6rem; background:#4f46e5;">
+          Proceed &amp; Upload
         </button>
       </div>
     </div>

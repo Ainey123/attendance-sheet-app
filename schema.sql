@@ -116,6 +116,30 @@ CREATE POLICY "Allow all access for work_records"   ON work_records   FOR ALL US
 CREATE POLICY "Allow all access for work_profiles"  ON work_profiles  FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access for form_submissions" ON form_submissions FOR ALL USING (true) WITH CHECK (true);
 
+-- ── Table 7: accounts_pdfs ────────────────────────────────
+-- Stores uploaded Accounts department PDFs and expense verification results
+CREATE TABLE IF NOT EXISTS accounts_pdfs (
+  "id"               TEXT PRIMARY KEY,
+  "salaryMonth"      TEXT NOT NULL UNIQUE,
+  "fileName"         TEXT NOT NULL,
+  "fileSize"         INTEGER,
+  "pdfData"          TEXT NOT NULL,
+  "uploadedBy"       TEXT DEFAULT 'Admin',
+  "uploadedAt"       TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "replacedAt"       TIMESTAMP WITH TIME ZONE,
+  "replacedBy"       TEXT,
+  "processingStatus" TEXT DEFAULT 'PROCESSED',
+  "processingError"  TEXT,
+  "extractedData"    JSONB NOT NULL DEFAULT '[]'::jsonb,
+  "summary"          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  "manualMappings"   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  "auditLog"         JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
+CREATE INDEX idx_accounts_pdfs_month ON accounts_pdfs("salaryMonth");
+ALTER TABLE accounts_pdfs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all access for accounts_pdfs" ON accounts_pdfs FOR ALL USING (true) WITH CHECK (true);
+
 -- ── Seed default settings row ─────────────────────────────
 INSERT INTO settings ("id", "adminPasscode", "officeName")
 VALUES ('default', '1234', 'My Office')

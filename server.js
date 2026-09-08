@@ -607,6 +607,99 @@ app.post('/api/salary/generate-all', checkAdminAuth, async (req, res) => {
   }
 });
 
+// ─── Accounts PDF Verification API Routes ─────────────────────────────────────
+
+// GET /api/salary/accounts-pdf?month=YYYY-MM
+app.get('/api/salary/accounts-pdf', checkAdminAuth, async (req, res) => {
+  try {
+    const month = req.query.month;
+    const accountsPdf = await db.getAccountsPdf(month);
+    res.json({ success: true, accountsPdf });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/accounts-pdf/upload
+app.post('/api/salary/accounts-pdf/upload', checkAdminAuth, async (req, res) => {
+  try {
+    const { month, fileName, pdfBase64, replace } = req.body;
+    if (!month || !pdfBase64) {
+      return res.status(400).json({ error: 'month and pdfBase64 are required' });
+    }
+    const accountsPdf = await db.saveAccountsPdf(month, fileName || 'accounts.pdf', pdfBase64, 'Admin', Boolean(replace));
+    res.json({ success: true, accountsPdf });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/accounts-pdf/reverify
+app.post('/api/salary/accounts-pdf/reverify', checkAdminAuth, async (req, res) => {
+  try {
+    const { month } = req.body;
+    if (!month) return res.status(400).json({ error: 'month required' });
+    const accountsPdf = await db.reverifyAccountsPdf(month);
+    res.json({ success: true, accountsPdf });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/accounts-pdf/map-employee
+app.post('/api/salary/accounts-pdf/map-employee', checkAdminAuth, async (req, res) => {
+  try {
+    const { month, extractedName, targetEmployeeId } = req.body;
+    if (!month || !extractedName) return res.status(400).json({ error: 'month and extractedName required' });
+    const accountsPdf = await db.mapAccountsPdfEmployee(month, extractedName, targetEmployeeId);
+    res.json({ success: true, accountsPdf });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/salary/accounts-pdf
+app.delete('/api/salary/accounts-pdf', checkAdminAuth, async (req, res) => {
+  try {
+    const month = req.query.month || req.body.month;
+    if (!month) return res.status(400).json({ error: 'month required' });
+    await db.deleteAccountsPdf(month, 'Admin');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/salary/accounts-pdf/view?month=YYYY-MM
+app.get('/api/salary/accounts-pdf/view', checkAdminAuth, async (req, res) => {
+  try {
+    const month = req.query.month;
+    const accountsPdf = await db.getAccountsPdf(month);
+    if (!accountsPdf || !accountsPdf.pdfData) {
+      return res.status(404).send('No PDF found for this month');
+    }
+    const pdfBuffer = Buffer.from(accountsPdf.pdfData, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${accountsPdf.fileName || 'accounts.pdf'}"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    res.status(500).send('Error loading PDF: ' + err.message);
+  }
+});
+
+// GET /api/salary/employee-expenses-detail?employeeId=...&month=YYYY-MM
+app.get('/api/salary/employee-expenses-detail', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month } = req.query;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const map = await db.getAppExpensesMap(month);
+    const data = map[employeeId] || { totalExpense: 0, entries: [] };
+    res.json({ success: true, details: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // For any other route, serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

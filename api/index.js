@@ -416,6 +416,72 @@ module.exports = async (req, res) => {
       return res.json({ success: true, salaries: results });
     }
 
+    // ── Accounts PDF Verification Routes ──────────────────────────────────────
+    if (path === 'salary/accounts-pdf' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const accountsPdf = await db.getAccountsPdf(query.month);
+      return res.json({ success: true, accountsPdf });
+    }
+
+    if (path === 'salary/accounts-pdf/upload' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.month || !body.pdfBase64) return res.status(400).json({ error: 'month and pdfBase64 required' });
+      const accountsPdf = await db.saveAccountsPdf(body.month, body.fileName || 'accounts.pdf', body.pdfBase64, 'Admin', Boolean(body.replace));
+      return res.json({ success: true, accountsPdf });
+    }
+
+    if (path === 'salary/accounts-pdf/reverify' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.month) return res.status(400).json({ error: 'month required' });
+      const accountsPdf = await db.reverifyAccountsPdf(body.month);
+      return res.json({ success: true, accountsPdf });
+    }
+
+    if (path === 'salary/accounts-pdf/map-employee' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.month || !body.extractedName) return res.status(400).json({ error: 'month and extractedName required' });
+      const accountsPdf = await db.mapAccountsPdfEmployee(body.month, body.extractedName, body.targetEmployeeId);
+      return res.json({ success: true, accountsPdf });
+    }
+
+    if (path === 'salary/accounts-pdf' && method === 'DELETE') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req).catch(() => ({}));
+      const month = query.month || body.month;
+      if (!month) return res.status(400).json({ error: 'month required' });
+      await db.deleteAccountsPdf(month, 'Admin');
+      return res.json({ success: true });
+    }
+
+    if (path === 'salary/accounts-pdf/view' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const accountsPdf = await db.getAccountsPdf(query.month);
+      if (!accountsPdf || !accountsPdf.pdfData) return res.status(404).send('No PDF found');
+      const pdfBuffer = Buffer.from(accountsPdf.pdfData, 'base64');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${accountsPdf.fileName || 'accounts.pdf'}"`);
+      return res.send(pdfBuffer);
+    }
+
+    if (path === 'salary/employee-expenses-detail' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      const { employeeId, month } = query;
+      if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+      const map = await db.getAppExpensesMap(month);
+      const data = map[employeeId] || { totalExpense: 0, entries: [] };
+      return res.json({ success: true, details: data });
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
 

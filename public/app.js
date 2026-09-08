@@ -118,6 +118,32 @@ const API = {
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify({ month })
   }),
+  // Accounts PDF Verification APIs
+  getAccountsPdf: (month) => fetchJson(`/api/salary/accounts-pdf?month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
+  uploadAccountsPdf: (data) => fetchJson('/api/salary/accounts-pdf/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  reverifyAccountsPdf: (month) => fetchJson('/api/salary/accounts-pdf/reverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ month })
+  }),
+  mapAccountsPdfEmployee: (month, extractedName, targetEmployeeId) => fetchJson('/api/salary/accounts-pdf/map-employee', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ month, extractedName, targetEmployeeId })
+  }),
+  deleteAccountsPdf: (month) => fetchJson(`/api/salary/accounts-pdf?month=${encodeURIComponent(month)}`, {
+    method: 'DELETE',
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
+  getEmployeeExpensesDetail: (employeeId, month) => fetchJson(`/api/salary/employee-expenses-detail?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
   resolveAttendance: (body) => fetchJson('/api/attendance/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
@@ -5046,9 +5072,13 @@ function requestBrowserNotificationPermission() {
 }
 
 // ==========================================================================
-// SALARY SHEET SYSTEM
+// ==========================================================================
+// SALARY SHEET SYSTEM & ACCOUNTS PDF VERIFICATION
 // ==========================================================================
 let currentSalaryMonth = '';
+let currentAccountsPdf = null;
+let currentSalaryEmployees = [];
+let isReplacingAccountsPdf = false;
 
 function initSalaryTab() {
   // Set default month to current month
@@ -5066,6 +5096,126 @@ function initSalaryTab() {
 
   const btnPrint = document.getElementById('btn-print-salary-sheet');
   if (btnPrint) btnPrint.addEventListener('click', printSalarySheet);
+
+  // Accounts PDF Handlers
+  const btnTriggerUpload = document.getElementById('btn-trigger-pdf-upload');
+  const fileInput = document.getElementById('accounts-pdf-file-input');
+  if (btnTriggerUpload && fileInput) {
+    btnTriggerUpload.addEventListener('click', () => {
+      isReplacingAccountsPdf = false;
+      fileInput.click();
+    });
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        handleAccountsPdfUpload(file, isReplacingAccountsPdf);
+        fileInput.value = ''; // reset
+      }
+    });
+  }
+
+  // Drag & drop onto upload zone
+  const uploadZone = document.getElementById('accounts-pdf-upload-zone');
+  if (uploadZone) {
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.style.borderColor = 'var(--color-indigo)';
+      uploadZone.style.background = 'rgba(99,102,241,0.12)';
+    });
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.style.borderColor = 'rgba(99,102,241,0.35)';
+      uploadZone.style.background = 'rgba(99,102,241,0.04)';
+    });
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.style.borderColor = 'rgba(99,102,241,0.35)';
+      uploadZone.style.background = 'rgba(99,102,241,0.04)';
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file && file.type === 'application/pdf') {
+        handleAccountsPdfUpload(file, false);
+      } else {
+        showToast('Please upload a valid PDF document.', 'warning');
+      }
+    });
+  }
+
+  // View PDF
+  const btnViewPdf = document.getElementById('btn-view-accounts-pdf');
+  if (btnViewPdf) {
+    btnViewPdf.addEventListener('click', () => openAccountsPdfViewer(currentSalaryMonth));
+  }
+
+  // Replace PDF
+  const btnReplacePdf = document.getElementById('btn-replace-accounts-pdf');
+  const modalReplaceConfirm = document.getElementById('modal-replace-pdf-confirm');
+  const btnCancelReplace = document.getElementById('btn-cancel-replace-pdf');
+  const btnProceedReplace = document.getElementById('btn-proceed-replace-pdf');
+
+  if (btnReplacePdf && modalReplaceConfirm) {
+    btnReplacePdf.addEventListener('click', () => {
+      const replaceText = document.getElementById('replace-pdf-confirm-text');
+      if (replaceText) {
+        replaceText.textContent = `Replace the existing Accounts PDF for ${currentSalaryMonth}? Uploading a new PDF will re-verify all expenses for this month.`;
+      }
+      modalReplaceConfirm.classList.remove('hidden');
+    });
+  }
+  if (btnCancelReplace && modalReplaceConfirm) {
+    btnCancelReplace.addEventListener('click', () => modalReplaceConfirm.classList.add('hidden'));
+  }
+  if (btnProceedReplace && modalReplaceConfirm && fileInput) {
+    btnProceedReplace.addEventListener('click', () => {
+      modalReplaceConfirm.classList.add('hidden');
+      isReplacingAccountsPdf = true;
+      fileInput.click();
+    });
+  }
+
+  // Re-verify
+  const btnReverify = document.getElementById('btn-reverify-accounts-pdf');
+  if (btnReverify) {
+    btnReverify.addEventListener('click', handleReverifyAccountsPdf);
+  }
+
+  // Remove PDF
+  const btnRemove = document.getElementById('btn-remove-accounts-pdf');
+  if (btnRemove) {
+    btnRemove.addEventListener('click', handleDeleteAccountsPdf);
+  }
+
+  // Discrepancy Detail Modal close
+  const btnCloseDisc = document.getElementById('btn-close-disc-modal');
+  const modalDisc = document.getElementById('modal-discrepancy-detail');
+  if (btnCloseDisc && modalDisc) {
+    btnCloseDisc.addEventListener('click', () => modalDisc.classList.add('hidden'));
+    modalDisc.addEventListener('click', (e) => {
+      if (e.target === modalDisc) modalDisc.classList.add('hidden');
+    });
+  }
+
+  // PDF Viewer Modal close
+  const btnCloseViewer = document.getElementById('btn-close-pdf-viewer-modal');
+  const modalViewer = document.getElementById('modal-accounts-pdf-viewer');
+  if (btnCloseViewer && modalViewer) {
+    btnCloseViewer.addEventListener('click', () => {
+      modalViewer.classList.add('hidden');
+      const iframe = document.getElementById('accounts-pdf-iframe');
+      if (iframe) iframe.src = '';
+    });
+    modalViewer.addEventListener('click', (e) => {
+      if (e.target === modalViewer) {
+        modalViewer.classList.add('hidden');
+        const iframe = document.getElementById('accounts-pdf-iframe');
+        if (iframe) iframe.src = '';
+      }
+    });
+  }
+
+  // Manual Mapping button in Discrepancy modal
+  const btnSaveMap = document.getElementById('btn-save-manual-map');
+  if (btnSaveMap) {
+    btnSaveMap.addEventListener('click', handleSaveManualMapping);
+  }
 }
 
 async function loadSalarySheet(monthOverride) {
@@ -5076,11 +5226,11 @@ async function loadSalarySheet(monthOverride) {
 
   const tbody = document.getElementById('salary-table-body');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="13" class="table-empty">Loading salary data...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="16" class="table-empty">Loading salary and verification data...</td></tr>';
 
   // Update header info
   const orgNameEl = document.getElementById('salary-sheet-org-name');
-  if (orgNameEl) orgNameEl.textContent = settings.organizationName || 'Company Name';
+  if (orgNameEl) orgNameEl.textContent = (settings && settings.officeName) || 'Company Name';
   const periodEl = document.getElementById('salary-sheet-period');
   if (periodEl) {
     const [yr, mo] = month.split('-');
@@ -5093,20 +5243,34 @@ async function loadSalarySheet(monthOverride) {
   if (statMonth) statMonth.textContent = month;
 
   try {
-    // Fetch employees and auto-generated salaries (which include present days & clock-out expenses)
-    const [empRes, salRes] = await Promise.all([
+    // Fetch employees, salaries, and Accounts PDF in parallel
+    const [empRes, salRes, accPdfRes] = await Promise.all([
       API.getEmployees(),
-      API.getSalaries(month)
+      API.getSalaries(month),
+      API.getAccountsPdf(month).catch(() => ({ success: false, accountsPdf: null }))
     ]);
-    const employees = empRes.employees || empRes || [];
-    const salaries = (salRes && salRes.salaries) ? salRes.salaries : [];
 
-    // Build salary map
+    const employees = empRes.employees || empRes || [];
+    currentSalaryEmployees = employees;
+    const salaries = (salRes && salRes.salaries) ? salRes.salaries : [];
+    currentAccountsPdf = (accPdfRes && accPdfRes.accountsPdf) ? accPdfRes.accountsPdf : null;
+
+    // Render the Accounts PDF Verification Panel
+    renderAccountsPdfPanel(currentAccountsPdf);
+
+    // Build salary map & verification map
     const salMap = {};
     salaries.forEach(s => { salMap[s.employeeId] = s; });
 
+    const verifMap = {};
+    if (currentAccountsPdf && currentAccountsPdf.verificationResults) {
+      currentAccountsPdf.verificationResults.forEach(v => {
+        verifMap[v.employeeId] = v;
+      });
+    }
+
     if (!employees.length) {
-      tbody.innerHTML = '<tr><td colspan="13" class="table-empty">No employees found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="16" class="table-empty">No employees found in roster.</td></tr>';
       return;
     }
 
@@ -5133,7 +5297,38 @@ async function loadSalarySheet(monthOverride) {
       if (typeof expenses === 'number') totalExpenses += expenses;
 
       const netClass = typeof netSalary === 'number' ? (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative') : '';
-      const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : v;
+      const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : (v !== null && v !== undefined ? v : '—');
+
+      // Accounts PDF Verification columns
+      const verif = verifMap[emp.id];
+      let pdfExpHtml = '<span class="verif-none">—</span>';
+      let diffHtml = '<span class="verif-none">—</span>';
+      let statusHtml = '<span class="verif-none">—</span>';
+
+      if (currentAccountsPdf) {
+        if (verif && verif.isFoundInPdf) {
+          pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">${fmtNum(verif.pdfExpense)}</span>`;
+          const diffVal = verif.difference;
+          const diffColor = Math.abs(diffVal) < 0.01 ? '#4ade80' : '#fbbf24';
+          const diffSign = diffVal > 0 ? '+' : '';
+          diffHtml = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;">${diffSign}${fmtNum(diffVal)}</span>`;
+
+          if (verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
+            statusHtml = `<span class="verif-badge verif-matched clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view full breakdown">✓ MATCHED</span>`;
+          } else {
+            statusHtml = `<span class="verif-badge verif-discrepancy clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view discrepancy details">⚠ DISCREPANCY</span>`;
+          }
+        } else {
+          pdfExpHtml = '<span style="font-family:monospace; color:var(--text-muted);">0</span>';
+          if (expenses > 0) {
+            diffHtml = `<span style="font-family:monospace; color:#f87171; font-weight:700;">+${fmtNum(expenses)}</span>`;
+            statusHtml = `<span class="verif-badge verif-notfound clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Employee not found in Accounts PDF">? NOT IN PDF</span>`;
+          } else {
+            diffHtml = '<span style="font-family:monospace; color:#4ade80;">0</span>';
+            statusHtml = `<span class="verif-badge verif-matched clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Zero expenses recorded">✓ MATCHED (0)</span>`;
+          }
+        }
+      }
 
       const tr = document.createElement('tr');
       tr.id = `sal-row-${emp.id}`;
@@ -5160,6 +5355,10 @@ async function loadSalarySheet(monthOverride) {
         <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
         <td class="cell-expenses" style="text-align:right; font-family:monospace; color:#f87171;">${expenses > 0 ? '−' + fmtNum(expenses) : '0'}</td>
         <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
+        <!-- Verification Columns -->
+        <td style="text-align:right; background:rgba(99,102,241,0.04);">${pdfExpHtml}</td>
+        <td style="text-align:right; background:rgba(99,102,241,0.04);">${diffHtml}</td>
+        <td style="text-align:center; background:rgba(99,102,241,0.04);">${statusHtml}</td>
         <td class="no-print">
           <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
             title="Recalculate from attendance">⚡ Recalc</button>
@@ -5167,7 +5366,7 @@ async function loadSalarySheet(monthOverride) {
       `;
       tbody.appendChild(tr);
 
-      // Add real-time live input listener for basic salary typing
+      // Real-time live input listener for basic salary typing
       const basicInput = tr.querySelector('.salary-basic-input');
       if (basicInput) {
         basicInput.addEventListener('input', (e) => updateRowSalaryLive(tr, e.target.value));
@@ -5184,8 +5383,312 @@ async function loadSalarySheet(monthOverride) {
     if (salExpEl) salExpEl.textContent = 'PKR ' + totalExpenses.toLocaleString();
 
   } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="13" class="table-empty" style="color:var(--color-danger);">Failed to load salary data.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16" class="table-empty" style="color:var(--color-danger);">Failed to load salary data.</td></tr>';
     console.error('loadSalarySheet error:', err);
+  }
+}
+
+// Render Accounts PDF Panel & Summary Cards
+function renderAccountsPdfPanel(pdf) {
+  const uploadZone = document.getElementById('accounts-pdf-upload-zone');
+  const activeView = document.getElementById('accounts-pdf-active-view');
+  const badgeContainer = document.getElementById('accounts-pdf-status-badge');
+
+  if (!pdf) {
+    if (uploadZone) uploadZone.style.display = 'block';
+    if (activeView) activeView.style.display = 'none';
+    if (badgeContainer) {
+      badgeContainer.innerHTML = '<span class="status-indicator" style="background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); font-size:0.78rem;">No PDF Uploaded</span>';
+    }
+    return;
+  }
+
+  if (uploadZone) uploadZone.style.display = 'none';
+  if (activeView) activeView.style.display = 'block';
+
+  // Metadata
+  const fileNameEl = document.getElementById('acc-pdf-file-name');
+  if (fileNameEl) fileNameEl.textContent = pdf.fileName || 'Accounts_Expenses.pdf';
+
+  const metaEl = document.getElementById('acc-pdf-meta');
+  if (metaEl) {
+    const d = pdf.uploadedAt ? new Date(pdf.uploadedAt).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+    const rep = pdf.replacedAt ? ` (Replaced: ${new Date(pdf.replacedAt).toLocaleDateString('en-US', { month:'short', day:'numeric' })})` : '';
+    metaEl.textContent = `Uploaded: ${d} • By: ${pdf.uploadedBy || 'Admin'}${rep}`;
+  }
+
+  // Summary Metrics
+  const summary = pdf.summary || {};
+  const matchedEl = document.getElementById('acc-stat-matched');
+  if (matchedEl) matchedEl.textContent = summary.totalMatched || 0;
+
+  const discEl = document.getElementById('acc-stat-discrepancies');
+  if (discEl) discEl.textContent = summary.totalDiscrepancies || 0;
+
+  const notFoundEl = document.getElementById('acc-stat-notfound');
+  if (notFoundEl) notFoundEl.textContent = summary.totalNotFound || 0;
+
+  const unmatchedEl = document.getElementById('acc-stat-unmatched');
+  if (unmatchedEl) unmatchedEl.textContent = summary.totalUnmatchedInPdf || 0;
+
+  const appTotalEl = document.getElementById('acc-stat-app-total');
+  if (appTotalEl) appTotalEl.textContent = 'PKR ' + (summary.totalAppExpenses || 0).toLocaleString();
+
+  const pdfTotalEl = document.getElementById('acc-stat-pdf-total');
+  if (pdfTotalEl) pdfTotalEl.textContent = 'PKR ' + (summary.totalPdfExpenses || 0).toLocaleString();
+
+  const diffTotalEl = document.getElementById('acc-stat-diff-total');
+  if (diffTotalEl) diffTotalEl.textContent = 'PKR ' + (summary.totalDifference || 0).toLocaleString();
+
+  // Badge Status
+  if (badgeContainer) {
+    if (summary.totalDiscrepancies > 0) {
+      badgeContainer.innerHTML = `<span class="status-indicator" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:0.78rem; font-weight:600;">⚠ ${summary.totalDiscrepancies} Discrepanc${summary.totalDiscrepancies > 1 ? 'ies' : 'y'}</span>`;
+    } else {
+      badgeContainer.innerHTML = '<span class="status-indicator" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.78rem; font-weight:600;">✓ Verified Matched</span>';
+    }
+  }
+}
+
+// Upload Accounts PDF
+async function handleAccountsPdfUpload(file, replace = false) {
+  if (!file) return;
+  if (!currentSalaryMonth) {
+    showToast('Please select a salary month first.', 'warning');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64Data = reader.result;
+    showToast(`Processing & verifying ${file.name}...`, 'info');
+    try {
+      const res = await API.uploadAccountsPdf({
+        month: currentSalaryMonth,
+        fileName: file.name,
+        pdfBase64: base64Data,
+        replace
+      });
+      if (res && res.success) {
+        showToast('✅ Accounts PDF parsed & verified successfully!', 'success');
+        await loadSalarySheet(currentSalaryMonth);
+      } else {
+        showToast((res && res.error) || 'Failed to process Accounts PDF', 'error');
+      }
+    } catch (err) {
+      showToast('Error uploading Accounts PDF: ' + err.message, 'error');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// Re-verify Accounts PDF
+async function handleReverifyAccountsPdf() {
+  if (!currentSalaryMonth) return;
+  showToast('Re-verifying against latest attendance records...', 'info');
+  try {
+    const res = await API.reverifyAccountsPdf(currentSalaryMonth);
+    if (res && res.success) {
+      showToast('✅ Verification updated!', 'success');
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to reverify', 'error');
+    }
+  } catch (err) {
+    showToast('Error reverifying: ' + err.message, 'error');
+  }
+}
+
+// Delete Accounts PDF
+async function handleDeleteAccountsPdf() {
+  if (!currentSalaryMonth) return;
+  if (!confirm(`Are you sure you want to remove the Accounts PDF for ${currentSalaryMonth}?\n\nThis will clear the verification columns for this month. (Your employee attendance and salaries will NOT be affected).`)) {
+    return;
+  }
+
+  showToast('Removing Accounts PDF...', 'info');
+  try {
+    const res = await API.deleteAccountsPdf(currentSalaryMonth);
+    if (res && res.success) {
+      showToast('Accounts PDF removed.', 'success');
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to remove', 'error');
+    }
+  } catch (err) {
+    showToast('Error removing: ' + err.message, 'error');
+  }
+}
+
+// Open In-Browser PDF Viewer Modal
+function openAccountsPdfViewer(month) {
+  if (!currentAccountsPdf || !currentAccountsPdf.pdfData) {
+    showToast('No PDF data available to preview.', 'warning');
+    return;
+  }
+
+  const modal = document.getElementById('modal-accounts-pdf-viewer');
+  const iframe = document.getElementById('accounts-pdf-iframe');
+  const titleEl = document.getElementById('pdf-viewer-title');
+  const subtitleEl = document.getElementById('pdf-viewer-subtitle');
+  const downloadBtn = document.getElementById('btn-download-accounts-pdf');
+
+  if (titleEl) titleEl.textContent = `Accounts Document: ${currentAccountsPdf.fileName || 'Accounts.pdf'}`;
+  if (subtitleEl) subtitleEl.textContent = `Month: ${month || currentSalaryMonth} • Uploaded By: ${currentAccountsPdf.uploadedBy || 'Admin'}`;
+
+  const pdfDataUrl = 'data:application/pdf;base64,' + currentAccountsPdf.pdfData;
+  if (iframe) iframe.src = pdfDataUrl;
+  if (downloadBtn) {
+    downloadBtn.href = pdfDataUrl;
+    downloadBtn.download = currentAccountsPdf.fileName || `Accounts_${month}.pdf`;
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+// Open Discrepancy & Verification Detail Modal
+let currentSelectedEmployeeIdForMapping = null;
+
+async function openDiscrepancyModal(employeeId) {
+  const emp = (currentSalaryEmployees || []).find(e => e.id === employeeId);
+  if (!emp) return;
+
+  const verifResults = (currentAccountsPdf && currentAccountsPdf.verificationResults) || [];
+  const verif = verifResults.find(v => v.employeeId === employeeId) || {
+    appExpense: 0,
+    pdfExpense: 0,
+    difference: 0,
+    status: 'NOT_FOUND',
+    pdfEntries: [],
+    appEntries: []
+  };
+
+  currentSelectedEmployeeIdForMapping = employeeId;
+
+  const modal = document.getElementById('modal-discrepancy-detail');
+  const empInfoEl = document.getElementById('disc-modal-emp-info');
+  const appTotalEl = document.getElementById('disc-modal-app-total');
+  const pdfTotalEl = document.getElementById('disc-modal-pdf-total');
+  const diffEl = document.getElementById('disc-modal-diff');
+  const statusBadgeEl = document.getElementById('disc-modal-status-badge');
+  const appListEl = document.getElementById('disc-modal-app-list');
+  const pdfListEl = document.getElementById('disc-modal-pdf-list');
+  const appCountEl = document.getElementById('disc-modal-app-count');
+  const pdfCountEl = document.getElementById('disc-modal-pdf-count');
+  const unmatchedSelect = document.getElementById('disc-modal-unmatched-select');
+
+  if (empInfoEl) {
+    empInfoEl.textContent = `Employee: ${emp.name} (${emp.role || 'Staff'}) • Month: ${currentSalaryMonth}`;
+  }
+
+  const appExp = verif.appExpense || 0;
+  const pdfExp = verif.pdfExpense !== null && verif.pdfExpense !== undefined ? verif.pdfExpense : 0;
+  const diff = verif.difference !== null && verif.difference !== undefined ? verif.difference : (appExp - pdfExp);
+
+  if (appTotalEl) appTotalEl.textContent = 'PKR ' + appExp.toLocaleString();
+  if (pdfTotalEl) pdfTotalEl.textContent = 'PKR ' + pdfExp.toLocaleString();
+  if (diffEl) {
+    const sign = diff > 0 ? '+' : '';
+    diffEl.textContent = 'PKR ' + sign + diff.toLocaleString();
+    diffEl.style.color = Math.abs(diff) < 0.01 ? '#4ade80' : '#fbbf24';
+  }
+
+  if (statusBadgeEl) {
+    if (verif.status === 'MATCHED' || verif.status === 'MATCHED_ZERO') {
+      statusBadgeEl.innerHTML = '<span class="verif-badge verif-matched">✓ MATCHED (PKR 0 Diff)</span>';
+    } else if (verif.status === 'DISCREPANCY') {
+      statusBadgeEl.innerHTML = '<span class="verif-badge verif-discrepancy">⚠ DISCREPANCY DETECTED</span>';
+    } else {
+      statusBadgeEl.innerHTML = '<span class="verif-badge verif-notfound">? NOT IN ACCOUNTS PDF</span>';
+    }
+  }
+
+  // Load detailed clock-out entries from server
+  if (appListEl) {
+    appListEl.innerHTML = '<p class="text-muted" style="font-size:0.8rem;">Loading application clock-out records...</p>';
+    try {
+      const detailRes = await API.getEmployeeExpensesDetail(employeeId, currentSalaryMonth);
+      const entries = (detailRes && detailRes.details && detailRes.details.entries) || [];
+      if (appCountEl) appCountEl.textContent = `(${entries.length} entries)`;
+
+      if (entries.length === 0) {
+        appListEl.innerHTML = '<p class="text-muted" style="font-size:0.8rem; margin:0.5rem 0;">No expense entries recorded in application clock-outs.</p>';
+      } else {
+        appListEl.innerHTML = entries.map(e => `
+          <div style="padding:0.45rem 0.6rem; background:rgba(255,255,255,0.04); border-radius:6px; margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-weight:600; color:#fff;">${escapeHtml(e.date)}</div>
+              <div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(e.description || 'Clock-Out')}</div>
+            </div>
+            <div style="font-family:monospace; font-weight:700; color:#f87171;">PKR ${(e.amount || 0).toLocaleString()}</div>
+          </div>
+        `).join('');
+      }
+    } catch (e) {
+      appListEl.innerHTML = '<p style="color:#f87171; font-size:0.8rem;">Failed to load entries.</p>';
+    }
+  }
+
+  // Populate PDF Lines
+  if (pdfListEl) {
+    const pdfEntries = verif.pdfEntries || [];
+    if (pdfCountEl) pdfCountEl.textContent = `(${pdfEntries.length} entries)`;
+
+    if (pdfEntries.length === 0) {
+      pdfListEl.innerHTML = '<p class="text-muted" style="font-size:0.8rem; margin:0.5rem 0;">No matching entries found in Accounts PDF for this name.</p>';
+    } else {
+      pdfListEl.innerHTML = pdfEntries.map(pe => `
+        <div style="padding:0.45rem 0.6rem; background:rgba(255,255,255,0.04); border-radius:6px; margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:600; color:#fff;">${escapeHtml(pe.extractedName || emp.name)}</div>
+            <div style="font-size:0.72rem; color:var(--text-muted); word-break:break-all;">${escapeHtml(pe.rawLine || pe.details || '')}</div>
+          </div>
+          <div style="font-family:monospace; font-weight:700; color:#6ee7b7; white-space:nowrap; margin-left:0.5rem;">
+            PKR ${(pe.amount || 0).toLocaleString()}
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // Populate Unmatched PDF names dropdown
+  if (unmatchedSelect) {
+    const unmatched = (currentAccountsPdf && currentAccountsPdf.unmatchedPdfEntries) || [];
+    unmatchedSelect.innerHTML = '<option value="">-- Select an unmatched name from PDF to link --</option>';
+    unmatched.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.extractedName;
+      opt.textContent = `${u.extractedName} (PKR ${(u.totalAmount || 0).toLocaleString()})`;
+      unmatchedSelect.appendChild(opt);
+    });
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+// Manual Mapping Save
+async function handleSaveManualMapping() {
+  if (!currentSelectedEmployeeIdForMapping || !currentSalaryMonth) return;
+  const select = document.getElementById('disc-modal-unmatched-select');
+  const extractedName = select ? select.value : '';
+  if (!extractedName) {
+    showToast('Please select a name from the dropdown to link.', 'warning');
+    return;
+  }
+
+  showToast(`Linking "${extractedName}" to employee...`, 'info');
+  try {
+    const res = await API.mapAccountsPdfEmployee(currentSalaryMonth, extractedName, currentSelectedEmployeeIdForMapping);
+    if (res && res.success) {
+      showToast('✅ Mapped & re-verified successfully!', 'success');
+      const modal = document.getElementById('modal-discrepancy-detail');
+      if (modal) modal.classList.add('hidden');
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to map', 'error');
+    }
+  } catch (err) {
+    showToast('Error mapping employee: ' + err.message, 'error');
   }
 }
 
@@ -5254,7 +5757,6 @@ async function handleSetBasicSalary(btn) {
     btn.textContent = 'Save';
   }
 }
-
 
 async function handleGenerateSingleSalary(empId, month) {
   try {

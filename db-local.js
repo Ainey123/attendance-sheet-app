@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load existing data or create default
-let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [] };
+let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [], accountsPdfs: [] };
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
@@ -11,7 +11,7 @@ function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const fileData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [] };
+      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [], accountsPdfs: fileData.accountsPdfs || [] };
     }
   } catch (e) {
     console.error('Error loading data:', e.message);
@@ -761,6 +761,215 @@ const db = {
       results.push(rec);
     }
     return results;
+  },
+
+  // ─── Accounts PDF Verification Methods ──────────────────────────────────────
+
+  async getAppExpensesMap(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+    const attendanceLogs = (data.attendance || []).filter(a =>
+      a.date && a.date.startsWith(month) && !isLeave(a)
+    );
+
+    const map = {};
+
+    attendanceLogs.forEach(a => {
+      const empId = a.employeeId;
+      if (!map[empId]) map[empId] = { totalExpense: 0, entries: [] };
+      const exp = Number(a.expenseAmount) || Number(a.moneySpent) || 0;
+      if (exp > 0) {
+        map[empId].totalExpense += exp;
+        map[empId].entries.push({
+          date: a.date,
+          amount: exp,
+          description: a.performanceNotes || 'Clock-Out Expense',
+          source: 'Attendance Clock-Out'
+        });
+      }
+    });
+
+    const employees = await this.getEmployees(true);
+    for (const emp of employees) {
+      if (!map[emp.id]) map[emp.id] = { totalExpense: 0, entries: [] };
+      let wrList = [];
+      try {
+        wrList = await this.getWorkRecords(emp.id, month);
+      } catch (e) {
+        wrList = [];
+      }
+      (wrList || []).forEach(wr => {
+        const exp = Number(wr.expenseAmount) || 0;
+        if (exp > 0) {
+          const alreadyAdded = map[emp.id].entries.some(e => e.date === wr.date && e.amount === exp);
+          if (!alreadyAdded) {
+            map[emp.id].totalExpense += exp;
+            map[emp.id].entries.push({
+              date: wr.date,
+              amount: exp,
+              description: wr.performedWork || 'Work Record Expense',
+              source: 'Work Record'
+            });
+          }
+        }
+      });
+    }
+
+    return map;
+  },
+
+  async getAccountsPdf(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const list = data.accountsPdfs || [];
+    const found = list.find(p => p.salaryMonth === month);
+    if (!found) return null;
+
+    return await this.reverifyAccountsPdf(month);
+  },
+
+  async saveAccountsPdf(month, fileName, pdfBase64, uploadedBy = 'Admin', replace = false) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      throw new Error('Invalid salary month format (expected YYYY-MM)');
+    }
+    if (!pdfBase64) {
+      throw new Error('PDF data is required');
+    }
+
+    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+    const fileSize = pdfBuffer.length;
+
+    const { parseAccountsPdf, matchAndVerifyExpenses } = require('./pdf-parser-helper');
+    let parsed;
+    try {
+      parsed = await parseAccountsPdf(pdfBuffer);
+    } catch (err) {
+      throw new Error('PDF Parsing failed: ' + err.message);
+    }
+
+    const employees = await this.getEmployees(false);
+    const appExpensesMap = await this.getAppExpensesMap(month);
+
+    if (!data.accountsPdfs) data.accountsPdfs = [];
+    let existing = data.accountsPdfs.find(p => p.salaryMonth === month);
+    const manualMappings = existing?.manualMappings || {};
+
+    const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
+      parsed.extractedEntries,
+      employees,
+      appExpensesMap,
+      manualMappings
+    );
+
+    const nowIso = new Date().toISOString();
+
+    if (existing && replace) {
+      existing.fileName = fileName;
+      existing.fileSize = fileSize;
+      existing.pdfData = cleanBase64;
+      existing.replacedAt = nowIso;
+      existing.replacedBy = uploadedBy;
+      existing.processingStatus = 'PROCESSED';
+      existing.extractedData = parsed.extractedEntries;
+      existing.summary = summary;
+      existing.verificationResults = verificationResults;
+      existing.unmatchedPdfEntries = unmatchedPdfEntries;
+      if (!existing.auditLog) existing.auditLog = [];
+      existing.auditLog.push({
+        action: 'REPLACED',
+        by: uploadedBy,
+        at: nowIso,
+        fileName
+      });
+    } else {
+      if (existing && !replace) {
+        throw new Error(`An Accounts PDF already exists for ${month}. Please confirm replacement.`);
+      }
+      existing = {
+        id: generateId('pdf'),
+        salaryMonth: month,
+        fileName,
+        fileSize,
+        pdfData: cleanBase64,
+        uploadedBy,
+        uploadedAt: nowIso,
+        replacedAt: null,
+        replacedBy: null,
+        processingStatus: 'PROCESSED',
+        processingError: null,
+        extractedData: parsed.extractedEntries,
+        summary,
+        verificationResults,
+        unmatchedPdfEntries,
+        manualMappings: {},
+        auditLog: [{
+          action: 'UPLOADED',
+          by: uploadedBy,
+          at: nowIso,
+          fileName
+        }]
+      };
+      data.accountsPdfs.push(existing);
+    }
+
+    saveData();
+    return existing;
+  },
+
+  async reverifyAccountsPdf(month) {
+    const pdfRecord = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+    if (!pdfRecord) return null;
+
+    const { matchAndVerifyExpenses } = require('./pdf-parser-helper');
+    const employees = await this.getEmployees(false);
+    const appExpensesMap = await this.getAppExpensesMap(month);
+
+    const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
+      pdfRecord.extractedData || [],
+      employees,
+      appExpensesMap,
+      pdfRecord.manualMappings || {}
+    );
+
+    pdfRecord.verificationResults = verificationResults;
+    pdfRecord.unmatchedPdfEntries = unmatchedPdfEntries;
+    pdfRecord.summary = summary;
+    saveData();
+
+    return pdfRecord;
+  },
+
+  async mapAccountsPdfEmployee(month, extractedName, targetEmployeeId) {
+    const pdfRecord = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+    if (!pdfRecord) throw new Error(`No Accounts PDF found for month ${month}`);
+
+    if (!pdfRecord.manualMappings) pdfRecord.manualMappings = {};
+    if (targetEmployeeId) {
+      pdfRecord.manualMappings[targetEmployeeId] = extractedName;
+    } else {
+      for (const [k, v] of Object.entries(pdfRecord.manualMappings)) {
+        if (v === extractedName) delete pdfRecord.manualMappings[k];
+      }
+    }
+
+    return await this.reverifyAccountsPdf(month);
+  },
+
+  async deleteAccountsPdf(month, deletedBy = 'Admin') {
+    const idx = (data.accountsPdfs || []).findIndex(p => p.salaryMonth === month);
+    if (idx === -1) return true;
+
+    data.accountsPdfs.splice(idx, 1);
+    saveData();
+    return true;
   }
 };
 
