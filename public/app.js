@@ -141,6 +141,10 @@ const API = {
     method: 'DELETE',
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
+  deleteAccountsPdfFile: (month, pdfId) => fetchJson(`/api/salary/accounts-pdf/file?month=${encodeURIComponent(month)}&pdfId=${encodeURIComponent(pdfId)}`, {
+    method: 'DELETE',
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
   getEmployeeExpensesDetail: (employeeId, month) => fetchJson(`/api/salary/employee-expenses-detail?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}`, {
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
@@ -5576,8 +5580,9 @@ function renderAccountsPdfPanel(pdf) {
   const progressBox = document.getElementById('accounts-pdf-upload-progress');
   const activeView = document.getElementById('accounts-pdf-active-view');
   const badgeContainer = document.getElementById('accounts-pdf-status-badge');
+  const pdfListContainer = document.getElementById('accounts-pdf-files-list');
 
-  if (!pdf) {
+  if (!pdf || (!pdf.pdfData && (!pdf.pdfs || pdf.pdfs.length === 0))) {
     if (uploadZone) uploadZone.style.display = 'block';
     if (idleContent) idleContent.style.display = 'block';
     if (progressBox) progressBox.style.display = 'none';
@@ -5588,18 +5593,47 @@ function renderAccountsPdfPanel(pdf) {
     return;
   }
 
-  if (uploadZone) uploadZone.style.display = 'none';
+  // Keep upload area visible so admin can attach more PDFs for the same month!
+  if (uploadZone) uploadZone.style.display = 'block';
+  if (idleContent) idleContent.style.display = 'block';
+  if (progressBox) progressBox.style.display = 'none';
   if (activeView) activeView.style.display = 'block';
 
-  // Metadata
-  const fileNameEl = document.getElementById('acc-pdf-file-name');
-  if (fileNameEl) fileNameEl.textContent = pdf.fileName || 'Accounts_Expenses.pdf';
+  // Render Attached PDFs list
+  const pdfFiles = Array.isArray(pdf.pdfs) && pdf.pdfs.length > 0 ? pdf.pdfs : [{
+    id: pdf.id || 'pdf_legacy',
+    fileName: pdf.fileName || 'accounts.pdf',
+    fileSize: pdf.fileSize || 0,
+    uploadedAt: pdf.uploadedAt,
+    uploadedBy: pdf.uploadedBy || 'Admin',
+    bankName: pdf.bankName || 'Bank Statement',
+    transactionCount: (pdf.extractedData || []).length
+  }];
 
-  const metaEl = document.getElementById('acc-pdf-meta');
-  if (metaEl) {
-    const d = pdf.uploadedAt ? new Date(pdf.uploadedAt).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
-    const rep = pdf.replacedAt ? ` (Replaced: ${new Date(pdf.replacedAt).toLocaleDateString('en-US', { month:'short', day:'numeric' })})` : '';
-    metaEl.textContent = `Uploaded: ${d} • By: ${pdf.uploadedBy || 'Admin'}${rep}`;
+  if (pdfListContainer) {
+    let listHtml = '<div style="display:flex; flex-direction:column; gap:0.6rem; margin-bottom:1rem;">';
+    pdfFiles.forEach(fileItem => {
+      const sizeMb = fileItem.fileSize ? (fileItem.fileSize / (1024 * 1024)).toFixed(2) + ' MB' : '';
+      const txCnt = fileItem.transactionCount || (fileItem.extractedEntries ? fileItem.extractedEntries.length : 0);
+      const fileDate = fileItem.uploadedAt ? new Date(fileItem.uploadedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+      listHtml += `
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; padding:0.65rem 0.85rem; background:rgba(0,0,0,0.3); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="display:flex; align-items:center; gap:0.6rem;">
+            <span style="font-size:1.2rem;">📑</span>
+            <div>
+              <div style="font-weight:600; font-size:0.88rem; color:#fff;">${escapeHtml(fileItem.fileName)} <span style="font-size:0.72rem; padding:0.1rem 0.4rem; background:rgba(99,102,241,0.2); color:#a5b4fc; border-radius:4px; margin-left:0.4rem;">${escapeHtml(fileItem.bankName || 'Bank Statement')}</span></div>
+              <div style="font-size:0.75rem; color:var(--text-muted);">${sizeMb ? sizeMb + ' • ' : ''}${txCnt} transactions parsed • Uploaded: ${fileDate}</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:0.4rem;">
+            <button type="button" onclick="viewAccountsPdfViewerModal()" class="btn btn-secondary" style="padding:0.25rem 0.65rem; font-size:0.78rem;">👁️ View PDF</button>
+            <button type="button" onclick="removeAccountsPdfFile('${fileItem.id}')" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.78rem;">🗑️ Delete File</button>
+          </div>
+        </div>
+      `;
+    });
+    listHtml += '</div>';
+    pdfListContainer.innerHTML = listHtml;
   }
 
   // Summary Metrics
@@ -5613,14 +5647,11 @@ function renderAccountsPdfPanel(pdf) {
   const notFoundEl = document.getElementById('acc-stat-notfound');
   if (notFoundEl) notFoundEl.textContent = summary.totalNotFound || 0;
 
-  const unmatchedEl = document.getElementById('acc-stat-unmatched');
-  if (unmatchedEl) unmatchedEl.textContent = summary.totalUnmatchedInPdf || 0;
-
   const appTotalEl = document.getElementById('acc-stat-app-total');
-  if (appTotalEl) appTotalEl.textContent = 'PKR ' + (summary.totalAppExpenses || 0).toLocaleString();
+  if (appTotalEl) appTotalEl.textContent = 'PKR ' + (summary.totalAppSalaries || summary.totalAppExpenses || 0).toLocaleString();
 
   const pdfTotalEl = document.getElementById('acc-stat-pdf-total');
-  if (pdfTotalEl) pdfTotalEl.textContent = 'PKR ' + (summary.totalPdfExpenses || 0).toLocaleString();
+  if (pdfTotalEl) pdfTotalEl.textContent = 'PKR ' + (summary.totalBankCredits || summary.totalPdfExpenses || 0).toLocaleString();
 
   const diffTotalEl = document.getElementById('acc-stat-diff-total');
   if (diffTotalEl) diffTotalEl.textContent = 'PKR ' + (summary.totalDifference || 0).toLocaleString();
@@ -5628,9 +5659,9 @@ function renderAccountsPdfPanel(pdf) {
   // Badge Status
   if (badgeContainer) {
     if (summary.totalDiscrepancies > 0) {
-      badgeContainer.innerHTML = `<span class="status-indicator" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:0.78rem; font-weight:600;">⚠ ${summary.totalDiscrepancies} Discrepanc${summary.totalDiscrepancies > 1 ? 'ies' : 'y'}</span>`;
+      badgeContainer.innerHTML = `<span class="status-indicator" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:0.78rem; font-weight:600;">⚠ ${summary.totalDiscrepancies} Discrepanc${summary.totalDiscrepancies > 1 ? 'ies' : 'y'} (${pdfFiles.length} PDF${pdfFiles.length > 1 ? 's' : ''})</span>`;
     } else {
-      badgeContainer.innerHTML = '<span class="status-indicator" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.78rem; font-weight:600;">✓ Verified Matched</span>';
+      badgeContainer.innerHTML = `<span class="status-indicator" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.78rem; font-weight:600;">✓ Verified (${pdfFiles.length} PDF${pdfFiles.length > 1 ? 's' : ''} Attached)</span>`;
     }
   }
 }
@@ -5796,6 +5827,56 @@ async function handleDeleteAccountsPdf() {
     }
   }
 }
+
+// Remove single accounts PDF file
+async function removeAccountsPdfFile(pdfId) {
+  if (!adminPasscode) {
+    showToast('Please authenticate as Admin first.', 'warning');
+    openAdminAuthModal();
+    return;
+  }
+  if (!currentSalaryMonth || !pdfId) return;
+  if (!confirm(`Are you sure you want to remove this attached PDF file?`)) {
+    return;
+  }
+
+  showToast('Removing attached PDF file...', 'info');
+  try {
+    const res = await API.deleteAccountsPdfFile(currentSalaryMonth, pdfId);
+    if (res && res.success) {
+      showToast('Attached PDF file removed.', 'success');
+      await loadSalarySheet(currentSalaryMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to remove file', 'error');
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('Unauthorized')) {
+      showToast('Admin session expired. Please unlock Admin mode again.', 'error');
+      openAdminAuthModal();
+    } else {
+      showToast('Error removing file: ' + err.message, 'error');
+    }
+  }
+}
+
+// Table Scroll Helpers for Laptop/Desktop layout navigation
+function scrollTableLeft(containerId) {
+  const el = document.getElementById(containerId);
+  if (el) {
+    el.scrollBy({ left: -350, behavior: 'smooth' });
+  }
+}
+
+function scrollTableRight(containerId) {
+  const el = document.getElementById(containerId);
+  if (el) {
+    el.scrollBy({ left: 350, behavior: 'smooth' });
+  }
+}
+
+window.removeAccountsPdfFile = removeAccountsPdfFile;
+window.scrollTableLeft = scrollTableLeft;
+window.scrollTableRight = scrollTableRight;
 
 // Open In-Browser PDF Viewer Modal
 function openAccountsPdfViewer(month) {

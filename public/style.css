@@ -65,7 +65,7 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  overflow-x: auto;
   position: relative;
 }
 
@@ -2391,4 +2391,56 @@ tr:hover td {
   color: var(--text-muted);
   font-size: 0.85rem;
 }
+
+/* Prominent Visible Horizontal Scrollbars for Laptop & Desktop Scrolling */
+.table-container,
+#salary-table-wrapper,
+#monthly-grid-sheet-container,
+.overflow-x-auto,
+[style*="overflow-x:auto"],
+[style*="overflow-x: auto"] {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  max-width: 100%;
+  scroll-behavior: smooth;
+}
+
+.table-container::-webkit-scrollbar,
+#salary-table-wrapper::-webkit-scrollbar,
+#monthly-grid-sheet-container::-webkit-scrollbar,
+[style*="overflow-x:auto"]::-webkit-scrollbar,
+[style*="overflow-x: auto"]::-webkit-scrollbar {
+  height: 12px !important;
+  width: 12px !important;
+}
+
+.table-container::-webkit-scrollbar-track,
+#salary-table-wrapper::-webkit-scrollbar-track,
+#monthly-grid-sheet-container::-webkit-scrollbar-track,
+[style*="overflow-x:auto"]::-webkit-scrollbar-track,
+[style*="overflow-x: auto"]::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border-radius: 6px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.table-container::-webkit-scrollbar-thumb,
+#salary-table-wrapper::-webkit-scrollbar-thumb,
+#monthly-grid-sheet-container::-webkit-scrollbar-thumb,
+[style*="overflow-x:auto"]::-webkit-scrollbar-thumb,
+[style*="overflow-x: auto"]::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #6366f1, #818cf8) !important;
+  border-radius: 6px !important;
+  border: 2px solid #0f172a !important;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover,
+#salary-table-wrapper::-webkit-scrollbar-thumb:hover,
+#monthly-grid-sheet-container::-webkit-scrollbar-thumb:hover,
+[style*="overflow-x:auto"]::-webkit-scrollbar-thumb:hover,
+[style*="overflow-x: auto"]::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
+}
+
 
