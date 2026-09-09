@@ -86,14 +86,14 @@ module.exports = async (req, res) => {
     if (path === 'settings/verify' && method === 'POST') {
       const body = await parseBody(req);
       const settings = await db.getSettings();
-      if (body.passcode === settings.adminPasscode) return res.json({ success: true });
+      if (isPasscodeValid(body.passcode, settings)) return res.json({ success: true });
       return res.status(401).json({ success: false });
     }
 
     // ── POST /api/settings/update ────────────────────────────────────────────
     if (path === 'settings/update' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       const updated = await db.updateSettings(body);
       return res.json({ success: true, settings: updated });
@@ -104,7 +104,7 @@ module.exports = async (req, res) => {
       const settings = await db.getSettings();
       let employees = await db.getEmployees();
       // If not admin, scrub sensitive data (pin, token)
-      if (adminPasscode !== settings.adminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings)) {
         employees = employees.map(e => ({ id: e.id, name: e.name, role: e.role, status: e.status, minusScore: e.minusScore || 0, linkExpireCount: e.linkExpireCount || 0 }));
       }
       return res.json(employees);
@@ -113,7 +113,7 @@ module.exports = async (req, res) => {
     // ── POST /api/employees ──────────────────────────────────────────────────
     if (path === 'employees' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       if (!body.name) return res.status(400).json({ error: 'Name is required' });
       const employee = await db.addEmployee(body.name, body.role || 'Staff');
@@ -123,7 +123,7 @@ module.exports = async (req, res) => {
     // ── DELETE /api/employees/:id ────────────────────────────────────────────
     if (path.startsWith('employees/') && method === 'DELETE') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const id = path.replace('employees/', '');
       const deleted = await db.deleteEmployee(id);
       if (!deleted) return res.status(404).json({ error: 'Employee not found' });
@@ -142,7 +142,7 @@ module.exports = async (req, res) => {
     // ── GET /api/employees/generate-token?id=xxx ─────────────────────────────
     if (path === 'employees/generate-token' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const id = query.id;
       const employees = await db.getEmployees();
       const employee = employees.find(e => e.id === id);
@@ -157,7 +157,7 @@ module.exports = async (req, res) => {
     // All attendance history is preserved. Use instead of delete + re-add.
     if (path.match(/^employees\/[^/]+\/reset-token$/) && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const id = path.replace('employees/', '').replace('/reset-token', '');
       const result = await db.resetEmployeeToken(id);
       if (!result) return res.status(404).json({ error: 'Employee not found' });
@@ -183,7 +183,7 @@ module.exports = async (req, res) => {
     // ── GET /api/attendance ──────────────────────────────────────────────────
     if (path === 'attendance' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const logs = await db.getAttendance(query.date || null);
       return res.json(logs);
     }
@@ -223,7 +223,7 @@ module.exports = async (req, res) => {
     // ── POST /api/attendance/resolve ──────────────────────────────────────────
     if (path === 'attendance/resolve' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       if (!body.attendanceId) return res.status(400).json({ error: 'attendanceId required' });
       const record = await db.resolveUnclockedOutAttendance(body.attendanceId, body.clockOutTime, body.performanceNotes, body.expenseAmount);
@@ -546,7 +546,7 @@ module.exports = async (req, res) => {
 
     if (path === 'salary/employee-expenses-detail' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const { employeeId, month } = query;
       if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
       const map = await db.getAppExpensesMap(month);
@@ -557,14 +557,14 @@ module.exports = async (req, res) => {
     // ── Salary Approval Routes ────────────────────────────────────────────────
     if (path === 'salary/approvals' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const approvals = await db.getSalaryApprovals(query.month);
       return res.json({ success: true, approvals });
     }
 
     if (path === 'salary/approve' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       try {
         const approval = await db.approveSalary({
@@ -587,7 +587,7 @@ module.exports = async (req, res) => {
 
     if (path === 'salary/approve' && method === 'DELETE') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req).catch(() => ({}));
       const employeeId = query.employeeId || body.employeeId;
       const month = query.month || body.month || body.salaryMonth;
@@ -600,7 +600,7 @@ module.exports = async (req, res) => {
     // ── Expense Verification & Senior Admin Approval Routes ───────────────────
     if (path === 'salary/expense-verifications' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode && adminPasscode !== settings.seniorAdminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings) && adminPasscode !== settings.seniorAdminPasscode) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       const list = await db.getExpenseVerifications(query.month);
@@ -658,7 +658,7 @@ module.exports = async (req, res) => {
 
     if (path === 'salary/expense/verify' && method === 'DELETE') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode && adminPasscode !== settings.seniorAdminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings) && adminPasscode !== settings.seniorAdminPasscode) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       const body = await parseBody(req).catch(() => ({}));
@@ -687,7 +687,7 @@ module.exports = async (req, res) => {
 
     if (path === 'salary/employee-credit-history' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode && adminPasscode !== settings.seniorAdminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings) && adminPasscode !== settings.seniorAdminPasscode) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       const employeeId = query.employeeId;
@@ -703,7 +703,7 @@ module.exports = async (req, res) => {
     // ── GET /api/salary/:employeeId (Generic fallback for single employee salary) ──
     if (path.startsWith('salary/') && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const empId = path.replace('salary/', '');
       const record = await db.getSalaryRecord(empId, query.month || null);
       return res.json({ success: true, salary: record });
