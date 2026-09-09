@@ -578,14 +578,21 @@ app.get('/api/salary/accounts-pdf', checkAdminAuth, async (req, res) => {
 // POST /api/salary/accounts-pdf/upload
 app.post('/api/salary/accounts-pdf/upload', checkAdminAuth, async (req, res) => {
   try {
-    const { month, fileName, pdfBase64, replace } = req.body;
+    const { month, fileName, pdfBase64, replace, pdfId } = req.body;
     if (!month || !pdfBase64) {
-      return res.status(400).json({ error: 'month and pdfBase64 are required' });
+      return res.status(400).json({ success: false, error: 'month and pdfBase64 are required', code: 'MISSING_FIELDS' });
     }
-    const accountsPdf = await db.saveAccountsPdf(month, fileName || 'accounts.pdf', pdfBase64, 'Admin', Boolean(replace));
+    console.log(`[Server PDF Upload] Month: ${month}, File: ${fileName || 'accounts.pdf'}, Base64 length: ${pdfBase64.length}`);
+    const accountsPdf = await db.saveAccountsPdf(month, fileName || 'accounts.pdf', pdfBase64, 'Admin', Boolean(replace), pdfId);
     res.json({ success: true, accountsPdf });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Server PDF Upload Error]:', err.stack || err.message || err);
+    const isClientError = /invalid|required|corrupt|encrypted|password|format/i.test(err.message);
+    res.status(isClientError ? 422 : 500).json({
+      success: false,
+      error: err.message || 'An error occurred processing the PDF upload',
+      code: isClientError ? 'PDF_PARSE_ERROR' : 'INTERNAL_SERVER_ERROR'
+    });
   }
 });
 
@@ -593,11 +600,11 @@ app.post('/api/salary/accounts-pdf/upload', checkAdminAuth, async (req, res) => 
 app.post('/api/salary/accounts-pdf/reverify', checkAdminAuth, async (req, res) => {
   try {
     const { month } = req.body;
-    if (!month) return res.status(400).json({ error: 'month required' });
+    if (!month) return res.status(400).json({ success: false, error: 'month required' });
     const accountsPdf = await db.reverifyAccountsPdf(month);
     res.json({ success: true, accountsPdf });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -605,11 +612,24 @@ app.post('/api/salary/accounts-pdf/reverify', checkAdminAuth, async (req, res) =
 app.post('/api/salary/accounts-pdf/map-employee', checkAdminAuth, async (req, res) => {
   try {
     const { month, extractedName, targetEmployeeId } = req.body;
-    if (!month || !extractedName) return res.status(400).json({ error: 'month and extractedName required' });
+    if (!month || !extractedName) return res.status(400).json({ success: false, error: 'month and extractedName required' });
     const accountsPdf = await db.mapAccountsPdfEmployee(month, extractedName, targetEmployeeId);
     res.json({ success: true, accountsPdf });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/salary/accounts-pdf/file
+app.delete('/api/salary/accounts-pdf/file', checkAdminAuth, async (req, res) => {
+  try {
+    const month = req.query.month || req.body.month;
+    const pdfId = req.query.pdfId || req.body.pdfId;
+    if (!month || !pdfId) return res.status(400).json({ success: false, error: 'month and pdfId required' });
+    const accountsPdf = await db.deleteAccountsPdfFile(month, pdfId, 'Admin');
+    res.json({ success: true, accountsPdf });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -617,11 +637,11 @@ app.post('/api/salary/accounts-pdf/map-employee', checkAdminAuth, async (req, re
 app.delete('/api/salary/accounts-pdf', checkAdminAuth, async (req, res) => {
   try {
     const month = req.query.month || req.body.month;
-    if (!month) return res.status(400).json({ error: 'month required' });
+    if (!month) return res.status(400).json({ success: false, error: 'month required' });
     await db.deleteAccountsPdf(month, 'Admin');
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

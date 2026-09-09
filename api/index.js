@@ -438,40 +438,80 @@ module.exports = async (req, res) => {
     }
 
     if (path === 'salary/accounts-pdf/upload' && method === 'POST') {
-      const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
-      const body = await parseBody(req);
-      if (!body.month || !body.pdfBase64) return res.status(400).json({ error: 'month and pdfBase64 required' });
-      const accountsPdf = await db.saveAccountsPdf(body.month, body.fileName || 'accounts.pdf', body.pdfBase64, 'Admin', Boolean(body.replace));
-      return res.json({ success: true, accountsPdf });
+      try {
+        const settings = await db.getSettings();
+        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' });
+        const body = await parseBody(req);
+        if (!body.month || !body.pdfBase64) return res.status(400).json({ success: false, error: 'month and pdfBase64 required', code: 'MISSING_FIELDS' });
+        
+        console.log(`[PDF Upload Request] Month: ${body.month}, File: ${body.fileName || 'accounts.pdf'}, Base64 length: ${body.pdfBase64.length}`);
+
+        const accountsPdf = await db.saveAccountsPdf(body.month, body.fileName || 'accounts.pdf', body.pdfBase64, 'Admin', Boolean(body.replace), body.pdfId);
+        return res.json({ success: true, accountsPdf });
+      } catch (err) {
+        console.error('[PDF Upload Error]:', err.stack || err.message || err);
+        const isClientError = /invalid|required|corrupt|encrypted|password|format/i.test(err.message);
+        return res.status(isClientError ? 422 : 500).json({
+          success: false,
+          error: err.message || 'An error occurred processing the PDF upload',
+          code: isClientError ? 'PDF_PARSE_ERROR' : 'INTERNAL_SERVER_ERROR'
+        });
+      }
     }
 
     if (path === 'salary/accounts-pdf/reverify' && method === 'POST') {
-      const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
-      const body = await parseBody(req);
-      if (!body.month) return res.status(400).json({ error: 'month required' });
-      const accountsPdf = await db.reverifyAccountsPdf(body.month);
-      return res.json({ success: true, accountsPdf });
+      try {
+        const settings = await db.getSettings();
+        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        const body = await parseBody(req);
+        if (!body.month) return res.status(400).json({ success: false, error: 'month required' });
+        const accountsPdf = await db.reverifyAccountsPdf(body.month);
+        return res.json({ success: true, accountsPdf });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
     }
 
     if (path === 'salary/accounts-pdf/map-employee' && method === 'POST') {
-      const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
-      const body = await parseBody(req);
-      if (!body.month || !body.extractedName) return res.status(400).json({ error: 'month and extractedName required' });
-      const accountsPdf = await db.mapAccountsPdfEmployee(body.month, body.extractedName, body.targetEmployeeId);
-      return res.json({ success: true, accountsPdf });
+      try {
+        const settings = await db.getSettings();
+        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        const body = await parseBody(req);
+        if (!body.month || !body.extractedName) return res.status(400).json({ success: false, error: 'month and extractedName required' });
+        const accountsPdf = await db.mapAccountsPdfEmployee(body.month, body.extractedName, body.targetEmployeeId);
+        return res.json({ success: true, accountsPdf });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path === 'salary/accounts-pdf/file' && method === 'DELETE') {
+      try {
+        const settings = await db.getSettings();
+        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        const body = await parseBody(req).catch(() => ({}));
+        const month = query.month || body.month;
+        const pdfId = query.pdfId || body.pdfId;
+        if (!month || !pdfId) return res.status(400).json({ success: false, error: 'month and pdfId required' });
+        const accountsPdf = await db.deleteAccountsPdfFile(month, pdfId, 'Admin');
+        return res.json({ success: true, accountsPdf });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
     }
 
     if (path === 'salary/accounts-pdf' && method === 'DELETE') {
-      const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
-      const body = await parseBody(req).catch(() => ({}));
-      const month = query.month || body.month;
-      if (!month) return res.status(400).json({ error: 'month required' });
-      await db.deleteAccountsPdf(month, 'Admin');
-      return res.json({ success: true });
+      try {
+        const settings = await db.getSettings();
+        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        const body = await parseBody(req).catch(() => ({}));
+        const month = query.month || body.month;
+        if (!month) return res.status(400).json({ success: false, error: 'month required' });
+        await db.deleteAccountsPdf(month, 'Admin');
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
     }
 
     if (path === 'salary/accounts-pdf/view' && method === 'GET') {

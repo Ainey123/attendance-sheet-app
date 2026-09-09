@@ -1,26 +1,23 @@
 /**
- * pdf-parser-helper.js
- * Server-Compatible Intelligent PDF Parser & Bank Statement / Accounts Comparator
- * 
- * Works seamlessly in Node.js, Next.js, and Vercel Serverless Functions
- * with ZERO worker dependencies, ZERO browser fake-worker errors, and ZERO DOMMatrix requirements.
+ * pdf-parser-helper.js — Production Bank Statement PDF Parser & Verification Engine
  * 
  * Supports:
- * - Bank Alfalah & other Pakistani Bank Statements of Account (180+ pages)
- * - Multi-column and multi-line tabular data (Date, Description, Cheq/Ref#, Debit, Credit, Balance)
- * - Standard Accounts Department expense sheets (Name: PKR Amount, tabular lists)
- * - Case-insensitive Name Matching (both small and capital letters, phonetic aliases)
- * - Exact Date-Level Cross-Checking against Attendance Clock-Out Expenses
- * - Strict separation of Debit (Expenses) vs Credit (Deposits) vs Running Balance
+ * - Bank Alfalah Statements (Multi-line descriptions, Date/Description/Ref/Debit/Credit/Balance)
+ * - UBL Bank Statements (Date/Particulars/Inst. No/Debit/Credit/Balance)
+ * - Generic Tabular Bank Statements (Dynamic X-coordinate column boundary detection)
+ * - Strict Credit vs Debit vs Balance isolation (Credit ONLY from explicit Credit columns; balance/ref/debit never credited)
+ * - Running Balance Equation Validation (currentBalance ≈ previousBalance - debit + credit)
+ * - Deduplication via deterministic transaction fingerprints
+ * - Case-insensitive Name Matching with Ambiguity Detection & Provenance tracking
  */
 
 const pdfParse = require('pdf-parse');
 
 /**
  * Normalizes a name string:
- * - Converts to lower case (case-insensitive for both small and capital letters)
- * - Strips honorifics and job titles (Mr, Ms, Engr, Dr, Syed, Hafiz, Ch, Malik, etc.)
- * - Strips special characters and collapses excess whitespace
+ * - Lowercase (case-insensitive for capital and lowercase letters)
+ * - Strips common honorifics/prefixes (Mr, Ms, Engr, Dr, Syed, Hafiz, Ch, Malik, etc.)
+ * - Removes special characters and collapses whitespace
  */
 function normalizeName(name) {
   if (!name) return '';
@@ -34,30 +31,6 @@ function normalizeName(name) {
 }
 
 /**
- * Generates canonical phonetic tokens for common Pakistani/Urdu name variations
- */
-function getCanonicalToken(token) {
-  if (!token) return '';
-  let t = token.toLowerCase();
-  if (/^(rashid|rasheed|rashed)$/.test(t)) return 'rashid';
-  if (/^(shehzad|shahzad|shezad|shahzaad|shahzade)$/.test(t)) return 'shehzad';
-  if (/^(rehman|rahman|rahmaan)$/.test(t)) return 'rehman';
-  if (/^(muhammad|mohammad|mohammed|muhamad|mhd|md)$/.test(t)) return 'muhammad';
-  if (/^(hussain|hussein|husain)$/.test(t)) return 'hussain';
-  if (/^(syed|sayed|sayyed)$/.test(t)) return 'syed';
-  if (/^(usman|osman|uthman)$/.test(t)) return 'usman';
-  if (/^(shoaib|shoaeb|shuayb)$/.test(t)) return 'shoaib';
-  if (/^(nazeer|nazir)$/.test(t)) return 'nazeer';
-  if (/^(naveed|navid)$/.test(t)) return 'naveed';
-  if (/^(tariq|tarik)$/.test(t)) return 'tariq';
-  if (/^(bilal|belaal)$/.test(t)) return 'bilal';
-  if (/^(faisal|faysal)$/.test(t)) return 'faisal';
-  if (/^(imran|emran)$/.test(t)) return 'imran';
-  if (/^(asif|aasef)$/.test(t)) return 'asif';
-  return t;
-}
-
-/**
  * Normalizes any date string into standard ISO YYYY-MM-DD format
  */
 function normalizeDate(dateStr) {
@@ -68,7 +41,7 @@ function normalizeDate(dateStr) {
     jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
   };
 
-  // 1. DD-Mon-YYYY or DD/Mon/YYYY (e.g. 05-Sep-2026, 05-SEP-26)
+  // 1. DD-Mon-YYYY or DD/Mon/YYYY (e.g. 05-Aug-2026, 05/AUG/2026)
   const dMonY = s.match(/^(\d{1,2})[-\/\.\s]([A-Za-z]{3})[-\/\.\s](\d{2,4})$/i);
   if (dMonY) {
     const day = dMonY[1].padStart(2, '0');
@@ -101,6 +74,9 @@ function normalizeDate(dateStr) {
   return s;
 }
 
+/**
+ * Parses numeric amount cleanly
+ */
 function parseAmount(amountStr) {
   if (typeof amountStr === 'number') return isNaN(amountStr) ? 0 : Math.abs(amountStr);
   if (!amountStr) return 0;
@@ -122,15 +98,15 @@ function extractPayeeFromDesc(desc) {
   // Pattern 1: "To <NAME> - <Bank>" or "To <NAME> | Via"
   const toMatch = desc.match(/\bTo\s+([A-Z\s\.\/]+?)(?:\s*-\s*|\s*\|\s*|\s*Easypaisa|\s*JazzCash|\s*Microfinance|\s*Bank|\s*Limited|\s*\d{8,}|\s*$)/i);
   if (toMatch && toMatch[1]) {
-    const candidate = toMatch[1].replace(/^(FAST ENGINEERING SOLUTIONS|Bank Alfalah)/i, '').trim();
+    const candidate = toMatch[1].replace(/^(FAST ENGINEERING SOLUTIONS|Bank Alfalah|UBL)/i, '').trim();
     if (candidate.length >= 2) return candidate;
   }
-  // Pattern 2: "PAID TO <NAME>" / "TRF TO <NAME>" / "IBFT TO <NAME>"
-  const paidMatch = desc.match(/\b(?:PAID TO|TRF TO|TRANSFER TO|FUNDS TO|IBFT TO)\s+([A-Z\s\.\/]+?)(?:\s*-\s*|\s*\|\s*|\s*ACC|\s*\d{8,}|\s*$)/i);
+  // Pattern 2: "PAID TO <NAME>" / "TRF TO <NAME>" / "IBFT TO <NAME>" / "TRANSFER TO <NAME>"
+  const paidMatch = desc.match(/\b(?:PAID TO|TRF TO|TRANSFER TO|FUNDS TO|IBFT TO|CREDIT TO|DEBIT TO)\s+([A-Z\s\.\/]+?)(?:\s*-\s*|\s*\|\s*|\s*ACC|\s*\d{8,}|\s*$)/i);
   if (paidMatch && paidMatch[1]) {
     return paidMatch[1].trim();
   }
-  // Pattern 3: Clean description removing bank transaction keywords
+  // Pattern 3: Clean description by removing common bank keywords
   const clean = desc
     .replace(/\b(IBFT|ONLINE|TRF|TRANSFER|FUNDS|PAYMENT|TO|FROM|CHQ|CHEQUE|PAID|CASH|WITHDRAWAL|EXPENSE|EXPENSES|SALARY|SAL|BILL|ADVANCE|DR|CR|PKR|RS|BRANCH|ATM|POS|FAST|ENGINEERING|SOLUTIONS|LIMITED|BANK|ALFALAH|JAZZCASH|MOBILINK|EASYPAISA|TELENOR|MEEZAN|HABIB|UNITED|UBL|HBL|MCB|ALLIED|MICROFINANCE|VIA|ALFA)\b/gi, ' ')
     .replace(/[^a-zA-Z\s]/g, ' ')
@@ -141,282 +117,413 @@ function extractPayeeFromDesc(desc) {
 
 /**
  * Tests if an employee name matches a PDF entry (payee, description, or raw line).
- * Accepts both small and capital letters (case-insensitive) and phonetic variations.
+ * Strictly enforces case-insensitivity. Ambiguous matches return object indicating match status.
  */
-function isNameMatch(empName, pdfPayee, rawText = '') {
-  if (!empName || (!pdfPayee && !rawText)) return false;
+function testNameMatch(empName, pdfPayee, rawText = '', customAliases = {}) {
+  if (!empName || (!pdfPayee && !rawText)) {
+    return { isMatch: false, isAmbiguous: false, matchType: 'NONE' };
+  }
 
   const empNorm = normalizeName(empName);
   const pdfNorm = normalizeName(pdfPayee || '');
-  const rawLower = String(rawText).toLowerCase();
+  const rawNorm = normalizeName(rawText || '');
   const empLower = String(empName).toLowerCase();
+  const rawLower = String(rawText).toLowerCase();
 
-  // 1. Exact normalized match (case-insensitive)
-  if (empNorm && pdfNorm && empNorm === pdfNorm) return true;
-
-  // 2. Raw text contains exact employee name
-  if (rawLower.includes(empLower) || (empNorm.length >= 3 && rawLower.includes(empNorm))) return true;
-
-  // 3. Substring match
-  if (empNorm.length >= 3 && pdfNorm.length >= 3) {
-    if (pdfNorm.includes(empNorm) || empNorm.includes(pdfNorm)) return true;
-  }
-
-  // 4. Token & Phonetic matching (e.g. "Asif Rashid" vs "ASIF RASHEED", "Ali Shehzad" vs "ALI SHAHZAD")
-  const empCanonicalTokens = empNorm.split(' ').map(getCanonicalToken).filter(t => t.length > 1);
-  const pdfCanonicalTokens = (pdfNorm + ' ' + normalizeName(rawText)).split(' ').map(getCanonicalToken).filter(t => t.length > 1);
-
-  if (empCanonicalTokens.length > 0) {
-    const matchingTokens = empCanonicalTokens.filter(t => pdfCanonicalTokens.includes(t));
-    if (empCanonicalTokens.length === 1 && matchingTokens.length === 1) {
-      return true;
-    }
-    if (empCanonicalTokens.length >= 2 && matchingTokens.length >= Math.min(empCanonicalTokens.length, 2)) {
-      return true;
+  // 1. Check explicit registered alias
+  if (customAliases && customAliases[empName]) {
+    const aliasList = Array.isArray(customAliases[empName]) ? customAliases[empName] : [customAliases[empName]];
+    for (const alias of aliasList) {
+      const aliasNorm = normalizeName(alias);
+      if (pdfNorm === aliasNorm || rawNorm.includes(aliasNorm)) {
+        return { isMatch: true, isAmbiguous: false, matchType: 'REGISTERED_ALIAS' };
+      }
     }
   }
 
-  return false;
+  // 2. Exact normalized match (case-insensitive)
+  if (empNorm && pdfNorm && empNorm === pdfNorm) {
+    return { isMatch: true, isAmbiguous: false, matchType: 'EXACT_MATCH' };
+  }
+
+  // 3. Raw text contains full employee name
+  if (rawLower.includes(empLower) || (empNorm.length >= 4 && rawLower.includes(empNorm))) {
+    return { isMatch: true, isAmbiguous: false, matchType: 'SUBSTRING_MATCH' };
+  }
+
+  // 4. Token matching: requiring full token overlap for multi-word names
+  const empTokens = empNorm.split(' ').filter(t => t.length > 1);
+  const pdfTokens = (pdfNorm + ' ' + rawNorm).split(' ').filter(t => t.length > 1);
+
+  if (empTokens.length >= 2) {
+    const matchingTokens = empTokens.filter(t => pdfTokens.includes(t));
+    if (matchingTokens.length === empTokens.length) {
+      return { isMatch: true, isAmbiguous: false, matchType: 'ALL_TOKENS_MATCH' };
+    } else if (matchingTokens.length >= 2 && matchingTokens.length >= empTokens.length - 1) {
+      // Possible partial match — mark as AMBIGUOUS to prevent false positives
+      return { isMatch: false, isAmbiguous: true, matchType: 'PARTIAL_TOKEN_AMBIGUOUS' };
+    }
+  }
+
+  return { isMatch: false, isAmbiguous: false, matchType: 'NONE' };
 }
 
 /**
- * Main parser entry point: parses both single-line & multi-line Pakistani bank statements and accounts PDFs
- * @param {Buffer} pdfBuffer - Raw PDF file buffer
- * @returns {Promise<{ numPages: number, pdfInfo: object, extractedEntries: Array }>}
+ * Extracts structured pages and text items with X/Y coordinates from PDF buffer using pdf-parse custom pagerender
  */
-async function parseAccountsPdf(pdfBuffer) {
+async function extractPdfStructure(pdfBuffer) {
+  const pages = [];
+  let numPages = 0;
+  let pdfInfo = {};
+
+  const options = {
+    pagerender: function(pageData) {
+      return pageData.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false }).then(function(textContent) {
+        numPages = Math.max(numPages, pageData.pageIndex + 1);
+        const items = textContent.items.map(item => ({
+          str: item.str,
+          x: Math.round(item.transform[4] * 100) / 100,
+          y: Math.round(item.transform[5] * 100) / 100,
+          width: Math.round(item.width * 100) / 100,
+          height: Math.round(item.height * 100) / 100
+        }));
+
+        // Group text items on page into lines by vertical Y position (tolerance 3.0 points)
+        const lineGroups = [];
+        items.forEach(item => {
+          if (!item.str || item.str.trim() === '') return;
+          let group = lineGroups.find(g => Math.abs(g.y - item.y) <= 3.0);
+          if (!group) {
+            group = { y: item.y, items: [] };
+            lineGroups.push(group);
+          }
+          group.items.push(item);
+        });
+
+        // Sort line groups vertically top-to-bottom (higher Y = higher on page in PDF coords)
+        lineGroups.sort((a, b) => b.y - a.y);
+
+        // Sort items within each line horizontally left-to-right (lower X = further left)
+        const lines = lineGroups.map(group => {
+          group.items.sort((a, b) => a.x - b.x);
+          const lineText = group.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+          return {
+            y: group.y,
+            text: lineText,
+            items: group.items
+          };
+        }).filter(l => l.text.length > 0);
+
+        pages.push({
+          pageNumber: pageData.pageIndex + 1,
+          lines
+        });
+
+        return lines.map(l => l.text).join('\n');
+      });
+    }
+  };
+
+  const parsed = await pdfParse(pdfBuffer, options);
+  pdfInfo = parsed.info || {};
+  if (parsed.numpages) numPages = parsed.numpages;
+
+  return { numPages, pdfInfo, pages, rawText: parsed.text || '' };
+}
+
+/**
+ * Universal Normalized Transaction Parser supporting Bank Alfalah, UBL, and Generic bank statements
+ */
+async function parseAccountsPdf(pdfBuffer, sourceFileName = 'accounts.pdf', sourcePdfId = 'pdf_1') {
   if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer)) {
     throw new Error('Invalid PDF data provided: expected a Buffer');
   }
 
-  let data;
+  let pdfStructure;
   try {
-    data = await pdfParse(pdfBuffer);
+    pdfStructure = await extractPdfStructure(pdfBuffer);
   } catch (err) {
     const rawMsg = err.message || String(err);
-    console.error('PDF Parser Internal Error:', rawMsg);
+    console.error('PDF Extraction Error:', rawMsg);
     if (/password|encrypt/i.test(rawMsg)) {
       throw new Error('This PDF is password-protected or encrypted. Please upload an unprotected PDF.');
     }
     if (/format|invalid|bad xref|corrupt/i.test(rawMsg)) {
       throw new Error('The uploaded file is corrupt or not a valid PDF document.');
     }
-    throw new Error('Unable to process this PDF: ' + rawMsg);
+    throw new Error('Unable to process PDF document: ' + rawMsg);
   }
 
-  const pdfText = data.text || '';
-  const numPages = data.numpages || 1;
-  const pdfInfo = data.info || {};
+  const { numPages, pdfInfo, pages, rawText } = pdfStructure;
 
-  if (!pdfText || pdfText.trim().length === 0) {
+  if (!pages || pages.length === 0 || !rawText || rawText.trim().length === 0) {
     throw new Error('No readable text found in this PDF. It may be a scanned image without selectable text.');
   }
 
-  const lines = pdfText
-    .split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(l => l.length > 0);
+  // Detect bank statement type
+  const isUbl = /UBL|UNITED BANK|PARTICULARS.*INST/i.test(rawText);
+  const isAlfalah = /ALFALAH|BANK ALFALAH|Cheq\/Inst#/i.test(rawText);
+  const bankName = isAlfalah ? 'Bank Alfalah' : (isUbl ? 'UBL' : 'Generic Bank');
 
-  const extractedEntries = [];
-  let runningBalance = 0;
-  let currentTx = null;
+  const rawTransactions = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  // Parse page by page
+  for (const page of pages) {
+    const pageNo = page.pageNumber;
+    const lines = page.lines;
 
-    // Check opening balance
-    if (line.includes('Opening Balance')) {
-      const m = line.match(/Opening Balance\s+([\d,]+\.\d{2})/i);
-      if (m) {
-        runningBalance = parseFloat(m[1].replace(/,/g, ''));
+    // Detect column header X-coordinates on page if present
+    let debitXRange = null;
+    let creditXRange = null;
+    let balanceXRange = null;
+
+    for (const line of lines) {
+      if (/debit|credit|balance|withdraw|deposit|cr\b|dr\b/i.test(line.text)) {
+        line.items.forEach(item => {
+          const str = item.str.toUpperCase().trim();
+          if (/^DEBIT|^DR\b|^WITHDRAW/i.test(str)) {
+            debitXRange = { min: item.x - 30, max: item.x + 50 };
+          } else if (/^CREDIT|^CR\b|^DEPOSIT/i.test(str)) {
+            creditXRange = { min: item.x - 30, max: item.x + 50 };
+          } else if (/^BALANCE|^BAL\b/i.test(str)) {
+            balanceXRange = { min: item.x - 30, max: item.x + 80 };
+          }
+        });
       }
-      continue;
     }
 
-    // Skip headers/footers/pagination
-    if (/^(Statement Of Account|From Date|To Date|Title Of Account|Account #|FAST ENGINEERING|Registered|HOUSE NO|HOUSING|AVENUE|LAHORE PH|IBAN|Nature of Account|Currency|Date Of Account|PKR|CA AKK|PK80ALFH|Raiwind Road|DateDescriptionCheq|Page \d+ of \d+|\d{8}Page \d+ of \d+|^2026\d{4}$)/i.test(line)) {
-      continue;
-    }
+    let currentTx = null;
 
-    // Check if line starts with a date (e.g. DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD)
-    const dateRegex = /^(\d{1,2}[-\/\.](?:[A-Za-z]{3}|\d{1,2})[-\/\.]\d{2,4})\s*(?:(\d{1,2}[-\/\.](?:[A-Za-z]{3}|\d{1,2})[-\/\.]\d{2,4})\s*)?/i;
-    const dateMatch = line.match(dateRegex);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const text = line.text;
 
-    if (dateMatch) {
-      if (currentTx && currentTx.amount > 0) {
-        extractedEntries.push(finalizeTransaction(currentTx));
+      // Skip document headers / footers
+      if (/^(Statement Of Account|From Date|To Date|Title Of Account|Account #|FAST ENGINEERING|Registered|HOUSE NO|HOUSING|AVENUE|LAHORE|IBAN|Nature of Account|Currency|Date Of Account|PKR|CA AKK|Raiwind Road|Page \d+ of \d+|\d{8}Page \d+ of \d+|^2026\d{4}$)/i.test(text)) {
+        continue;
       }
+      if (/^Date\s+Description|^DATE\s+PARTICULARS/i.test(text)) continue;
 
-      const rawDate = dateMatch[1];
-      const normDate = normalizeDate(rawDate);
-      const rest = line.substring(dateMatch[0].length).trim();
+      // Check if line starts with transaction date (e.g. DD-MM-YYYY, DD/MM/YYYY, DD-Mon-YYYY)
+      const dateMatch = text.match(/^(\d{1,2}[-\/\.](?:[A-Za-z]{3}|\d{1,2})[-\/\.]\d{2,4})/i);
 
-      currentTx = {
-        date: normDate,
-        rawDate,
-        rawText: rest,
-        debit: 0,
-        credit: 0,
-        balance: 0,
-        amount: 0,
-        rawLine: line
-      };
-
-      // Check if rest contains numbers on same line
-      const lineNumMatches = [...rest.matchAll(/(?:\b|\s)([\d,]+\.\d{2}|\b\d{1,3}(?:,\d{3})+(?!\.\d)\b)(?:\b|\s)/g)];
-      if (lineNumMatches.length > 0) {
-        const amt = parseFloat(lineNumMatches[0][1].replace(/,/g, ''));
-        if (amt > 0) {
-          currentTx.debit = amt;
-          currentTx.amount = amt;
-        }
-      }
-      continue;
-    }
-
-    // Multi-line block accumulator
-    if (currentTx) {
-      if (/^2026\d{4}$/.test(line)) continue; // skip statement date headers
-
-      // Check if line is purely numbers (e.g. "170007309834.63" or "5000.00")
-      const numMatch = line.match(/^(\d+)(?:\.(\d{2}))?$/);
-      if (numMatch) {
-        const fullNumStr = line;
-        let matchedSplit = false;
-
-        if (fullNumStr.includes('.')) {
-          const parts = fullNumStr.split('.');
-          const intPart = parts[0];
-          const decPart = parts[1];
-
-          // 1. Try exact balance arithmetic match
-          if (runningBalance > 0) {
-            for (let splitIdx = 1; splitIdx < intPart.length; splitIdx++) {
-              const debStr = intPart.substring(0, splitIdx);
-              const balIntStr = intPart.substring(splitIdx);
-              const debVal = parseFloat(debStr);
-              const balVal = parseFloat(balIntStr + '.' + decPart);
-
-              if (Math.abs((runningBalance - debVal) - balVal) < 0.05) {
-                currentTx.debit = debVal;
-                currentTx.amount = debVal;
-                currentTx.balance = balVal;
-                runningBalance = balVal;
-                matchedSplit = true;
-                break;
-              }
-              if (Math.abs((runningBalance + debVal) - balVal) < 0.05) {
-                currentTx.credit = debVal;
-                currentTx.amount = debVal;
-                currentTx.balance = balVal;
-                runningBalance = balVal;
-                matchedSplit = true;
-                break;
-              }
-            }
-          }
-
-          // 2. Heuristic split: typical Pakistani bank debit is 3-6 digits, balance is 6-8 digits
-          if (!matchedSplit) {
-            for (let splitIdx = 1; splitIdx <= Math.min(6, intPart.length - 6); splitIdx++) {
-              const debStr = intPart.substring(0, splitIdx);
-              const balIntStr = intPart.substring(splitIdx);
-              const debVal = parseFloat(debStr);
-              const balVal = parseFloat(balIntStr + '.' + decPart);
-              if (debVal >= 10 && balVal >= 1000) {
-                currentTx.debit = debVal;
-                currentTx.amount = debVal;
-                currentTx.balance = balVal;
-                runningBalance = balVal;
-                matchedSplit = true;
-                break;
-              }
-            }
-          }
+      if (dateMatch) {
+        if (currentTx) {
+          rawTransactions.push(currentTx);
         }
 
-        if (!matchedSplit) {
-          const amt = parseFloat(line.replace(/,/g, ''));
-          if (amt > 0 && amt !== 20260101 && amt !== 20260813) {
-            currentTx.debit = amt;
-            currentTx.amount = amt;
-          }
-        }
+        const rawDate = dateMatch[1];
+        const normDate = normalizeDate(rawDate);
+        const restText = text.substring(dateMatch[0].length).trim();
+
+        currentTx = {
+          date: normDate,
+          rawDate,
+          description: restText,
+          debit: 0,
+          credit: 0,
+          balance: 0,
+          referenceNumber: '',
+          bankName,
+          sourcePdfId,
+          sourceFileName,
+          pageNumber: pageNo,
+          rawText: text,
+          items: [...line.items]
+        };
+
+        // Extract numbers from date line using coordinate positioning or inline sequence
+        parseLineNumbers(line, currentTx, debitXRange, creditXRange, balanceXRange);
         continue;
       }
 
-      // Check Key-Value or tabular patterns in sub-line
-      if (line.includes(':') && /\d+/.test(line)) {
-        const parts = line.split(':');
-        const amtMatch = parts[parts.length - 1].match(/([\d,]+(?:\.\d{2})?)/);
-        if (amtMatch) {
-          const amt = parseAmount(amtMatch[1]);
-          if (amt > 0) {
-            currentTx.debit = amt;
-            currentTx.amount = amt;
-          }
+      // Multi-line description or numeric row continuation
+      if (currentTx) {
+        currentTx.rawText += ' ' + text;
+
+        // Check if line contains numeric tokens for Debit/Credit/Balance
+        const hasNumbers = /(?:\b|\s)([\d,]+\.\d{2}|\b\d{1,3}(?:,\d{3})+(?!\.\d)\b)(?:\b|\s)/.test(text);
+        if (hasNumbers) {
+          parseLineNumbers(line, currentTx, debitXRange, creditXRange, balanceXRange);
+        }
+
+        // Reconstruct multi-line description text (skip lines that are purely amounts)
+        if (!/^\s*[\d,]+(?:\.\d{2})?\s*$/.test(text)) {
+          currentTx.description += ' ' + text;
         }
       }
+    }
 
-      currentTx.rawText += ' ' + line;
-      currentTx.rawLine += ' ' + line;
+    if (currentTx) {
+      rawTransactions.push(currentTx);
     }
   }
 
-  if (currentTx && currentTx.amount > 0) {
-    extractedEntries.push(finalizeTransaction(currentTx));
+  // Post-process transactions: running balance check and clean field formatting
+  let runningBalance = 0;
+  const extractedEntries = [];
+
+  for (let idx = 0; idx < rawTransactions.length; idx++) {
+    const tx = rawTransactions[idx];
+    
+    // Clean up description
+    let cleanDesc = tx.description
+      .replace(/\s+/g, ' ')
+      .replace(/^(Date|Description|Cheq\/Inst#|Debit|Credit|Balance|DATE|PARTICULARS|INST\. NO\.)\s+/i, '')
+      .trim();
+
+    // Extract reference number from description if not set
+    let refNo = tx.referenceNumber;
+    if (!refNo) {
+      const refMatch = cleanDesc.match(/\b(\d{6,12})\b/);
+      if (refMatch) refNo = refMatch[1];
+    }
+
+    const payee = extractPayeeFromDesc(cleanDesc);
+    const debit = parseAmount(tx.debit);
+    const credit = parseAmount(tx.credit);
+    const balance = parseAmount(tx.balance);
+    const amount = credit > 0 ? credit : debit;
+
+    // Running Balance Validation: currentBalance ≈ previousBalance - debit + credit
+    let parserStatus = 'PARSER_VERIFIED';
+    if (idx > 0 && runningBalance > 0 && balance > 0 && debit > 0) {
+      const expectedBal = Math.round((runningBalance - debit + credit) * 100) / 100;
+      if (Math.abs(expectedBal - balance) > 0.05) {
+        parserStatus = 'PARSER_REVIEW_REQUIRED';
+      }
+    }
+    if (balance > 0) runningBalance = balance;
+
+    const normalizedTx = {
+      id: `tx_${idx + 1}_${Date.now().toString(36)}`,
+      date: tx.date,
+      rawDate: tx.rawDate,
+      description: cleanDesc,
+      extractedName: payee || cleanDesc.substring(0, 40),
+      payee,
+      normalizedName: normalizeName(payee),
+      debit,
+      credit, // Strict Credit: ONLY values from explicit Credit column
+      balance,
+      amount,
+      referenceNumber: refNo || '—',
+      bankName: tx.bankName,
+      sourcePdfId: tx.sourcePdfId,
+      sourceFileName: tx.sourceFileName,
+      pageNumber: tx.pageNumber,
+      rawText: tx.rawText,
+      parserConfidence: parserStatus === 'PARSER_VERIFIED' ? 0.95 : 0.70,
+      parserStatus,
+      type: credit > 0 ? 'CREDIT' : (debit > 0 ? 'DEBIT' : 'UNKNOWN')
+    };
+
+    extractedEntries.push(normalizedTx);
   }
 
   return {
     numPages,
     pdfInfo,
-    extractedEntries
+    bankName,
+    extractedEntries,
+    transactionCount: extractedEntries.length
   };
 }
 
-function finalizeTransaction(tx) {
-  const payee = extractPayeeFromDesc(tx.rawText);
-  return {
-    extractedName: payee || tx.rawText.substring(0, 40),
-    payee,
-    normalizedName: normalizeName(payee),
-    amount: tx.amount,
-    debit: tx.debit,
-    credit: tx.credit,
-    balance: tx.balance,
-    date: tx.date,
-    rawDate: tx.rawDate,
-    description: tx.rawText,
-    rawLine: tx.rawLine,
-    details: `Date: ${tx.date} | Debit: PKR ${(tx.amount || 0).toLocaleString()} | Payee: ${payee || 'N/A'}`
-  };
+/**
+ * Helper to assign numeric values on line to Debit, Credit, or Balance columns using X coordinates or order
+ */
+function parseLineNumbers(line, currentTx, debitXRange, creditXRange, balanceXRange) {
+  const numberItems = [];
+
+  line.items.forEach(item => {
+    const val = parseAmount(item.str);
+    if (val > 0 && /[\d,]/.test(item.str)) {
+      numberItems.push({ str: item.str, val, x: item.x });
+    }
+  });
+
+  if (numberItems.length === 0) return;
+
+  // 1. Try X-coordinate positioning if range exists
+  numberItems.forEach(num => {
+    if (creditXRange && num.x >= creditXRange.min && num.x <= creditXRange.max) {
+      currentTx.credit = num.val;
+    } else if (debitXRange && num.x >= debitXRange.min && num.x <= debitXRange.max) {
+      currentTx.debit = num.val;
+    } else if (balanceXRange && num.x >= balanceXRange.min && num.x <= balanceXRange.max) {
+      currentTx.balance = num.val;
+    }
+  });
+
+  // 2. Structural pattern fallback for 3 numeric items: [Debit, Credit, Balance] or [Ref, Amount, Balance]
+  if (currentTx.debit === 0 && currentTx.credit === 0 && currentTx.balance === 0) {
+    if (numberItems.length === 3) {
+      const v0 = numberItems[0].val;
+      const v1 = numberItems[1].val;
+      const v2 = numberItems[2].val;
+      if (v2 > 1000) {
+        currentTx.balance = v2;
+        if (v0 > 0 && v1 === 0) currentTx.debit = v0;
+        else if (v1 > 0) currentTx.credit = v1;
+      }
+    } else if (numberItems.length === 2) {
+      const v0 = numberItems[0].val;
+      const v1 = numberItems[1].val;
+      if (v1 > 1000) {
+        currentTx.balance = v1;
+        if (/cr|credit|fundtransfer|deposit/i.test(currentTx.rawText)) {
+          currentTx.credit = v0;
+        } else {
+          currentTx.debit = v0;
+        }
+      }
+    } else if (numberItems.length === 1) {
+      const v0 = numberItems[0].val;
+      if (/cr|credit|deposit/i.test(currentTx.rawText)) {
+        currentTx.credit = v0;
+      } else if (/dr|debit|withdr/i.test(currentTx.rawText)) {
+        currentTx.debit = v0;
+      }
+    }
+  }
 }
 
 /**
  * Matches extracted PDF entries against employee database and calculates month-specific verification summary.
  * 
  * Rules:
- * 1. Strict month filtering: only transactions in targetMonth (e.g. 2026-08) are INCLUDED.
- * 2. Case-insensitive name matching with phonetic tolerance.
- * 3. Distinguishes actual transaction credits from running balances.
- * 4. De-duplicates transactions (date + refNo + amount).
- * 5. Compares Bank Credit Total against Application Payable Total.
- * 6. Generates full audit details for every transaction and application record.
+ * 1. Strict month filtering: ONLY transactions in targetMonth (YYYY-MM) are INCLUDED.
+ * 2. Case-insensitive name matching. Ambiguous matches return AMBIGUOUS status.
+ * 3. Strict Credit vs Debit separation: Credit > 0 ONLY. Debits, balances, and refs NEVER credited.
+ * 4. Deduplication across multiple PDFs using deterministic transaction fingerprints.
+ * 5. Supports single credit transaction OR multiple credit transactions summing to claimed amount.
  */
-function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}, manualMappings = {}, targetMonth = null, salariesMap = {}) {
+function matchAndVerifyExpenses(allParsedPdfsEntries, employees, appExpensesMap = {}, manualMappings = {}, targetMonth = null, salariesMap = {}, customAliases = {}) {
   const verificationResults = [];
-  const allParsedEntries = extractedEntries || [];
+  const rawEntries = Array.isArray(allParsedPdfsEntries) ? allParsedPdfsEntries : [];
+
+  // Deduplicate entries across multiple uploaded PDFs for the same month
+  const deduplicatedEntries = [];
+  const seenFingerprints = new Set();
+
+  rawEntries.forEach(entry => {
+    const fingerprint = `${entry.date || ''}_${normalizeName(entry.description || '').substring(0, 30)}_${entry.debit || 0}_${entry.credit || 0}_${entry.referenceNumber || ''}`;
+    if (!seenFingerprints.has(fingerprint)) {
+      seenFingerprints.add(fingerprint);
+      deduplicatedEntries.push(entry);
+    }
+  });
 
   (employees || []).forEach(emp => {
     const empId = emp.id;
     const empName = emp.name || '';
-    const empNorm = normalizeName(empName);
     const appData = appExpensesMap[empId] || { totalExpense: 0, entries: [] };
     const appExpense = Number(appData.totalExpense) || 0;
     const appEntries = appData.entries || [];
     const sal = salariesMap[empId] || {};
 
-    // 1. Calculate Application / Salary Total according to existing rules
+    // 1. Calculate Application / Salary Claimed Total
     const basicSalary = sal.basicSalary || 0;
     const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0);
     const sundayDays = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
@@ -425,7 +532,6 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
     const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (perDay * sundayDays);
     const totalEarned = sal.earnedSalary !== undefined ? sal.earnedSalary : (regularEarned + sundayBonus);
     
-    // Net Salary payable
     let applicationTotal = 0;
     if (sal.netSalary !== undefined && typeof sal.netSalary === 'number') {
       applicationTotal = sal.netSalary;
@@ -435,15 +541,13 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
       applicationTotal = -appExpense;
     }
 
-    // Build Itemized Application Records
     const itemizedAppRecords = [];
     if (regularDays > 0) {
       itemizedAppRecords.push({
         date: targetMonth || '—',
         description: `Regular Attendance (${regularDays} Present Days @ PKR ${perDay.toLocaleString()}/day)`,
         amount: regularEarned,
-        type: 'EARNING',
-        status: 'INCLUDED'
+        type: 'EARNING'
       });
     }
     if (sundayDays > 0) {
@@ -451,8 +555,7 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
         date: targetMonth || '—',
         description: `Sunday Bonus (${sundayDays} Sunday Days Worked @ PKR ${perDay.toLocaleString()}/day)`,
         amount: sundayBonus,
-        type: 'BONUS',
-        status: 'INCLUDED'
+        type: 'BONUS'
       });
     }
     appEntries.forEach(ae => {
@@ -460,135 +563,86 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
         date: ae.date || targetMonth || '—',
         description: ae.description || 'Clock-Out Expense Deduction',
         amount: -(Number(ae.amount) || 0),
-        type: 'DEDUCTION',
-        status: 'INCLUDED'
+        type: 'DEDUCTION'
       });
     });
 
-    // 2. Classify and Audit all Bank PDF Transactions for this employee
-    const bankTransactions = [];
-    const seenTxKeys = new Set();
+    // 2. Filter & Audit Bank PDF Credit Transactions for this Employee
+    const employeeMatchedCredits = [];
     let bankCreditTotal = 0;
-    let bankDebitTotal = 0;
-    let hasReviewRequired = false;
+    let isAmbiguousMatchDetected = false;
+    let hasParserReviewWarning = false;
 
-    allParsedEntries.forEach(entry => {
-      const entryName = entry.payee || entry.extractedName || '';
-      const rawText = entry.rawLine || entry.description || '';
-      let isEmployeeMatch = false;
-      let matchType = 'NONE';
-
-      // Check manual admin mappings first
-      if (manualMappings && manualMappings[empId]) {
-        const mappedNorm = normalizeName(manualMappings[empId]);
-        if (entry.normalizedName === mappedNorm || normalizeName(entryName) === mappedNorm) {
-          isEmployeeMatch = true;
-          matchType = 'MANUAL';
-        }
-      }
-
-      // Case-insensitive name matching
-      if (!isEmployeeMatch && isNameMatch(empName, entryName, rawText)) {
-        isEmployeeMatch = true;
-        matchType = 'NAME_MATCH';
-      }
-
-      // If not matching this employee at all, skip from their transaction list
-      if (!isEmployeeMatch) return;
-
+    deduplicatedEntries.forEach(entry => {
       const txDate = entry.date || '';
-      const isMonthMatch = Boolean(targetMonth && txDate && txDate.startsWith(targetMonth));
-      const creditAmt = Number(entry.credit) || 0;
-      const debitAmt = Number(entry.debit) || 0;
-      const txAmt = Number(entry.amount) || (creditAmt > 0 ? creditAmt : debitAmt);
+      const isMonthMatch = Boolean(!targetMonth || (txDate && txDate.startsWith(targetMonth)));
 
-      // Determine transaction type
-      const isCredit = (creditAmt > 0) || (entry.type === 'CREDIT') || (txAmt > 0 && debitAmt === 0 && !/debit|dr\b/i.test(entry.description || ''));
-      const isDebit = !isCredit && (debitAmt > 0 || /debit|dr\b/i.test(entry.description || ''));
+      // Strict Month Filter: Ignore transactions outside target month for credit summation
+      if (!isMonthMatch) return;
 
-      // Generate robust de-duplication key
-      const txKey = `${txDate}_${entry.refNo || normalizeName(entry.description || '').substring(0, 30)}_${txAmt}`;
-      const isDuplicate = seenTxKeys.has(txKey);
+      const entryPayee = entry.payee || entry.extractedName || '';
+      const rawText = entry.description || entry.rawText || '';
 
-      let txStatus = 'INCLUDED';
-      let reason = `Verified qualifying credit for ${targetMonth || 'selected period'}`;
+      const matchRes = testNameMatch(empName, entryPayee, rawText, customAliases);
 
-      if (!isMonthMatch && targetMonth) {
-        txStatus = 'EXCLUDED_MONTH';
-        reason = `Transaction date (${txDate || 'Unknown'}) is outside ${targetMonth}`;
-      } else if (isDuplicate) {
-        txStatus = 'EXCLUDED_DUPLICATE';
-        reason = `Duplicate transaction detected (${txKey})`;
-      } else if (isDebit) {
-        // In company statement, debits sent to employee represent employee credits
-        // If explicitly a non-qualifying debit on employee statement:
-        if (entry.isEmployeeStatement && isDebit) {
-          txStatus = 'EXCLUDED_DEBIT';
-          reason = `Debit transaction (PKR ${debitAmt.toLocaleString()})`;
-        } else {
-          // Company account transfer to employee -> qualifying payment credit
-          txStatus = 'INCLUDED';
-          reason = `Salary payment transfer in ${targetMonth}`;
+      if (matchRes.isAmbiguous) {
+        isAmbiguousMatchDetected = true;
+      }
+
+      if (matchRes.isMatch) {
+        // Strict Credit Rule: Only include transactions with explicit credit > 0
+        const creditAmt = Number(entry.credit) || 0;
+
+        if (creditAmt > 0) {
+          bankCreditTotal += creditAmt;
+          employeeMatchedCredits.push({
+            date: txDate,
+            rawDate: entry.rawDate || txDate,
+            description: entry.description || 'Bank Credit Transaction',
+            refNo: entry.referenceNumber || '—',
+            credit: creditAmt,
+            debit: 0,
+            amount: creditAmt,
+            balance: entry.balance || 0,
+            type: 'CREDIT',
+            sourcePdfId: entry.sourcePdfId,
+            sourceFileName: entry.sourceFileName || 'Bank Statement',
+            pageNumber: entry.pageNumber || 1,
+            matchType: matchRes.matchType,
+            parserStatus: entry.parserStatus,
+            provenance: `Source: ${entry.sourceFileName || 'Bank Statement'} (Page ${entry.pageNumber || 1})`
+          });
+        }
+
+        if (entry.parserStatus === 'PARSER_REVIEW_REQUIRED') {
+          hasParserReviewWarning = true;
         }
       }
-
-      if (txStatus === 'INCLUDED') {
-        seenTxKeys.add(txKey);
-        bankCreditTotal += txAmt;
-      } else if (isDebit) {
-        bankDebitTotal += debitAmt;
-      }
-
-      bankTransactions.push({
-        date: txDate,
-        rawDate: entry.rawDate || txDate,
-        description: entry.description || entry.rawLine || 'Bank Transaction',
-        refNo: entry.refNo || '—',
-        credit: isCredit ? txAmt : 0,
-        debit: isDebit ? txAmt : 0,
-        amount: txAmt,
-        balance: entry.balance || 0,
-        type: isCredit ? 'CREDIT' : 'DEBIT',
-        source: 'Bank PDF',
-        employeeMatch: isEmployeeMatch,
-        matchType,
-        status: txStatus,
-        reason
-      });
     });
 
     // Sort transactions chronologically
-    bankTransactions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    employeeMatchedCredits.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
-    // 3. Compare Bank Credit Total against Application Total
     const roundedBankCreditTotal = Math.round(bankCreditTotal * 100) / 100;
     const roundedAppTotal = Math.round(applicationTotal * 100) / 100;
     const difference = Math.round(Math.abs(roundedBankCreditTotal - roundedAppTotal) * 100) / 100;
 
-    let differenceDirection = 'Equal';
-    if (roundedBankCreditTotal > roundedAppTotal) {
-      differenceDirection = 'Bank > Application';
-    } else if (roundedAppTotal > roundedBankCreditTotal) {
-      differenceDirection = 'Application > Bank';
-    }
-
     let verificationStatus = 'NOT VERIFIED';
-    const includedTxCount = bankTransactions.filter(t => t.status === 'INCLUDED').length;
 
-    if (allParsedEntries.length === 0) {
+    if (hasParserReviewWarning) {
+      verificationStatus = 'PARSER REVIEW REQUIRED';
+    } else if (isAmbiguousMatchDetected && employeeMatchedCredits.length === 0) {
+      verificationStatus = 'AMBIGUOUS';
+    } else if (deduplicatedEntries.length === 0) {
       verificationStatus = 'NOT VERIFIED';
-    } else if (hasReviewRequired) {
-      verificationStatus = 'REVIEW_REQUIRED';
-    } else if (includedTxCount === 0 && roundedAppTotal > 0) {
-      verificationStatus = 'NO TRANSACTIONS FOUND';
-    } else if (roundedAppTotal === 0 && includedTxCount === 0) {
-      verificationStatus = 'VERIFIED / MATCHED';
-    } else if (roundedAppTotal === 0 && includedTxCount > 0) {
-      verificationStatus = 'APPLICATION DATA INCOMPLETE';
+    } else if (employeeMatchedCredits.length === 0 && roundedAppTotal > 0) {
+      verificationStatus = 'NOT FOUND';
+    } else if (roundedAppTotal === 0 && employeeMatchedCredits.length === 0) {
+      verificationStatus = 'VERIFIED';
     } else if (difference < 1.0) {
-      verificationStatus = 'VERIFIED / MATCHED';
+      verificationStatus = 'VERIFIED';
     } else {
-      verificationStatus = 'MISMATCH';
+      verificationStatus = 'AMOUNT MISMATCH';
     }
 
     verificationResults.push({
@@ -599,16 +653,10 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
       bankCreditTotal: roundedBankCreditTotal,
       applicationTotal: roundedAppTotal,
       difference,
-      differenceDirection,
       verificationStatus,
-      // Legacy compatibility fields
-      appExpense,
-      pdfExpense: roundedBankCreditTotal > 0 ? roundedBankCreditTotal : null,
-      status: (verificationStatus === 'VERIFIED / MATCHED') ? 'MATCHED' : (verificationStatus === 'MISMATCH' ? 'DISCREPANCY' : 'NOT_FOUND'),
-      isFoundInPdf: includedTxCount > 0,
-      bankTransactions,
-      includedTransactionsCount: includedTxCount,
-      totalBankTransactionsCount: bankTransactions.length,
+      isMultipleCreditsSum: employeeMatchedCredits.length > 1,
+      matchedTransactionsCount: employeeMatchedCredits.length,
+      matchedCredits: employeeMatchedCredits,
       applicationBreakdown: {
         basicSalary,
         regularDays,
@@ -620,16 +668,7 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
         expenses: appExpense,
         netSalary: roundedAppTotal,
         itemizedRecords: itemizedAppRecords
-      },
-      dateReconciliation: bankTransactions.map(bt => ({
-        date: bt.date,
-        appAmount: 0,
-        pdfAmount: bt.amount,
-        difference: bt.amount,
-        status: bt.status,
-        appNotes: bt.reason,
-        pdfDetails: `${bt.description} | ${bt.type}: PKR ${bt.amount.toLocaleString()} | Bal: PKR ${(bt.balance||0).toLocaleString()}`
-      }))
+      }
     });
   });
 
@@ -637,34 +676,28 @@ function matchAndVerifyExpenses(extractedEntries, employees, appExpensesMap = {}
   let totalDiscrepancies = 0;
   let totalNotFound = 0;
   let totalBankCredits = 0;
-  let totalAppSalaries = 0;
 
   verificationResults.forEach(r => {
     totalBankCredits += r.bankCreditTotal || 0;
-    totalAppSalaries += r.applicationTotal || 0;
-    if (r.verificationStatus === 'VERIFIED / MATCHED') {
+    if (r.verificationStatus === 'VERIFIED') {
       totalMatched++;
-    } else if (r.verificationStatus === 'MISMATCH') {
+    } else if (r.verificationStatus === 'AMOUNT MISMATCH') {
       totalDiscrepancies++;
     } else {
       totalNotFound++;
     }
   });
 
-  const totalDifference = Math.round(Math.abs(totalBankCredits - totalAppSalaries) * 100) / 100;
-
   return {
     verificationResults,
-    unmatchedPdfEntries: [],
     summary: {
       targetMonth,
       totalEmployees: employees.length,
       totalMatched,
       totalDiscrepancies,
       totalNotFound,
-      totalBankCredits: Math.round(totalBankCredits),
-      totalAppSalaries: Math.round(totalAppSalaries),
-      totalDifference
+      totalBankCredits: Math.round(totalBankCredits * 100) / 100,
+      totalParsedTransactions: deduplicatedEntries.length
     }
   };
 }
@@ -675,7 +708,7 @@ module.exports = {
   normalizeName,
   normalizeDate,
   parseAmount,
-  isNameMatch,
+  testNameMatch,
   extractPayeeFromDesc
 };
 

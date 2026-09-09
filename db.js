@@ -2177,7 +2177,7 @@ const db = {
     return await this.reverifyAccountsPdf(month, found);
   },
 
-  async saveAccountsPdf(month, fileName, pdfBase64, uploadedBy = 'Admin', replace = false) {
+  async saveAccountsPdf(month, fileName, pdfBase64, uploadedBy = 'Admin', replace = false, pdfId = null) {
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       throw new Error('Invalid salary month format (expected YYYY-MM)');
     }
@@ -2188,12 +2188,13 @@ const db = {
     const cleanBase64 = String(pdfBase64).replace(/^data:.*?;base64,/, '').replace(/\s+/g, '');
     const pdfBuffer = Buffer.from(cleanBase64, 'base64');
     const fileSize = pdfBuffer.length;
+    const newPdfId = pdfId || generateId('pdf_file');
 
     // Parse PDF
     const { parseAccountsPdf, matchAndVerifyExpenses } = require('./pdf-parser-helper');
     let parsed;
     try {
-      parsed = await parseAccountsPdf(pdfBuffer);
+      parsed = await parseAccountsPdf(pdfBuffer, fileName || 'accounts.pdf', newPdfId);
     } catch (err) {
       throw new Error('PDF Parsing failed: ' + err.message);
     }
@@ -2217,45 +2218,27 @@ const db = {
     const localExisting = localData.accountsPdfs.find(p => p.salaryMonth === month);
     if (!existing) existing = localExisting;
 
-    const manualMappings = existing?.manualMappings || {};
-
-    const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
-      parsed.extractedEntries,
-      employees,
-      appExpensesMap,
-      manualMappings,
-      month,
-      salariesMap
-    );
-
     const nowIso = new Date().toISOString();
 
-    if (existing && replace) {
-      existing.fileName = fileName;
-      existing.fileSize = fileSize;
-      existing.pdfData = cleanBase64;
-      existing.replacedAt = nowIso;
-      existing.replacedBy = uploadedBy;
-      existing.processingStatus = 'PROCESSED';
-      existing.extractedData = parsed.extractedEntries;
-      existing.summary = summary;
-      existing.verificationResults = verificationResults;
-      existing.unmatchedPdfEntries = unmatchedPdfEntries;
-      if (!existing.auditLog) existing.auditLog = [];
-      existing.auditLog.push({
-        action: 'REPLACED',
-        by: uploadedBy,
-        at: nowIso,
-        fileName
-      });
-    } else {
-      if (existing && !replace) {
-        throw new Error(`An Accounts PDF already exists for ${month}. Please confirm replacement.`);
-      }
+    const newFileEntry = {
+      id: newPdfId,
+      fileName: fileName || 'accounts.pdf',
+      fileSize,
+      pdfData: cleanBase64,
+      uploadedBy,
+      uploadedAt: nowIso,
+      pageCount: parsed.numPages || 1,
+      bankName: parsed.bankName || 'Bank Statement',
+      transactionCount: (parsed.extractedEntries || []).length,
+      extractedEntries: parsed.extractedEntries || []
+    };
+
+    if (!existing) {
       existing = {
-        id: (existing && existing.id) ? existing.id : generateId('pdf'),
+        id: generateId('acct_pdf'),
         salaryMonth: month,
-        fileName,
+        pdfs: [newFileEntry],
+        fileName: fileName || 'accounts.pdf',
         fileSize,
         pdfData: cleanBase64,
         uploadedBy,
@@ -2264,10 +2247,7 @@ const db = {
         replacedBy: null,
         processingStatus: 'PROCESSED',
         processingError: null,
-        extractedData: parsed.extractedEntries,
-        summary,
-        verificationResults,
-        unmatchedPdfEntries,
+        extractedData: parsed.extractedEntries || [],
         manualMappings: {},
         auditLog: [{
           action: 'UPLOADED',
@@ -2279,7 +2259,73 @@ const db = {
       if (!localExisting) {
         localData.accountsPdfs.push(existing);
       }
+    } else {
+      if (!existing.pdfs) {
+        existing.pdfs = [];
+        if (existing.pdfData) {
+          existing.pdfs.push({
+            id: existing.id || generateId('pdf_file'),
+            fileName: existing.fileName || 'accounts.pdf',
+            fileSize: existing.fileSize || 0,
+            pdfData: existing.pdfData,
+            uploadedBy: existing.uploadedBy || uploadedBy,
+            uploadedAt: existing.uploadedAt || nowIso,
+            pageCount: 1,
+            bankName: 'Bank Statement',
+            transactionCount: (existing.extractedData || []).length,
+            extractedEntries: existing.extractedData || []
+          });
+        }
+      }
+
+      if (replace) {
+        if (pdfId) {
+          const idx = existing.pdfs.findIndex(p => p.id === pdfId);
+          if (idx !== -1) existing.pdfs[idx] = newFileEntry;
+          else existing.pdfs.push(newFileEntry);
+        } else {
+          existing.pdfs = [newFileEntry];
+        }
+      } else {
+        existing.pdfs.push(newFileEntry);
+      }
+
+      existing.fileName = fileName;
+      existing.fileSize = fileSize;
+      existing.pdfData = cleanBase64;
+      existing.replacedAt = replace ? nowIso : existing.replacedAt;
+      existing.replacedBy = replace ? uploadedBy : existing.replacedBy;
+      existing.processingStatus = 'PROCESSED';
+      if (!existing.auditLog) existing.auditLog = [];
+      existing.auditLog.push({
+        action: replace ? 'REPLACED' : 'ATTACHED_PDF',
+        by: uploadedBy,
+        at: nowIso,
+        fileName
+      });
     }
+
+    const allEntries = [];
+    existing.pdfs.forEach(pdfFile => {
+      if (Array.isArray(pdfFile.extractedEntries)) {
+        allEntries.push(...pdfFile.extractedEntries);
+      }
+    });
+
+    const manualMappings = existing.manualMappings || {};
+    const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
+      allEntries,
+      employees,
+      appExpensesMap,
+      manualMappings,
+      month,
+      salariesMap
+    );
+
+    existing.extractedData = allEntries;
+    existing.summary = summary;
+    existing.verificationResults = verificationResults;
+    existing.unmatchedPdfEntries = unmatchedPdfEntries;
 
     saveLocalData(localData);
 
@@ -2292,6 +2338,7 @@ const db = {
           fileName: existing.fileName,
           fileSize: existing.fileSize,
           pdfData: existing.pdfData,
+          pdfs: existing.pdfs,
           uploadedBy: existing.uploadedBy,
           uploadedAt: existing.uploadedAt,
           replacedAt: existing.replacedAt,
@@ -2305,6 +2352,89 @@ const db = {
       } catch (err) {
         console.warn('Supabase accounts_pdfs upsert notice:', err.message);
       }
+    }
+
+    return existing;
+  },
+
+  async deleteAccountsPdfFile(month, pdfId, deletedBy = 'Admin') {
+    if (!month || !pdfId) {
+      throw new Error('month and pdfId required');
+    }
+
+    const localData = loadLocalData();
+    if (!localData.accountsPdfs) localData.accountsPdfs = [];
+    let existing = localData.accountsPdfs.find(p => p.salaryMonth === month);
+
+    if (!existing) {
+      if (!useLocalFallback && supabase) {
+        try {
+          const { data } = await supabase.from('accounts_pdfs').select('*').eq('salaryMonth', month).maybeSingle();
+          if (data) existing = data;
+        } catch (e) {}
+      }
+    }
+
+    if (!existing || !existing.pdfs) return { success: true };
+
+    existing.pdfs = existing.pdfs.filter(p => p.id !== pdfId);
+
+    const nowIso = new Date().toISOString();
+    if (!existing.auditLog) existing.auditLog = [];
+    existing.auditLog.push({
+      action: 'DELETED_PDF_FILE',
+      pdfId,
+      by: deletedBy,
+      at: nowIso
+    });
+
+    if (existing.pdfs.length === 0) {
+      existing.extractedData = [];
+      existing.summary = {};
+      existing.verificationResults = [];
+    } else {
+      const employees = await this.getEmployees(false);
+      const appExpensesMap = await this.getAppExpensesMap(month);
+      const salaries = await this.getAllSalaries(month);
+      const salariesMap = {};
+      (salaries || []).forEach(s => { salariesMap[s.employeeId] = s; });
+
+      const { matchAndVerifyExpenses } = require('./pdf-parser-helper');
+      const allEntries = [];
+      existing.pdfs.forEach(pdfFile => {
+        if (Array.isArray(pdfFile.extractedEntries)) {
+          allEntries.push(...pdfFile.extractedEntries);
+        }
+      });
+
+      const { verificationResults, unmatchedPdfEntries, summary } = matchAndVerifyExpenses(
+        allEntries,
+        employees,
+        appExpensesMap,
+        existing.manualMappings || {},
+        month,
+        salariesMap
+      );
+
+      existing.extractedData = allEntries;
+      existing.summary = summary;
+      existing.verificationResults = verificationResults;
+    }
+
+    saveLocalData(localData);
+
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('accounts_pdfs').upsert({
+          id: existing.id,
+          salaryMonth: existing.salaryMonth,
+          pdfs: existing.pdfs,
+          extractedData: existing.extractedData,
+          summary: existing.summary,
+          verificationResults: existing.verificationResults,
+          auditLog: existing.auditLog
+        });
+      } catch (e) {}
     }
 
     return existing;
