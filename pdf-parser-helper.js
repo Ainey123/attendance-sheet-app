@@ -590,21 +590,26 @@ function matchAndVerifyExpenses(allParsedPdfsEntries, employees, appExpensesMap 
       }
 
       if (matchRes.isMatch) {
-        // Strict Credit Rule: Only include transactions with explicit credit > 0
+        // Extract matched amount: supports incoming credit deposits OR explicit outgoing company transfers to employee (e.g. IBFT TO Employee, TRF TO Employee)
         const creditAmt = Number(entry.credit) || 0;
+        const debitAmt = Number(entry.debit) || 0;
+        const descText = String(entry.description || entry.rawText || '');
+        const isExplicitTransfer = /\b(IBFT|TRF|ONLINE TRF|TRANSFER TO|PAID TO|FUNDS TO|CREDIT TO|SALARY TO|FT\d{6,})\b/i.test(descText);
+        
+        const matchedAmt = creditAmt > 0 ? creditAmt : (isExplicitTransfer && debitAmt > 0 ? debitAmt : 0);
 
-        if (creditAmt > 0) {
-          bankCreditTotal += creditAmt;
+        if (matchedAmt > 0) {
+          bankCreditTotal += matchedAmt;
           employeeMatchedCredits.push({
             date: txDate,
             rawDate: entry.rawDate || txDate,
-            description: entry.description || 'Bank Credit Transaction',
+            description: entry.description || 'Bank Transaction',
             refNo: entry.referenceNumber || '—',
             credit: creditAmt,
-            debit: 0,
-            amount: creditAmt,
+            debit: debitAmt,
+            amount: matchedAmt,
             balance: entry.balance || 0,
-            type: 'CREDIT',
+            type: creditAmt > 0 ? 'CREDIT' : 'TRANSFER_DEBIT',
             sourcePdfId: entry.sourcePdfId,
             sourceFileName: entry.sourceFileName || 'Bank Statement',
             pageNumber: entry.pageNumber || 1,

@@ -2443,4 +2443,35 @@ tr:hover td {
   background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
 }
 
+/* Wide Table Styling & No-Wrap Rules for Horizontal Scrollability */
+#salary-sheet-table,
+.admin-table,
+.work-record-table {
+  min-width: 1750px !important;
+  width: max-content !important;
+  max-width: none !important;
+  table-layout: auto !important;
+}
+
+#salary-sheet-table th,
+#salary-sheet-table td,
+.admin-table th,
+.admin-table td {
+  white-space: nowrap !important;
+}
+
+#salary-sheet-table td.cell-expenses {
+  white-space: normal !important;
+}
+
+/* Enable mouse horizontal wheel scroll and touch pan on table wrappers */
+#salary-table-wrapper,
+#monthly-grid-sheet-container,
+.table-container,
+.work-record-table-wrap {
+  overflow-x: auto !important;
+  max-width: 100% !important;
+  touch-action: pan-x pan-y !important;
+}
+
 

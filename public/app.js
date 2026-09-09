@@ -5863,16 +5863,29 @@ async function removeAccountsPdfFile(pdfId) {
 function scrollTableLeft(containerId) {
   const el = document.getElementById(containerId);
   if (el) {
-    el.scrollBy({ left: -350, behavior: 'smooth' });
+    el.scrollBy({ left: -450, behavior: 'smooth' });
   }
 }
 
 function scrollTableRight(containerId) {
   const el = document.getElementById(containerId);
   if (el) {
-    el.scrollBy({ left: 350, behavior: 'smooth' });
+    el.scrollBy({ left: 450, behavior: 'smooth' });
   }
 }
+
+// Global Horizontal Wheel Scroll Listener for Laptop Touchpad & Mouse Users
+document.addEventListener('wheel', (e) => {
+  const scrollTarget = e.target.closest('#salary-table-wrapper, #monthly-grid-sheet-container, .table-container, .work-record-table-wrap');
+  if (scrollTarget) {
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      scrollTarget.scrollLeft += e.deltaX;
+    } else if (e.shiftKey && e.deltaY !== 0) {
+      scrollTarget.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+  }
+}, { passive: false });
 
 window.removeAccountsPdfFile = removeAccountsPdfFile;
 window.scrollTableLeft = scrollTableLeft;
