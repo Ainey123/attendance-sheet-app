@@ -31,6 +31,15 @@ function getPath(req) {
   return url.replace(/\/$/, '');
 }
 
+function isPasscodeValid(passcode, settings) {
+  const target = (settings && settings.adminPasscode) || '9999';
+  if (!passcode || String(passcode).trim() === '') {
+    return target === '9999';
+  }
+  const clean = String(passcode).trim();
+  return clean === target || clean === '9999' || clean === (settings && settings.seniorAdminPasscode);
+}
+
 module.exports = async (req, res) => {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -40,6 +49,7 @@ module.exports = async (req, res) => {
 
   const path = getPath(req);
   const method = req.method;
+  const headers = req.headers || {};
   const query = req.query || {};
   const queryPasscode = query.passcode || query.adminPasscode || query.pass || '';
   const headerPasscode = headers['x-admin-passcode'] || headers['X-Admin-Passcode'] || headers['adminpasscode'] || headers['authorization'] || '';
@@ -395,7 +405,7 @@ module.exports = async (req, res) => {
     // ── GET /api/salary ──────────────────────────────────────────────────────
     if (path === 'salary' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const records = await db.getAllSalaries(query.month || null);
       return res.json({ success: true, salaries: records });
     }
@@ -403,7 +413,7 @@ module.exports = async (req, res) => {
     // ── POST /api/salary/set-basic ───────────────────────────────────────────
     if (path === 'salary/set-basic' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       if (!body.employeeId || !body.month) return res.status(400).json({ error: 'employeeId and month required' });
       const rec = await db.setSalaryBasic(body.employeeId, body.month, body.basicSalary || 0);
@@ -413,7 +423,7 @@ module.exports = async (req, res) => {
     // ── POST /api/salary/generate ────────────────────────────────────────────
     if (path === 'salary/generate' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       if (!body.employeeId || !body.month) return res.status(400).json({ error: 'employeeId and month required' });
       const rec = await db.generateSalary(body.employeeId, body.month);
@@ -423,21 +433,12 @@ module.exports = async (req, res) => {
     // ── POST /api/salary/generate-all ───────────────────────────────────────
     if (path === 'salary/generate-all' && method === 'POST') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
       if (!body.month) return res.status(400).json({ error: 'month required' });
       const results = await db.generateAllSalaries(body.month);
       return res.json({ success: true, salaries: results });
     }
-
-function isPasscodeValid(passcode, settings) {
-  const target = (settings && settings.adminPasscode) || '9999';
-  if (!passcode || String(passcode).trim() === '') {
-    return target === '9999';
-  }
-  const clean = String(passcode).trim();
-  return clean === target || clean === '9999' || clean === (settings && settings.seniorAdminPasscode);
-}
 
     // ── Accounts PDF Verification Routes ──────────────────────────────────────
     if (path === 'salary/accounts-pdf' && method === 'GET') {
@@ -472,7 +473,7 @@ function isPasscodeValid(passcode, settings) {
     if (path === 'salary/accounts-pdf/reverify' && method === 'POST') {
       try {
         const settings = await db.getSettings();
-        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ success: false, error: 'Unauthorized' });
         const body = await parseBody(req);
         if (!body.month) return res.status(400).json({ success: false, error: 'month required' });
         const accountsPdf = await db.reverifyAccountsPdf(body.month);
@@ -485,7 +486,7 @@ function isPasscodeValid(passcode, settings) {
     if (path === 'salary/accounts-pdf/map-employee' && method === 'POST') {
       try {
         const settings = await db.getSettings();
-        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ success: false, error: 'Unauthorized' });
         const body = await parseBody(req);
         if (!body.month || !body.extractedName) return res.status(400).json({ success: false, error: 'month and extractedName required' });
         const accountsPdf = await db.mapAccountsPdfEmployee(body.month, body.extractedName, body.targetEmployeeId);
@@ -498,7 +499,7 @@ function isPasscodeValid(passcode, settings) {
     if (path === 'salary/accounts-pdf/file' && method === 'DELETE') {
       try {
         const settings = await db.getSettings();
-        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ success: false, error: 'Unauthorized' });
         const body = await parseBody(req).catch(() => ({}));
         const month = query.month || body.month;
         const pdfId = query.pdfId || body.pdfId;
@@ -513,7 +514,7 @@ function isPasscodeValid(passcode, settings) {
     if (path === 'salary/accounts-pdf' && method === 'DELETE') {
       try {
         const settings = await db.getSettings();
-        if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ success: false, error: 'Unauthorized' });
         const body = await parseBody(req).catch(() => ({}));
         const month = query.month || body.month;
         if (!month) return res.status(400).json({ success: false, error: 'month required' });
@@ -526,7 +527,7 @@ function isPasscodeValid(passcode, settings) {
 
     if (path === 'salary/accounts-pdf/file-data' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ success: false, error: 'Unauthorized' });
       const pdfBase64 = await db.getAccountsPdfData(query.month, query.pdfId);
       if (!pdfBase64) return res.status(404).json({ success: false, error: 'No PDF data found' });
       return res.json({ success: true, pdfData: pdfBase64 });
@@ -534,7 +535,7 @@ function isPasscodeValid(passcode, settings) {
 
     if (path === 'salary/accounts-pdf/view' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).send('Unauthorized');
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).send('Unauthorized');
       const pdfBase64 = await db.getAccountsPdfData(query.month, query.pdfId);
       if (!pdfBase64) return res.status(404).send('No PDF found');
       const pdfBuffer = Buffer.from(pdfBase64, 'base64');
