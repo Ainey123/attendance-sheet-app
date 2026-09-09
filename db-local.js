@@ -414,22 +414,15 @@ const db = {
     const year = parseInt(yearStr, 10);
     const monthNum = parseInt(mStr, 10);
     const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
-
-    const now = new Date();
-    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    let daysToEvaluate = totalDaysInMonth;
-    if (monthStr === currentMonthStr) {
-      daysToEvaluate = now.getDate();
-    }
-    const daysEvaluated = daysToEvaluate;
+    const daysEvaluated = totalDaysInMonth;
 
     // Count Sundays in evaluated period
     let sundaysInEvaluatedPeriod = 0;
-    for (let d = 1; d <= daysToEvaluate; d++) {
+    for (let d = 1; d <= totalDaysInMonth; d++) {
       const dt = new Date(year, monthNum - 1, d);
       if (dt.getDay() === 0) sundaysInEvaluatedPeriod++;
     }
-    const workingDaysToEvaluate = Math.max(0, daysToEvaluate - sundaysInEvaluatedPeriod);
+    const workingDaysToEvaluate = Math.max(0, totalDaysInMonth - sundaysInEvaluatedPeriod);
 
     const allEmployees = await this.getEmployees(true);
     const allAttendance = await this.getAttendance();
@@ -443,26 +436,36 @@ const db = {
     }
 
     const summaryMap = new Map();
+    const empNameMap = new Map();
 
     (allEmployees || []).forEach(emp => {
-      summaryMap.set(emp.id, {
+      if (!emp || !emp.id) return;
+      const normName = emp.name ? emp.name.trim().toLowerCase() : '';
+      const summaryObj = {
         employeeId: emp.id,
-        employeeName: emp.name,
+        employeeName: emp.name ? emp.name.trim() : 'Staff Member',
         role: emp.role || 'Staff',
         isArchived: emp.status === 'DELETED' || Boolean(emp.isArchived),
         presentDates: new Set(),
         leaveDates: new Set(),
         workDoneDetails: [],
         totalExpensesAdded: 0
-      });
+      };
+      summaryMap.set(emp.id, summaryObj);
+      if (normName) empNameMap.set(normName, summaryObj);
     });
 
     monthLogs.forEach(log => {
-      let empSummary = summaryMap.get(log.employeeId);
-      if (!empSummary) {
+      if (!log) return;
+      let empSummary = null;
+      if (log.employeeId) empSummary = summaryMap.get(log.employeeId);
+      if (!empSummary && log.employeeName) {
+        empSummary = empNameMap.get(log.employeeName.trim().toLowerCase());
+      }
+      if (!empSummary && log.employeeId) {
         empSummary = {
-          employeeId: log.employeeId || 'emp_' + String(log.employeeName).toLowerCase().replace(/\s+/g, ''),
-          employeeName: log.employeeName || 'Staff Member',
+          employeeId: log.employeeId,
+          employeeName: log.employeeName ? log.employeeName.trim() : 'Staff Member',
           role: log.role || 'Staff',
           isArchived: true,
           presentDates: new Set(),
@@ -470,8 +473,8 @@ const db = {
           workDoneDetails: [],
           totalExpensesAdded: 0
         };
-        summaryMap.set(empSummary.employeeId, empSummary);
-      }
+        summaryMap.set(log.employeeId, empSummary);
+      if (!empSummary) return;
 
       const isLeave = isLeaveAttendanceRecord(log);
       if (isLeave) {
@@ -677,10 +680,14 @@ const db = {
     }
 
     // Get attendance logs for this employee this month
+    const empNameNorm = emp && emp.name ? emp.name.trim().toLowerCase() : '';
     const allAttendance = await this.getAttendance();
-    const attendanceLogs = (allAttendance || []).filter(a =>
-      a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeaveAttendanceRecord(a)
-    );
+    const attendanceLogs = (allAttendance || []).filter(a => {
+      if (!a || !a.date || !a.date.startsWith(month) || isLeaveAttendanceRecord(a)) return false;
+      const matchId = a.employeeId && a.employeeId === employeeId;
+      const matchName = empNameNorm && a.employeeName && a.employeeName.trim().toLowerCase() === empNameNorm;
+      return matchId || matchName;
+    });
 
     const presentDates = new Set();
     attendanceLogs.forEach(a => presentDates.add(a.date));
@@ -690,7 +697,7 @@ const db = {
     let sundayPresentDays = 0;
     presentDates.forEach(dateStr => {
       const parts = dateStr.split('-');
-      const dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
       if (dt.getDay() === 0) sundayPresentDays++;
       else regularPresentDays++;
     });
@@ -710,12 +717,15 @@ const db = {
 
     let workRecords = [];
     try {
-      workRecords = await this.getWorkRecords(employeeId, month);
+      workRecords = await this.getWorkRecords(null, month);
     } catch (e) {
       workRecords = [];
     }
     (workRecords || []).forEach(wr => {
-      if (!processedDates.has(wr.date)) {
+      if (!wr || !wr.date || !wr.date.startsWith(month)) return;
+      const matchId = wr.employeeId && wr.employeeId === employeeId;
+      const matchName = empNameNorm && wr.employeeName && wr.employeeName.trim().toLowerCase() === empNameNorm;
+      if ((matchId || matchName) && !processedDates.has(wr.date)) {
         const exp = Number(wr.expenseAmount) || 0;
         if (exp > 0) totalExpenses += exp;
       }

@@ -1419,14 +1419,8 @@ const db = {
       const monthNum = parseInt(mStr, 10);
       const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
 
-      const now = new Date();
-      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      let lastDay = totalDaysInMonth;
-      if (monthStr === currentMonthStr) {
-        lastDay = now.getDate();
-      }
       filterStart = `${monthStr}-01`;
-      filterEnd = `${monthStr}-${String(lastDay).padStart(2, '0')}`;
+      filterEnd = `${monthStr}-${String(totalDaysInMonth).padStart(2, '0')}`;
     }
 
     const startDt = new Date(filterStart + 'T00:00:00');
@@ -1450,7 +1444,7 @@ const db = {
     const allAttendance = await this.getAttendance();
     
     const periodLogs = (allAttendance || []).filter(a => {
-      if (!a.date) return false;
+      if (!a || !a.date) return false;
       return a.date >= filterStart && a.date <= filterEnd;
     });
 
@@ -1458,16 +1452,18 @@ const db = {
     try {
       const yearMonth = filterStart.substring(0, 7);
       workRecords = await this.getWorkRecords(null, yearMonth);
-      workRecords = (workRecords || []).filter(w => w.date >= filterStart && w.date <= filterEnd);
+      workRecords = (workRecords || []).filter(w => w && w.date >= filterStart && w.date <= filterEnd);
     } catch (e) {
       workRecords = [];
     }
 
     const summaryMap = new Map();
+    const empNameMap = new Map();
 
     (allEmployees || []).forEach(emp => {
       if (!emp || !emp.id) return;
-      summaryMap.set(emp.id, {
+      const normName = emp.name ? emp.name.trim().toLowerCase() : '';
+      const summaryObj = {
         employeeId: emp.id,
         employeeName: emp.name ? emp.name.trim() : 'Staff Member',
         role: emp.role || 'Staff',
@@ -1480,13 +1476,20 @@ const db = {
         totalDurationMinutes: 0,
         workDoneDetails: [],
         totalExpensesAdded: 0
-      });
+      };
+      summaryMap.set(emp.id, summaryObj);
+      if (normName) empNameMap.set(normName, summaryObj);
     });
 
     periodLogs.forEach(log => {
-      if (!log || !log.employeeId) return;
-      let empSummary = summaryMap.get(log.employeeId);
-      if (!empSummary) {
+      if (!log) return;
+      let empSummary = null;
+      if (log.employeeId) {
+        empSummary = summaryMap.get(log.employeeId);
+      } else if (log.employeeName) {
+        empSummary = empNameMap.get(log.employeeName.trim().toLowerCase());
+      }
+      if (!empSummary && log.employeeId) {
         empSummary = {
           employeeId: log.employeeId,
           employeeName: log.employeeName ? log.employeeName.trim() : 'Staff Member',
@@ -1502,7 +1505,9 @@ const db = {
           totalExpensesAdded: 0
         };
         summaryMap.set(log.employeeId, empSummary);
+        if (log.employeeName) empNameMap.set(log.employeeName.trim().toLowerCase(), empSummary);
       }
+      if (!empSummary) return;
 
       const isLeave = isLeaveAttendanceRecord(log);
       if (isLeave) {
@@ -1528,12 +1533,15 @@ const db = {
     });
 
     (workRecords || []).forEach(wr => {
-      if (!wr || !wr.employeeId) return;
-      let empSummary = summaryMap.get(wr.employeeId);
-      if (empSummary) {
-        if (wr.performedWork && wr.performedWork.trim() !== '') {
-          empSummary.workDoneDetails.push(wr.performedWork.trim());
-        }
+      if (!wr) return;
+      let empSummary = null;
+      if (wr.employeeId) {
+        empSummary = summaryMap.get(wr.employeeId);
+      } else if (wr.employeeName) {
+        empSummary = empNameMap.get(wr.employeeName.trim().toLowerCase());
+      }
+      if (empSummary && wr.performedWork && wr.performedWork.trim() !== '') {
+        empSummary.workDoneDetails.push(wr.performedWork.trim());
       }
     });
 
@@ -1891,7 +1899,7 @@ const db = {
     return await this.generateSalary(employeeId, month);
   },
 
-  async generateSalary(employeeId, month) {
+  async generateSalary(employeeId, month, cachedAttendance = null, cachedEmployees = null, cachedWorkRecords = null) {
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       const now = new Date();
       month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1905,7 +1913,7 @@ const db = {
     if (!data.salaries) data.salaries = [];
 
     let salRec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
-    const employees = await this.getEmployees(true);
+    const employees = cachedEmployees || await this.getEmployees(true);
     const emp = (employees || []).find(e => e.id === employeeId);
 
     if (!salRec) {
@@ -1923,12 +1931,15 @@ const db = {
 
     // Helper: is this a leave record?
     const isLeave = (record) => Boolean(record && String(record.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+    const empNameNorm = emp && emp.name ? emp.name.trim().toLowerCase() : '';
 
     // Fetch all attendance logs from active DB (Supabase or local fallback)
-    const allAttendance = await this.getAttendance();
-    const attendanceLogs = (allAttendance || []).filter(a =>
-      a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeave(a)
-    );
+    const allAttendance = cachedAttendance || await this.getAttendance();
+    const attendanceLogs = (allAttendance || []).filter(a => {
+      if (!a || !a.date || !a.date.startsWith(month) || isLeave(a)) return false;
+      if (a.employeeId) return a.employeeId === employeeId;
+      return empNameNorm && a.employeeName && a.employeeName.trim().toLowerCase() === empNameNorm;
+    });
 
     const presentDates = new Set();
     attendanceLogs.forEach(a => presentDates.add(a.date));
@@ -1938,7 +1949,7 @@ const db = {
     let sundayPresentDays = 0;
     presentDates.forEach(dateStr => {
       const parts = dateStr.split('-');
-      const dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
       if (dt.getDay() === 0) sundayPresentDays++;
       else regularPresentDays++;
     });
@@ -1956,14 +1967,18 @@ const db = {
       }
     });
 
-    let workRecords = [];
-    try {
-      workRecords = await this.getWorkRecords(employeeId, month);
-    } catch (e) {
-      workRecords = [];
+    let workRecords = cachedWorkRecords;
+    if (!workRecords) {
+      try {
+        workRecords = await this.getWorkRecords(null, month);
+      } catch (e) {
+        workRecords = [];
+      }
     }
     (workRecords || []).forEach(wr => {
-      if (!processedDates.has(wr.date)) {
+      if (!wr || !wr.date || !wr.date.startsWith(month)) return;
+      const matched = wr.employeeId ? wr.employeeId === employeeId : (empNameNorm && wr.employeeName && wr.employeeName.trim().toLowerCase() === empNameNorm);
+      if (matched && !processedDates.has(wr.date)) {
         const exp = Number(wr.expenseAmount) || 0;
         if (exp > 0) totalExpenses += exp;
       }
@@ -2008,10 +2023,17 @@ const db = {
   },
 
   async generateAllSalaries(month) {
-    const employees = await this.getEmployees(false);
+    const [employees, allAttendance, workRecords] = await Promise.all([
+      this.getEmployees(false),
+      this.getAttendance().catch(() => []),
+      this.getWorkRecords(null, month).catch(() => [])
+    ]);
+
+    if (!employees || employees.length === 0) return [];
+
     const results = [];
-    for (const emp of (employees || [])) {
-      const rec = await this.generateSalary(emp.id, month);
+    for (const emp of employees) {
+      const rec = await this.generateSalary(emp.id, month, allAttendance, employees, workRecords);
       results.push(rec);
     }
     return results;

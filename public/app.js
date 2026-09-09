@@ -3979,8 +3979,6 @@ function mergePDFTextIntoSummaryData(existingSummaries, pdfTextList, selectedMon
         const matchesParts = nameParts.length > 1 && nameParts.every(part => line.toLowerCase().includes(part));
 
         if (matchesFull || matchesParts) {
-          empEntry.presentDates.add(dateStr);
-
           const pkrMatch = line.match(/PKR\s*([0-9,]+(?:\.[0-9]{2})?)/i);
           if (pkrMatch) {
             const amt = parseFloat(pkrMatch[1].replace(/,/g, ''));
@@ -3993,17 +3991,6 @@ function mergePDFTextIntoSummaryData(existingSummaries, pdfTextList, selectedMon
           }
         }
       });
-    });
-
-    summaryMap.forEach((empEntry, nameKey) => {
-      const escapedName = nameKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(`${escapedName}[\\s\\S]*?\\b(${selectedMonth}-\\d{2})\\b`, 'gi');
-      let m;
-      while ((m = pattern.exec(text)) !== null) {
-        if (m[1]) {
-          empEntry.presentDates.add(m[1]);
-        }
-      }
     });
   });
 
@@ -4390,10 +4377,18 @@ async function renderMonthlyGridSheetUI(monthStr, startDate, endDate) {
 
     monthLogs.forEach(log => {
       const normKey = normalizeName(log.employeeName);
-      if (!normKey) return;
+      let matchedEmp = null;
+      if (log.employeeId) {
+        matchedEmp = (employees || []).find(e => e.id === log.employeeId);
+      }
+      if (!matchedEmp && normKey) {
+        matchedEmp = (employees || []).find(e => normalizeName(e.name) === normKey);
+      }
+      const key = matchedEmp ? normalizeName(matchedEmp.name) : normKey;
+      if (!key) return;
 
-      if (!empAttendanceMap.has(normKey)) {
-        empAttendanceMap.set(normKey, {});
+      if (!empAttendanceMap.has(key)) {
+        empAttendanceMap.set(key, {});
       }
       const day = parseInt(log.date.split('-')[2], 10);
       const isLeave = Boolean(log.performanceNotes && String(log.performanceNotes).trim().toUpperCase().startsWith('LEAVE'));
@@ -4401,7 +4396,7 @@ async function renderMonthlyGridSheetUI(monthStr, startDate, endDate) {
       if (isLeave) status = 'H';
       else if (log.status === 'ABSENT' || log.status === 'A') status = 'A';
 
-      empAttendanceMap.get(normKey)[day] = status;
+      empAttendanceMap.get(key)[day] = status;
     });
 
     // Group active employees by full name identity
