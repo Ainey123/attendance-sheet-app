@@ -2131,6 +2131,11 @@ const db = {
 
     if (!found) return null;
 
+    // Reject/filter any documentation or sample PDF filenames
+    if (found.fileName && /Accounts_Department|User_Manual|User Manual|Documentation|Sample|Demo|Default|Initial|Mock/i.test(found.fileName)) {
+      return null;
+    }
+
     // Refresh live verification using current application expenses, roster, and exact date matching
     const res = await this.reverifyAccountsPdf(month, found);
     return sanitizeAccountsPdfForClient(res);

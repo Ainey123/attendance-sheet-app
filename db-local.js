@@ -844,6 +844,10 @@ const db = {
       return null;
     }
 
+    if (found.fileName && /Accounts_Department|User_Manual|User Manual|Documentation|Sample|Demo|Default|Initial|Mock/i.test(found.fileName)) {
+      return null;
+    }
+
     return await this.reverifyAccountsPdf(month);
   },
 
