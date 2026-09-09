@@ -5172,22 +5172,34 @@ function initSalaryTab() {
       uploadZone.style.borderColor = 'rgba(99,102,241,0.4)';
       uploadZone.style.background = 'rgba(99,102,241,0.04)';
     });
-    uploadZone.addEventListener('drop', (e) => {
+    uploadZone.addEventListener('drop', async (e) => {
       e.preventDefault();
       uploadZone.style.borderColor = 'rgba(99,102,241,0.4)';
       uploadZone.style.background = 'rgba(99,102,241,0.04)';
-      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file) {
-        handleAccountsPdfUpload(file, false);
+      const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+      if (files.length > 0) {
+        const chkAppend = document.getElementById('chk-append-pdf');
+        const shouldAppend = chkAppend ? chkAppend.checked : false;
+        for (let i = 0; i < files.length; i++) {
+          const isFirst = (i === 0);
+          const replace = isFirst ? !shouldAppend : false;
+          await handleAccountsPdfUpload(files[i], replace);
+        }
       }
     });
   }
 
   if (fileInput) {
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) {
-        handleAccountsPdfUpload(file, isReplacingAccountsPdf);
+    fileInput.addEventListener('change', async (e) => {
+      const files = e.target.files ? Array.from(e.target.files) : [];
+      if (files.length > 0) {
+        const chkAppend = document.getElementById('chk-append-pdf');
+        const shouldAppend = chkAppend ? chkAppend.checked : false;
+        for (let i = 0; i < files.length; i++) {
+          const isFirst = (i === 0);
+          const replace = isFirst ? (isReplacingAccountsPdf ? true : !shouldAppend) : false;
+          await handleAccountsPdfUpload(files[i], replace);
+        }
       }
     });
   }
@@ -5938,9 +5950,9 @@ window.removeAccountsPdfFile = removeAccountsPdfFile;
 window.scrollTableLeft = scrollTableLeft;
 window.scrollTableRight = scrollTableRight;
 
-// Open In-Browser PDF Viewer Modal
-function openAccountsPdfViewer(month) {
-  if (!currentAccountsPdf || !currentAccountsPdf.pdfData) {
+// Open In-Browser PDF Viewer Modal for a specific file or default PDF
+function viewAccountsPdfViewerModal(pdfId = null) {
+  if (!currentAccountsPdf) {
     showToast('No PDF data available to preview.', 'warning');
     return;
   }
@@ -5951,18 +5963,52 @@ function openAccountsPdfViewer(month) {
   const subtitleEl = document.getElementById('pdf-viewer-subtitle');
   const downloadBtn = document.getElementById('btn-download-accounts-pdf');
 
-  if (titleEl) titleEl.textContent = `Accounts Document: ${currentAccountsPdf.fileName || 'Accounts.pdf'}`;
-  if (subtitleEl) subtitleEl.textContent = `Month: ${month || currentSalaryMonth} • Uploaded By: ${currentAccountsPdf.uploadedBy || 'Admin'}`;
+  let targetPdf = null;
+  if (pdfId && currentAccountsPdf.pdfs && Array.isArray(currentAccountsPdf.pdfs)) {
+    targetPdf = currentAccountsPdf.pdfs.find(p => p.id === pdfId);
+  }
+  if (!targetPdf) {
+    if (currentAccountsPdf.pdfs && currentAccountsPdf.pdfs.length > 0) {
+      targetPdf = currentAccountsPdf.pdfs[0];
+    } else {
+      targetPdf = currentAccountsPdf;
+    }
+  }
 
-  const pdfDataUrl = 'data:application/pdf;base64,' + currentAccountsPdf.pdfData;
-  if (iframe) iframe.src = pdfDataUrl;
-  if (downloadBtn) {
-    downloadBtn.href = pdfDataUrl;
-    downloadBtn.download = currentAccountsPdf.fileName || `Accounts_${month}.pdf`;
+  const fileName = (targetPdf && targetPdf.fileName) || currentAccountsPdf.fileName || 'Accounts.pdf';
+  const pdfBase64 = (targetPdf && targetPdf.pdfData) || currentAccountsPdf.pdfData || '';
+
+  if (titleEl) titleEl.textContent = `Bank Statement: ${fileName}`;
+  if (subtitleEl) subtitleEl.textContent = `Month: ${currentSalaryMonth} • Bank: ${(targetPdf && targetPdf.bankName) || 'Bank Statement'} • Uploaded By: ${(targetPdf && targetPdf.uploadedBy) || currentAccountsPdf.uploadedBy || 'Admin'}`;
+
+  if (pdfBase64) {
+    const pdfDataUrl = 'data:application/pdf;base64,' + pdfBase64;
+    if (iframe) iframe.src = pdfDataUrl;
+    if (downloadBtn) {
+      downloadBtn.href = pdfDataUrl;
+      downloadBtn.download = fileName;
+      downloadBtn.style.display = 'inline-flex';
+    }
+  } else if (targetPdf && targetPdf.id) {
+    if (iframe) iframe.src = `/api/salary/accounts-pdf/view?month=${encodeURIComponent(currentSalaryMonth)}&pdfId=${encodeURIComponent(targetPdf.id)}`;
+    if (downloadBtn) {
+      downloadBtn.href = `/api/salary/accounts-pdf/file-data?month=${encodeURIComponent(currentSalaryMonth)}&pdfId=${encodeURIComponent(targetPdf.id)}`;
+      downloadBtn.download = fileName;
+      downloadBtn.style.display = 'inline-flex';
+    }
+  } else {
+    showToast('PDF base64 data not cached. Uploaded text extracted cleanly.', 'info');
   }
 
   if (modal) modal.classList.remove('hidden');
 }
+
+function openAccountsPdfViewer(month) {
+  viewAccountsPdfViewerModal();
+}
+
+window.viewAccountsPdfViewerModal = viewAccountsPdfViewerModal;
+window.openAccountsPdfViewer = openAccountsPdfViewer;
 
 // Open Discrepancy & Verification Detail Modal
 let currentSelectedEmployeeIdForMapping = null;

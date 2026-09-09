@@ -31,6 +31,141 @@ function normalizeName(name) {
 }
 
 /**
+ * Automatically detects the Pakistani bank from raw text content (NEVER from filename only).
+ * Supports: UBL, Bank Alfalah, Meezan Bank, HBL, Allied Bank, MCB, Askari, Bank Islami, Standard Chartered, Faysal Bank, Soneri Bank, Silk Bank, and generic fallback.
+ */
+function detectBankFromContent(rawText) {
+  if (!rawText || typeof rawText !== 'string') return 'Generic Bank';
+  const text = rawText.toUpperCase();
+  if (/BANK ALFALAH|ALFALAH/i.test(text)) return 'Bank Alfalah';
+  if (/UNITED BANK|UBL\b/i.test(text)) return 'UBL';
+  if (/MEEZAN BANK|MEEZAN/i.test(text)) return 'Meezan Bank';
+  if (/HABIB BANK|HBL\b/i.test(text)) return 'HBL';
+  if (/ALLIED BANK|ABL\b/i.test(text)) return 'Allied Bank';
+  if (/MCB BANK|MCB\b/i.test(text)) return 'MCB Bank';
+  if (/ASKARI BANK|ASKARI/i.test(text)) return 'Askari Bank';
+  if (/BANKISLAMI|BANK ISLAMI/i.test(text)) return 'Bank Islami';
+  if (/STANDARD CHARTERED|SCB\b/i.test(text)) return 'Standard Chartered';
+  if (/FAYSAL BANK|FAYSAL/i.test(text)) return 'Faysal Bank';
+  if (/SONERI BANK|SONERI/i.test(text)) return 'Soneri Bank';
+  if (/SILK BANK|SILKBANK|SILK\b/i.test(text)) return 'Silk Bank';
+
+  const match = text.match(/\b([A-Z\s]{3,25}\s+BANK)\b/);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return 'Generic Bank';
+}
+
+/**
+ * Formats YYYY-MM into full month string like "August"
+ */
+function formatMonthName(monthStr) {
+  if (!monthStr) return 'Unknown Month';
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const match = String(monthStr).trim().match(/^(\d{4})-(\d{2})$/);
+  if (match) {
+    const mIdx = parseInt(match[2], 10) - 1;
+    if (mIdx >= 0 && mIdx < 12) {
+      return monthNames[mIdx];
+    }
+  }
+  return monthStr;
+}
+
+/**
+ * Extracts bank metadata: IBAN, Account Number, Account Title, Statement Month, Statement Year
+ */
+function extractBankMetadata(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return { bankName: 'Generic Bank', iban: '', accountNumber: '', accountTitle: '', statementMonth: '', statementYear: '', extractedMonthName: '' };
+  }
+
+  const bankName = detectBankFromContent(rawText);
+
+  let iban = '';
+  const ibanMatch = rawText.match(/\b(PK\d{2}[A-Z0-9]{16,20})\b/i);
+  if (ibanMatch) iban = ibanMatch[1].toUpperCase();
+
+  let accountNumber = '';
+  const accMatch = rawText.match(/\b(?:Account\s*(?:No|Number|#)?|Acc\s*#?)\s*:?\s*([\d\-]{8,24})\b/i);
+  if (accMatch) accountNumber = accMatch[1];
+
+  let accountTitle = '';
+  const titleMatch = rawText.match(/\b(?:Title\s*of\s*Account|Account\s*Title|Name)\s*:?\s*([A-Za-z\s\.\/]{3,40})/i);
+  if (titleMatch) accountTitle = titleMatch[1].trim();
+
+  let statementMonth = '';
+  let statementYear = '';
+  let extractedMonthName = '';
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const periodMatch = rawText.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i);
+  if (periodMatch) {
+    const mName = periodMatch[1];
+    const yr = periodMatch[2];
+    const mIdx = monthNames.findIndex(m => m.toLowerCase() === mName.toLowerCase());
+    if (mIdx !== -1) {
+      statementMonth = `${yr}-${String(mIdx + 1).padStart(2, '0')}`;
+      statementYear = yr;
+      extractedMonthName = mName;
+    }
+  }
+
+  if (!statementMonth) {
+    const dateMatch = rawText.match(/\b(\d{1,2})[-\/\.]([A-Za-z]{3}|\d{1,2})[-\/\.](\d{2,4})\b/);
+    if (dateMatch) {
+      const monStr = dateMatch[2];
+      let yr = dateMatch[3];
+      if (yr.length === 2) yr = '20' + yr;
+      let mIdx = -1;
+      if (isNaN(monStr)) {
+        mIdx = monthNames.findIndex(m => m.toLowerCase().startsWith(monStr.toLowerCase()));
+      } else {
+        mIdx = parseInt(monStr, 10) - 1;
+      }
+      if (mIdx >= 0 && mIdx < 12) {
+        statementMonth = `${yr}-${String(mIdx + 1).padStart(2, '0')}`;
+        statementYear = yr;
+        extractedMonthName = monthNames[mIdx];
+      }
+    }
+  }
+
+  return {
+    bankName,
+    iban,
+    accountNumber,
+    accountTitle,
+    statementMonth,
+    statementYear,
+    extractedMonthName: extractedMonthName || formatMonthName(statementMonth)
+  };
+}
+
+/**
+ * Strictly enforces Rule 11 validation check:
+ * If statement month is different, return exact error string:
+ * "Uploaded statement belongs to <ExtractedMonthName>. Salary is being claimed for <TargetMonthName>. Please upload the correct month's statement."
+ */
+function validateSalaryClaimMonth(extractedMonth, targetMonth, rawText = '') {
+  if (!targetMonth) return { valid: true };
+  const metadata = extractBankMetadata(rawText || '');
+  const actualExtractedMonth = metadata.statementMonth || extractedMonth;
+
+  if (actualExtractedMonth && actualExtractedMonth !== targetMonth) {
+    const extractedMonthName = metadata.extractedMonthName || formatMonthName(actualExtractedMonth);
+    const targetMonthName = formatMonthName(targetMonth);
+    return {
+      valid: false,
+      error: `Uploaded statement belongs to ${extractedMonthName}. Salary is being claimed for ${targetMonthName}. Please upload the correct month's statement.`
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Normalizes any date string into standard ISO YYYY-MM-DD format
  */
 function normalizeDate(dateStr) {
@@ -271,10 +406,9 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
     throw new Error('No readable text found in this PDF. It may be a scanned image without selectable text.');
   }
 
-  // Detect bank statement type
-  const isUbl = /UBL|UNITED BANK|PARTICULARS.*INST/i.test(rawText);
-  const isAlfalah = /ALFALAH|BANK ALFALAH|Cheq\/Inst#/i.test(rawText);
-  const bankName = isAlfalah ? 'Bank Alfalah' : (isUbl ? 'UBL' : 'Generic Bank');
+  // Detect bank statement type & extract metadata from content
+  const bankMetadata = extractBankMetadata(rawText);
+  const bankName = bankMetadata.bankName || detectBankFromContent(rawText);
 
   const rawTransactions = [];
 
@@ -436,6 +570,7 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
     numPages,
     pdfInfo,
     bankName,
+    bankMetadata,
     extractedEntries,
     transactionCount: extractedEntries.length
   };
@@ -725,7 +860,11 @@ module.exports = {
   normalizeDate,
   parseAmount,
   testNameMatch,
-  extractPayeeFromDesc
+  extractPayeeFromDesc,
+  detectBankFromContent,
+  extractBankMetadata,
+  formatMonthName,
+  validateSalaryClaimMonth
 };
 
 

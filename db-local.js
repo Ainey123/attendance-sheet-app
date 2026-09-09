@@ -841,29 +841,7 @@ const db = {
     const list = data.accountsPdfs || [];
     let found = list.find(p => p.salaryMonth === month);
     if (!found) {
-      // Check if any existing uploaded accounts PDF has transactions for this month
-      const multiMonthPdf = list.find(p => Array.isArray(p.extractedEntries) && p.extractedEntries.some(e => e.date && e.date.startsWith(month)));
-      if (multiMonthPdf) {
-        found = {
-          id: generateId('acct_pdf'),
-          salaryMonth: month,
-          fileName: multiMonthPdf.fileName,
-          uploadedAt: multiMonthPdf.uploadedAt || new Date().toISOString(),
-          uploadedBy: multiMonthPdf.uploadedBy || 'System',
-          fileSize: multiMonthPdf.fileSize,
-          parsedTextPreview: multiMonthPdf.parsedTextPreview,
-          extractedEntries: multiMonthPdf.extractedEntries,
-          manualMappings: {},
-          verificationResults: [],
-          unmatchedPdfEntries: [],
-          summary: {},
-          isDerivative: true
-        };
-        list.push(found);
-        saveData();
-      } else {
-        return null;
-      }
+      return null;
     }
 
     return await this.reverifyAccountsPdf(month);

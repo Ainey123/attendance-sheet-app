@@ -2129,69 +2129,6 @@ const db = {
       found = list.find(p => p.salaryMonth === month);
     }
 
-    if (!found) {
-      // Check multi-month PDFs
-      let allPdfs = [];
-      if (!useLocalFallback && supabase) {
-        try {
-          const { data } = await supabase.from('accounts_pdfs').select('id, salaryMonth, fileName, fileSize, uploadedAt, uploadedBy, processingStatus, extractedData, extractedEntries, summary, verificationResults, unmatchedPdfEntries, pdfs');
-          if (data && data.length > 0) allPdfs = data;
-        } catch (e) {}
-      }
-      if (allPdfs.length === 0) {
-        const local = loadLocalData();
-        allPdfs = local.accountsPdfs || [];
-      }
-
-      const multiMonthPdf = allPdfs.find(p => {
-        const entries = Array.isArray(p.extractedData) ? p.extractedData : (Array.isArray(p.extractedEntries) ? p.extractedEntries : []);
-        return entries.some(e => e.date && e.date.startsWith(month));
-      });
-
-      if (multiMonthPdf) {
-        const entries = Array.isArray(multiMonthPdf.extractedData) ? multiMonthPdf.extractedData : multiMonthPdf.extractedEntries;
-        found = {
-          id: generateId('acct_pdf'),
-          salaryMonth: month,
-          fileName: multiMonthPdf.fileName,
-          fileSize: multiMonthPdf.fileSize,
-          pdfData: multiMonthPdf.pdfData,
-          uploadedAt: multiMonthPdf.uploadedAt || new Date().toISOString(),
-          uploadedBy: multiMonthPdf.uploadedBy || 'System',
-          processingStatus: 'PROCESSED',
-          extractedData: entries,
-          extractedEntries: entries,
-          manualMappings: {},
-          verificationResults: [],
-          unmatchedPdfEntries: [],
-          summary: {},
-          isDerivative: true
-        };
-        const local = loadLocalData();
-        if (!local.accountsPdfs) local.accountsPdfs = [];
-        local.accountsPdfs.push(found);
-        saveLocalData(local);
-
-        if (!useLocalFallback && supabase) {
-          try {
-            await supabase.from('accounts_pdfs').upsert({
-              id: found.id,
-              salaryMonth: found.salaryMonth,
-              fileName: found.fileName,
-              fileSize: found.fileSize,
-              uploadedAt: found.uploadedAt,
-              uploadedBy: found.uploadedBy,
-              processingStatus: found.processingStatus,
-              manualMappings: found.manualMappings,
-              summary: found.summary,
-              verificationResults: found.verificationResults,
-              unmatchedPdfEntries: found.unmatchedPdfEntries
-            });
-          } catch (e) {}
-        }
-      }
-    }
-
     if (!found) return null;
 
     // Refresh live verification using current application expenses, roster, and exact date matching
@@ -2207,7 +2144,7 @@ const db = {
       throw new Error('PDF data or extracted text is required');
     }
 
-    const { parseAccountsPdf, matchAndVerifyExpenses } = require('./pdf-parser-helper');
+    const { parseAccountsPdf, matchAndVerifyExpenses, validateSalaryClaimMonth } = require('./pdf-parser-helper');
     const newPdfId = pdfId || generateId('pdf_file');
     let parsed;
     let cleanBase64 = '';
@@ -2229,6 +2166,15 @@ const db = {
         parsed = await parseAccountsPdf(pdfBuffer, fileName || 'accounts.pdf', newPdfId);
       } catch (err) {
         throw new Error('PDF Parsing failed: ' + err.message);
+      }
+    }
+
+    // Rule 11: Enforce strict statement month vs salary claim month check
+    if (parsed && parsed.bankMetadata) {
+      const rawTxt = (pdfInput && typeof pdfInput === 'object' && pdfInput.rawText) ? pdfInput.rawText : '';
+      const monthCheck = validateSalaryClaimMonth(parsed.bankMetadata.statementMonth, month, rawTxt);
+      if (!monthCheck.valid) {
+        throw new Error(monthCheck.error);
       }
     }
 

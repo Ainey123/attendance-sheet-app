@@ -186,5 +186,202 @@
   ],
   "accountsPdfs": [],
   "salaryApprovals": [],
-  "expenseVerifications": []
+  "expenseVerifications": [
+    {
+      "id": "expv_mttvpq9f_c0nm4",
+      "employeeId": "emp_test_wf",
+      "employeeName": "Workflow Employee",
+      "salaryMonth": "2026-08",
+      "claimedAmount": 35000,
+      "verifiedAmount": 35000,
+      "verifiedBy": "Admin 1 User",
+      "verifiedAt": "2026-09-09T10:58:58.308Z",
+      "verificationStatus": "VERIFIED",
+      "approvedAmount": 35000,
+      "approvedBy": "Senior Admin User",
+      "approvedAt": "2026-09-09T10:58:59.650Z",
+      "approvalStatus": "APPROVED",
+      "notes": "",
+      "auditLog": [
+        {
+          "action": "VERIFIED",
+          "oldVerifiedAmount": null,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:11:25.485Z",
+          "notes": ""
+        },
+        {
+          "action": "APPROVED",
+          "oldApprovedAmount": null,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:11:27.588Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:11:51.906Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:11:53.496Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:26:50.730Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:26:51.578Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:39:02.209Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:39:03.424Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:39:44.333Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:39:51.281Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:40:30.471Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:40:31.276Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T09:58:15.722Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T09:58:18.457Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T10:12:10.512Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T10:12:12.673Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T10:23:15.034Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T10:23:16.312Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T10:52:37.317Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T10:52:39.227Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T10:58:58.308Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T10:58:59.650Z",
+          "notes": ""
+        }
+      ],
+      "createdAt": "2026-09-09T09:11:25.485Z",
+      "updatedAt": "2026-09-09T10:58:59.650Z"
+    }
+  ]
 }

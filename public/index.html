@@ -1458,7 +1458,7 @@
 
               <!-- Upload Area (Shown when no PDF) -->
               <div id="accounts-pdf-upload-zone" style="display:block; border:2px dashed rgba(99,102,241,0.4); background:rgba(99,102,241,0.04); border-radius:10px; padding:1.5rem; text-align:center; transition:all 0.2s ease; cursor:pointer; position:relative;">
-                <input type="file" id="accounts-pdf-file-input" accept="application/pdf,.pdf" style="display:none;" />
+                <input type="file" id="accounts-pdf-file-input" accept="application/pdf,.pdf" multiple style="display:none;" />
                 <div id="accounts-pdf-idle-content">
                   <div style="font-size:1.75rem; margin-bottom:0.35rem;">📂</div>
                   <p style="margin:0 0 0.75rem; font-size:0.88rem; color:var(--text-secondary);">
@@ -1467,8 +1467,12 @@
                   <button type="button" id="btn-upload-accounts-pdf" class="btn btn-primary" style="padding:0.5rem 1.4rem; font-size:0.9rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:0.5rem; box-shadow:0 4px 14px rgba(99,102,241,0.35); position:relative; z-index:2;">
                     📤 Upload Accounts PDF
                   </button>
+                  <div style="margin-top:0.65rem; display:flex; justify-content:center; align-items:center; gap:0.4rem; font-size:0.82rem; color:var(--text-secondary); cursor:pointer; position:relative; z-index:2;">
+                    <input type="checkbox" id="chk-append-pdf" style="cursor:pointer;" />
+                    <label for="chk-append-pdf" style="cursor:pointer; user-select:none;">Append PDFs (Combine multiple statements)</label>
+                  </div>
                   <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.5rem;">
-                    Accepts official PDF documents &bull; Max 35MB
+                    Accepts bank statements from any Pakistani bank &bull; Max 35MB
                   </div>
                 </div>
 
@@ -2268,6 +2272,6 @@
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=225"></script>
+  <script src="app.js?v=226"></script>
 </body>
 </html>
