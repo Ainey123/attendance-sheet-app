@@ -3118,6 +3118,225 @@ const db = {
       allCreditTransactions: allEntries,
       monthlySummary
     };
+  },
+
+  // ─── Emergency Salary Generator Core Aggregation & Audit Methods ───────────
+
+  async getEmergencySalaryData(monthStr = null) {
+    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+      const now = new Date();
+      monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const [employees, allSalaries, appExpensesMap, accountsPdf, expenseVerifications, pdfRuns] = await Promise.all([
+      this.getEmployees(true).catch(() => []),
+      this.generateAllSalaries(monthStr).catch(() => []),
+      this.getAppExpensesMap(monthStr).catch(() => ({})),
+      this.getAccountsPdf(monthStr).catch(() => null),
+      this.getExpenseVerifications(monthStr).catch(() => []),
+      this.getSalaryPdfRuns(monthStr).catch(() => [])
+    ]);
+
+    const salariesMap = {};
+    (allSalaries || []).forEach(s => { if (s && s.employeeId) salariesMap[s.employeeId] = s; });
+
+    const verifMap = {};
+    (expenseVerifications || []).forEach(v => { if (v && v.employeeId) verifMap[v.employeeId] = v; });
+
+    const pdfVerifMap = {};
+    if (accountsPdf && Array.isArray(accountsPdf.verificationResults)) {
+      accountsPdf.verificationResults.forEach(v => {
+        if (v && v.employeeId) pdfVerifMap[v.employeeId] = v;
+      });
+    }
+
+    const records = [];
+    let totalBaseSalary = 0;
+    let totalAppCredits = 0;
+    let totalBankCredits = 0;
+    let totalVerifiedCredits = 0;
+    let totalExpenses = 0;
+    let totalFinalPayable = 0;
+
+    let totalVerifiedCount = 0;
+    let totalMismatchCount = 0;
+    let totalNeedsReviewCount = 0;
+    let totalNoCreditCount = 0;
+    let totalApprovedCount = 0;
+
+    (employees || []).forEach(emp => {
+      if (!emp || emp.status === 'DELETED' || emp.isArchived) return;
+      const empId = emp.id;
+      const empName = emp.name ? emp.name.trim() : 'Staff Member';
+      const role = emp.role || 'Staff';
+      const sal = salariesMap[empId] || {};
+      const expData = appExpensesMap[empId] || { totalExpense: 0, entries: [] };
+      const pdfVerif = pdfVerifMap[empId] || {};
+      const dbVerif = verifMap[empId] || {};
+
+      const monthlySalary = sal.basicSalary || 0;
+      const appCredit = sal.earnedSalary || 0;
+      const bankCredit = pdfVerif.bankCreditTotal !== undefined ? pdfVerif.bankCreditTotal : 0;
+      const matchedTxList = pdfVerif.matchedCredits || [];
+      const monthExpense = expData.totalExpense || (sal.totalExpenses || 0);
+
+      // Determine verified credit amount
+      let verifiedCredit = bankCredit;
+      if (dbVerif.verifiedAmount !== null && dbVerif.verifiedAmount !== undefined) {
+        verifiedCredit = Number(dbVerif.verifiedAmount);
+      }
+
+      // Difference calculation
+      const difference = Math.round(Math.abs(appCredit - bankCredit) * 100) / 100;
+
+      // Verification Status resolution
+      let verificationStatus = 'NO CREDIT FOUND';
+      if (dbVerif.verificationStatus && dbVerif.verificationStatus !== 'PENDING') {
+        verificationStatus = dbVerif.verificationStatus;
+      } else if (pdfVerif.verificationStatus) {
+        if (pdfVerif.verificationStatus === 'VERIFIED') verificationStatus = 'VERIFIED';
+        else if (pdfVerif.verificationStatus === 'AMOUNT MISMATCH') verificationStatus = 'MISMATCH';
+        else if (pdfVerif.verificationStatus === 'AMBIGUOUS' || pdfVerif.verificationStatus === 'PARSER REVIEW REQUIRED') verificationStatus = 'NEEDS REVIEW';
+        else if (pdfVerif.verificationStatus === 'NOT FOUND') verificationStatus = 'NO CREDIT FOUND';
+      } else if (bankCredit === 0 && appCredit === 0) {
+        verificationStatus = 'VERIFIED';
+      } else if (bankCredit > 0 && difference < 1.0) {
+        verificationStatus = 'VERIFIED';
+      } else if (difference >= 1.0) {
+        verificationStatus = 'MISMATCH';
+      }
+
+      // Rule 9: ONLY subtract credit when verified or approved
+      const isCreditEligible = (verificationStatus === 'VERIFIED' || dbVerif.approvalStatus === 'APPROVED' || (dbVerif.verifiedAmount !== null && dbVerif.verifiedAmount !== undefined));
+      const creditDeduction = isCreditEligible ? verifiedCredit : 0;
+
+      // Final Payable Salary: Monthly Salary - Verified Credit - Month Expense
+      const calculatedFinal = Math.max(0, monthlySalary - creditDeduction - monthExpense);
+      const finalSalary = dbVerif.approvedAmount !== null && dbVerif.approvedAmount !== undefined ? Number(dbVerif.approvedAmount) : calculatedFinal;
+
+      const approvalStatus = dbVerif.approvalStatus || 'PENDING';
+
+      // Totals summation
+      totalBaseSalary += monthlySalary;
+      totalAppCredits += appCredit;
+      totalBankCredits += bankCredit;
+      totalVerifiedCredits += creditDeduction;
+      totalExpenses += monthExpense;
+      totalFinalPayable += finalSalary;
+
+      if (approvalStatus === 'APPROVED') totalApprovedCount++;
+      if (verificationStatus === 'VERIFIED') totalVerifiedCount++;
+      else if (verificationStatus === 'MISMATCH') totalMismatchCount++;
+      else if (verificationStatus === 'NEEDS REVIEW' || verificationStatus === 'AMBIGUOUS') totalNeedsReviewCount++;
+      else if (verificationStatus === 'NO CREDIT FOUND') totalNoCreditCount++;
+
+      records.push({
+        id: empId,
+        employeeId: empId,
+        name: empName,
+        employeeName: empName,
+        role,
+        baseSalary: monthlySalary,
+        monthlySalary,
+        appCredit,
+        bankCredit,
+        verifiedCredit,
+        difference,
+        expenses: monthExpense,
+        finalPayable: finalSalary,
+        finalSalary,
+        verificationStatus,
+        approvalStatus,
+        verifiedBy: dbVerif.verifiedBy || null,
+        verifiedAt: dbVerif.verifiedAt || null,
+        approvedBy: dbVerif.approvedBy || null,
+        approvedAt: dbVerif.approvedAt || null,
+        notes: dbVerif.notes || '',
+        auditLog: dbVerif.auditLog || [],
+        bankTransactions: matchedTxList,
+        matchedTransactions: matchedTxList
+      });
+    });
+
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const [yStr, mStr] = monthStr.split('-');
+    const mIdx = parseInt(mStr, 10) - 1;
+    const formattedMonth = `${monthNames[mIdx] || monthStr} ${yStr}`;
+
+    return {
+      month: monthStr,
+      salaryMonth: monthStr,
+      formattedMonth,
+      summary: {
+        totalEmployees: records.length,
+        totalBaseSalary,
+        totalAppCredits,
+        totalBankCredits,
+        totalVerifiedCredits,
+        totalExpenses,
+        totalFinalPayable,
+        totalVerifiedCount,
+        totalMismatchCount,
+        totalNeedsReviewCount,
+        totalNoCreditCount,
+        totalApprovedCount
+      },
+      employees: records,
+      records,
+      attachedPdfs: accountsPdf ? (accountsPdf.pdfs || [{ fileName: accountsPdf.fileName || 'Bank_Statement.pdf', bankName: accountsPdf.bankName || 'Bank Statement', transactionCount: (accountsPdf.extractedData||[]).length }]) : [],
+      pdfRuns
+    };
+  },
+
+  async getSalaryPdfRuns(month) {
+    if (!month) return [];
+    let list = [];
+    if (!useLocalFallback && supabase) {
+      try {
+        const { data } = await supabase.from('salary_pdf_runs').select('*').eq('salaryMonth', month).order('generatedAt', { ascending: false });
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+    }
+    if (list.length === 0) {
+      const local = loadLocalData();
+      list = (local.salaryPdfRuns || []).filter(r => r.salaryMonth === month);
+    }
+    return list;
+  },
+
+  async saveSalaryPdfRun(month, runData) {
+    if (!month) throw new Error('month required');
+    const nowIso = new Date().toISOString();
+    const existingRuns = await this.getSalaryPdfRuns(month);
+    const runSeq = String(existingRuns.length + 1).padStart(3, '0');
+    const [yStr, mStr] = month.split('-');
+    const monthAbbrList = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const mAbbr = monthAbbrList[parseInt(mStr, 10) - 1] || 'MON';
+    const runId = runData.runId || `SAL-${mAbbr}-${yStr}-${runSeq}`;
+
+    const newRun = {
+      id: generateId('run'),
+      salaryMonth: month,
+      runId,
+      generatedBy: runData.generatedBy || 'Admin',
+      generatedAt: nowIso,
+      summary: runData.summary || {},
+      records: runData.records || [],
+      auditLog: [{ action: 'PDF_GENERATED', by: runData.generatedBy || 'Admin', at: nowIso, runId }]
+    };
+
+    const localData = loadLocalData();
+    if (!localData.salaryPdfRuns) localData.salaryPdfRuns = [];
+    localData.salaryPdfRuns.unshift(newRun);
+    saveLocalData(localData);
+
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('salary_pdf_runs').insert(newRun);
+      } catch (e) {}
+    }
+
+    return newRun;
   }
 };
 

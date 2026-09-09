@@ -430,14 +430,91 @@ module.exports = async (req, res) => {
       return res.json({ success: true, salary: rec });
     }
 
-    // ── POST /api/salary/generate-all ───────────────────────────────────────
-    if (path === 'salary/generate-all' && method === 'POST') {
+    // ── Emergency Salary Generator Endpoints ─────────────────────────────────────
+    if (path === 'emergency-salary' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const month = query.month || getCurrentMonthString();
+      const report = await db.getEmergencySalaryData(month);
+      return res.json({ success: true, report });
+    }
+
+    if (path === 'emergency-salary/upload-pdf' && method === 'POST') {
       const settings = await db.getSettings();
       if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
       const body = await parseBody(req);
-      if (!body.month) return res.status(400).json({ error: 'month required' });
-      const results = await db.generateAllSalaries(body.month);
-      return res.json({ success: true, salaries: results });
+      if (!body.salaryMonth) return res.status(400).json({ error: 'salaryMonth required' });
+      const replace = Boolean(body.replace);
+      
+      const files = Array.isArray(body.files) ? body.files : (body.pdfData ? [{ fileName: body.fileName || 'Bank.pdf', pdfData: body.pdfData }] : []);
+      if (files.length === 0) return res.status(400).json({ error: 'No PDF files provided' });
+
+      let accountsPdfRecord = null;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const isFirst = (i === 0);
+        const shouldReplace = isFirst ? replace : false;
+        accountsPdfRecord = await db.saveAccountsPdf(body.salaryMonth, file.fileName || `Bank_${i+1}.pdf`, file.pdfData, 'Admin', shouldReplace);
+      }
+
+      const report = await db.getEmergencySalaryData(body.salaryMonth);
+      return res.json({ success: true, accountsPdf: accountsPdfRecord, report });
+    }
+
+    if (path === 'emergency-salary/verify' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.salaryMonth) return res.status(400).json({ error: 'employeeId and salaryMonth required' });
+
+      const verifObj = {
+        employeeId: body.employeeId,
+        salaryMonth: body.salaryMonth,
+        verifiedAmount: Number(body.verifiedAmount),
+        verifiedBy: body.verifiedBy || 'Admin 1',
+        verificationStatus: body.verificationStatus || 'VERIFIED',
+        notes: body.notes || ''
+      };
+
+      const record = await db.saveExpenseVerification(verifObj);
+      const report = await db.getEmergencySalaryData(body.salaryMonth);
+      return res.json({ success: true, record, report });
+    }
+
+    if (path === 'emergency-salary/approve' && method === 'POST') {
+      const settings = await db.getSettings();
+      const body = await parseBody(req);
+      const seniorPass = settings.seniorAdminPasscode || '9999';
+      const providedPass = req.headers['x-admin-passcode'] || body.passcode || adminPasscode;
+      
+      if (providedPass !== seniorPass && providedPass !== settings.adminPasscode) {
+        return res.status(401).json({ error: 'Invalid Senior Admin Passcode' });
+      }
+
+      if (!body.employeeId || !body.salaryMonth) return res.status(400).json({ error: 'employeeId and salaryMonth required' });
+
+      const appObj = {
+        employeeId: body.employeeId,
+        salaryMonth: body.salaryMonth,
+        approvedAmount: Number(body.approvedAmount),
+        approvedBy: body.approvedBy || 'Senior Admin',
+        approvalStatus: 'APPROVED',
+        notes: body.notes || ''
+      };
+
+      const record = await db.saveExpenseVerification(appObj);
+      const report = await db.getEmergencySalaryData(body.salaryMonth);
+      return res.json({ success: true, record, report });
+    }
+
+    if (path === 'emergency-salary/pdf-run' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.salaryMonth) return res.status(400).json({ error: 'salaryMonth required' });
+
+      const run = await db.saveSalaryPdfRun(body.salaryMonth, body);
+      return res.json({ success: true, run });
     }
 
     // ── Accounts PDF Verification Routes ──────────────────────────────────────

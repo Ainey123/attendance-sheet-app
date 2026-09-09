@@ -177,6 +177,30 @@ const API = {
   getEmployeeCreditHistory: (employeeId) => fetchJson(`/api/salary/employee-credit-history?employeeId=${encodeURIComponent(employeeId)}`, {
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
+  // Emergency Salary Generator APIs
+  getEmergencySalary: (month) => fetchJson(`/api/emergency-salary?month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
+  uploadEmergencyBankPdf: (data) => fetchJson('/api/emergency-salary/upload-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  verifyEmergencySalary: (data) => fetchJson('/api/emergency-salary/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  approveEmergencySalary: (data) => fetchJson('/api/emergency-salary/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  logEmergencyPdfRun: (data) => fetchJson('/api/emergency-salary/pdf-run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
   resolveAttendance: (body) => fetchJson('/api/attendance/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
@@ -1082,6 +1106,10 @@ async function switchAdminTab(tabId) {
     await loadAdminComments();
   } else if (tabId === 'tab-salary') {
     await loadSalarySheet();
+  } else if (tabId === 'tab-emergency-salary') {
+    const picker = document.getElementById('emerg-salary-month');
+    const month = (picker && picker.value) || currentSalaryMonth || getCurrentMonthString();
+    await loadEmergencySalaryGenerator(month);
   }
 }
 
@@ -3387,6 +3415,7 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
 document.addEventListener('DOMContentLoaded', () => {
   // 1. Init clock
   initClock();
+  initEmergencySalaryGenerator();
   
   // Register Service Worker for PWA
   if ('serviceWorker' in navigator) {
@@ -7012,3 +7041,744 @@ function closeCreditHistoryModal() {
   const modal = document.getElementById('modal-credit-history');
   if (modal) modal.classList.add('hidden');
 }
+
+// ─── Emergency Salary Generator Controller ────────────────────────────────────
+let currentEmergReport = null;
+let currentEmergMonth = null;
+let selectedEmergEmpIdForOverride = null;
+
+function initEmergencySalaryGenerator() {
+  const monthInput = document.getElementById('emerg-salary-month');
+  if (monthInput && !monthInput.value) {
+    monthInput.value = getCurrentMonthString();
+  }
+  currentEmergMonth = monthInput ? monthInput.value : getCurrentMonthString();
+
+  if (monthInput) {
+    monthInput.addEventListener('change', (e) => {
+      currentEmergMonth = e.target.value;
+      loadEmergencySalaryGenerator(currentEmergMonth);
+    });
+  }
+
+  const triggerUploadBtn = document.getElementById('btn-emerg-trigger-pdf-upload');
+  const fileInput = document.getElementById('emerg-pdf-file-input');
+  if (triggerUploadBtn && fileInput) {
+    triggerUploadBtn.onclick = () => fileInput.click();
+  }
+
+  if (fileInput) {
+    fileInput.onchange = (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        processAndVerifyEmergPDFs(Array.from(e.target.files));
+      }
+    };
+  }
+
+  const processBtn = document.getElementById('btn-emerg-process');
+  if (processBtn) {
+    processBtn.onclick = () => {
+      if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        processAndVerifyEmergPDFs(Array.from(fileInput.files));
+      } else {
+        showToast('Please select one or more bank statement PDFs first.', 'info');
+        if (fileInput) fileInput.click();
+      }
+    };
+  }
+
+  const genPdfBtn = document.getElementById('btn-emerg-generate-pdf');
+  if (genPdfBtn) {
+    genPdfBtn.onclick = () => triggerEmergencySalaryPDFExport();
+  }
+
+  const indivPdfBtn = document.getElementById('btn-emerg-individual-pdf');
+  if (indivPdfBtn) {
+    indivPdfBtn.onclick = () => promptAndGenerateIndividualPDF();
+  }
+
+  // Review Modal close buttons
+  const closeRevBtn = document.getElementById('btn-close-emerg-review-modal');
+  const cancelRevBtn = document.getElementById('btn-cancel-emerg-review');
+  if (closeRevBtn) closeRevBtn.onclick = closeEmergReviewModal;
+  if (cancelRevBtn) cancelRevBtn.onclick = closeEmergReviewModal;
+
+  const formOverride = document.getElementById('form-emerg-override');
+  if (formOverride) {
+    formOverride.onsubmit = (e) => {
+      e.preventDefault();
+      saveEmergencyOverrideSubmit();
+    };
+  }
+
+  // Warning Modal close buttons
+  const cancelWarnBtn = document.getElementById('btn-cancel-emerg-warning');
+  const proceedWarnBtn = document.getElementById('btn-proceed-emerg-warning');
+  if (cancelWarnBtn) cancelWarnBtn.onclick = closeEmergWarningModal;
+  if (proceedWarnBtn) {
+    proceedWarnBtn.onclick = () => {
+      closeEmergWarningModal();
+      executeProgrammaticSalaryPDFExport(true);
+    };
+  }
+}
+
+async function loadEmergencySalaryGenerator(month) {
+  if (!month) month = getCurrentMonthString();
+  currentEmergMonth = month;
+  const tbody = document.getElementById('emerg-salary-tbody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="12" class="table-empty" style="text-align:center; padding:1rem;"><span class="spinner" style="display:inline-block; width:16px; height:16px; border:2px solid #818cf8; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:8px;"></span>Loading real employee salary & credit data...</td></tr>';
+  }
+
+  try {
+    const report = await API.getEmergencySalary(month);
+    currentEmergReport = report;
+    renderEmergencySalaryUI(report);
+  } catch (err) {
+    console.error('loadEmergencySalaryGenerator error:', err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="12" class="table-empty" style="color:var(--color-danger); text-align:center; padding:1rem;">Failed to load emergency salary data: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+}
+
+function renderEmergencySalaryUI(report) {
+  if (!report) return;
+
+  const summary = report.summary || {};
+  const employees = report.employees || [];
+
+  // Update stat cards
+  const elEmp = document.getElementById('emerg-stat-employees');
+  if (elEmp) elEmp.textContent = summary.totalEmployees || employees.length || 0;
+
+  const elBase = document.getElementById('emerg-stat-base');
+  if (elBase) elBase.textContent = 'PKR ' + (summary.totalBaseSalary || 0).toLocaleString();
+
+  const elCred = document.getElementById('emerg-stat-verified-credits');
+  if (elCred) elCred.textContent = 'PKR ' + (summary.totalVerifiedCredits || 0).toLocaleString();
+
+  const elExp = document.getElementById('emerg-stat-expenses');
+  if (elExp) elExp.textContent = 'PKR ' + (summary.totalExpenses || 0).toLocaleString();
+
+  const elFinal = document.getElementById('emerg-stat-final-payable');
+  if (elFinal) elFinal.textContent = 'PKR ' + (summary.totalFinalPayable || 0).toLocaleString();
+
+  // Status Summary Badges
+  const badgesContainer = document.getElementById('emerg-status-summary-badges');
+  if (badgesContainer) {
+    const totalDiscrepancies = summary.totalDiscrepancies || 0;
+    const totalUnapproved = summary.unapprovedCount || 0;
+
+    let badgesHtml = '';
+    if (totalDiscrepancies > 0) {
+      badgesHtml += `<span class="status-indicator" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:0.78rem; font-weight:600;">⚠️ ${totalDiscrepancies} Mismatch / Discrepanc${totalDiscrepancies > 1 ? 'ies' : 'y'}</span>`;
+    } else {
+      badgesHtml += `<span class="status-indicator" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.78rem; font-weight:600;">✓ All Bank Credits Verified</span>`;
+    }
+
+    if (totalUnapproved > 0) {
+      badgesHtml += `<span class="status-indicator" style="background:rgba(99,102,241,0.15); color:#a5b4fc; border:1px solid rgba(99,102,241,0.3); font-size:0.78rem; font-weight:600;">🛡️ ${totalUnapproved} Pending Senior Approval</span>`;
+    } else {
+      badgesHtml += `<span class="status-indicator" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.4); font-size:0.78rem; font-weight:600;">🛡️ Senior Admin Approved</span>`;
+    }
+    badgesContainer.innerHTML = badgesHtml;
+  }
+
+  // Render Employee Salary Rows
+  const tbody = document.getElementById('emerg-salary-tbody');
+  if (tbody) {
+    if (employees.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="12" class="table-empty" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No active employee records found for this month.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = employees.map((emp, idx) => {
+      let statusBadge = '';
+      if (emp.verificationStatus === 'VERIFIED') {
+        statusBadge = '<span class="status-badge" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">✓ VERIFIED</span>';
+      } else if (emp.verificationStatus === 'MISMATCH') {
+        statusBadge = '<span class="status-badge" style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">⚠️ MISMATCH</span>';
+      } else if (emp.verificationStatus === 'NEEDS REVIEW') {
+        statusBadge = '<span class="status-badge" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">🔍 NEEDS REVIEW</span>';
+      } else {
+        statusBadge = '<span class="status-badge" style="background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); padding:2px 8px; border-radius:4px; font-size:0.75rem;">? NO CREDIT FOUND</span>';
+      }
+
+      let approvalBadge = '';
+      if (emp.approvalStatus === 'APPROVED') {
+        approvalBadge = `<span style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.5); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;" title="Approved by ${escapeHtml(emp.approvedBy || 'Senior Admin')}">🛡️ APPROVED</span>`;
+      } else {
+        approvalBadge = `<button type="button" class="btn btn-sm" style="background:#10b981; color:#fff; font-size:0.72rem; padding:0.25rem 0.55rem; border-radius:4px; border:none; cursor:pointer;" onclick="openEmergApproveModal('${emp.id}')">🛡️ Approve</button>`;
+      }
+
+      const netSalary = emp.finalPayable || 0;
+      const netClass = netSalary >= 0 ? 'color:#22c55e; font-weight:700;' : 'color:#ef4444; font-weight:700;';
+
+      return `
+        <tr id="emerg-emp-row-${emp.id}" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="text-align:center; color:var(--text-muted);">${idx + 1}</td>
+          <td style="font-weight:600; color:#fff;">${escapeHtml(emp.name)}</td>
+          <td style="color:var(--text-secondary); font-size:0.85rem;">${escapeHtml(emp.role || 'Staff')}</td>
+          <td style="text-align:right; font-family:monospace; color:#a5b4fc; font-weight:600;">PKR ${fmtNum(emp.baseSalary)}</td>
+          <td style="text-align:right; font-family:monospace; color:#818cf8;">PKR ${fmtNum(emp.appCredit)}</td>
+          <td style="text-align:right; font-family:monospace; color:#6ee7b7; font-weight:600;">PKR ${fmtNum(emp.verifiedCredit)}</td>
+          <td style="text-align:right; font-family:monospace; color:#f87171;">PKR ${fmtNum(emp.expenses)}</td>
+          <td style="text-align:right; font-family:monospace; font-size:0.95rem; ${netClass}">PKR ${fmtNum(netSalary)}</td>
+          <td style="text-align:center;">${statusBadge}</td>
+          <td style="text-align:center;">${approvalBadge}</td>
+          <td style="text-align:center;">
+            <div style="display:flex; gap:0.35rem; justify-content:center;">
+              <button type="button" class="btn btn-sm btn-secondary" style="padding:0.22rem 0.45rem; font-size:0.75rem;" onclick="openEmergReviewModal('${emp.id}')" title="Review Bank Transactions & Override">🔍 Review</button>
+              <button type="button" class="btn btn-sm btn-primary" style="padding:0.22rem 0.45rem; font-size:0.75rem; background:#4f46e5; border:none;" onclick="generateIndividualEmployeePDF('${emp.id}')" title="Download Pay Slip PDF">📄 Slip</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Render Attached PDFs list inside emerg-pdf-file-list & container
+  const pdfContainer = document.getElementById('emerg-pdf-tags-container');
+  const pdfList = document.getElementById('emerg-pdf-file-list');
+  const attachedPdfs = report.attachedPdfs || [];
+
+  if (pdfContainer && pdfList) {
+    if (attachedPdfs.length === 0) {
+      pdfContainer.style.display = 'none';
+    } else {
+      pdfContainer.style.display = 'block';
+      pdfList.innerHTML = attachedPdfs.map(p => `
+        <div style="display:inline-flex; align-items:center; gap:0.5rem; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.4); padding:0.35rem 0.75rem; border-radius:20px; font-size:0.8rem; color:#a5b4fc;">
+          <span>📑 <strong>${escapeHtml(p.fileName)}</strong> (${escapeHtml(p.bankName || 'Bank Statement')} • ${p.transactionCount || 0} tx)</span>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+async function processAndVerifyEmergPDFs(files) {
+  if (!files || files.length === 0) return;
+  if (!currentEmergMonth) currentEmergMonth = getCurrentMonthString();
+
+  showToast(`Extracting & parsing ${files.length} bank statement PDF(s)...`, 'info');
+
+  try {
+    const parsedFilesData = [];
+    for (const file of files) {
+      const extractedText = await extractPdfTextInBrowser(file);
+      let payloadFile = {
+        fileName: file.name,
+        fileSize: file.size
+      };
+      if (extractedText) {
+        payloadFile.extractedText = extractedText;
+      } else {
+        const base64Data = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+        payloadFile.pdfBase64 = base64Data;
+      }
+      parsedFilesData.push(payloadFile);
+    }
+
+    showToast('Merging transactions & calculating salary credits...', 'info');
+
+    const res = await API.uploadEmergencyBankPdf({
+      month: currentEmergMonth,
+      files: parsedFilesData
+    });
+
+    if (res && res.success) {
+      showToast(`✅ Uploaded & merged ${files.length} bank statement(s)!`, 'success');
+      await loadEmergencySalaryGenerator(currentEmergMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to process bank statement PDFs', 'error');
+    }
+  } catch (err) {
+    console.error('processAndVerifyEmergPDFs error:', err);
+    showToast('Error processing PDFs: ' + err.message, 'error');
+  }
+}
+
+// Modal Review & Override
+function openEmergReviewModal(empId) {
+  if (!currentEmergReport || !currentEmergReport.employees) return;
+  const emp = currentEmergReport.employees.find(e => e.id === empId);
+  if (!emp) return;
+
+  selectedEmergEmpIdForOverride = empId;
+
+  const modal = document.getElementById('modal-emerg-review');
+  const titleEl = document.getElementById('emerg-review-title');
+  const subtitleEl = document.getElementById('emerg-review-subtitle');
+  const appCredEl = document.getElementById('emerg-rev-app-credit');
+  const bankCredEl = document.getElementById('emerg-rev-bank-credit');
+  const diffEl = document.getElementById('emerg-rev-diff');
+  const badgeEl = document.getElementById('emerg-rev-status-badge');
+  const txListEl = document.getElementById('emerg-rev-tx-list');
+  const empIdInput = document.getElementById('emerg-rev-emp-id');
+  const overrideAmtInput = document.getElementById('emerg-rev-override-amount');
+  const overrideStatusSelect = document.getElementById('emerg-rev-override-status');
+  const notesInput = document.getElementById('emerg-rev-override-notes');
+
+  if (titleEl) titleEl.textContent = `Credit Review: ${emp.name}`;
+  if (subtitleEl) subtitleEl.textContent = `Role: ${emp.role || 'Staff'} • Month: ${currentEmergMonth}`;
+  if (empIdInput) empIdInput.value = emp.id;
+
+  if (appCredEl) appCredEl.textContent = 'PKR ' + (emp.appCredit || 0).toLocaleString();
+  if (bankCredEl) bankCredEl.textContent = 'PKR ' + (emp.verifiedCredit || 0).toLocaleString();
+  if (diffEl) {
+    const diff = (emp.verifiedCredit || 0) - (emp.appCredit || 0);
+    diffEl.textContent = (diff >= 0 ? '+' : '') + 'PKR ' + diff.toLocaleString();
+    diffEl.style.color = Math.abs(diff) < 1.0 ? '#4ade80' : '#fbbf24';
+  }
+
+  if (badgeEl) {
+    badgeEl.innerHTML = `<span style="padding:2px 8px; border-radius:4px; font-weight:700; font-size:0.75rem; background:rgba(99,102,241,0.2); color:#a5b4fc;">${escapeHtml(emp.verificationStatus || 'NEEDS REVIEW')}</span>`;
+  }
+
+  // Render transaction history list for this employee
+  if (txListEl) {
+    const txs = emp.bankTransactions || [];
+    if (txs.length === 0) {
+      txListEl.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:0.5rem; font-size:0.8rem;">No matching bank transactions found in uploaded statements.</div>';
+    } else {
+      txListEl.innerHTML = `
+        <table style="width:100%; border-collapse:collapse; font-size:0.75rem;">
+          <thead>
+            <tr style="color:var(--text-muted); border-bottom:1px solid rgba(255,255,255,0.1);">
+              <th style="text-align:left; padding:4px;">Date</th>
+              <th style="text-align:left; padding:4px;">Description</th>
+              <th style="text-align:right; padding:4px;">Credit (PKR)</th>
+              <th style="text-align:center; padding:4px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${txs.map(t => `
+              <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
+                <td style="padding:4px; color:#cbd5e1;">${escapeHtml(t.date || '—')}</td>
+                <td style="padding:4px; color:#94a3b8;">${escapeHtml(t.description || '—')}</td>
+                <td style="padding:4px; text-align:right; font-family:monospace; color:#6ee7b7; font-weight:700;">${(t.credit || 0).toLocaleString()}</td>
+                <td style="text-align:center; padding:4px;">
+                  <span style="font-size:0.7rem; color:${t.status === 'INCLUDED' ? '#4ade80' : '#94a3b8'};">${escapeHtml(t.status || 'PARSED')}</span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+  }
+
+  if (overrideAmtInput) overrideAmtInput.value = emp.verifiedCredit !== undefined ? emp.verifiedCredit : emp.appCredit;
+  if (overrideStatusSelect) overrideStatusSelect.value = emp.verificationStatus || 'VERIFIED';
+  if (notesInput) notesInput.value = emp.notes || '';
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeEmergReviewModal() {
+  const modal = document.getElementById('modal-emerg-review');
+  if (modal) modal.classList.add('hidden');
+  selectedEmergEmpIdForOverride = null;
+}
+
+async function saveEmergencyOverrideSubmit() {
+  if (!selectedEmergEmpIdForOverride || !currentEmergMonth) return;
+
+  const overrideAmtInput = document.getElementById('emerg-rev-override-amount');
+  const overrideStatusSelect = document.getElementById('emerg-rev-override-status');
+  const notesInput = document.getElementById('emerg-rev-override-notes');
+
+  const verifiedCredit = parseFloat(overrideAmtInput ? overrideAmtInput.value : 0);
+  const status = overrideStatusSelect ? overrideStatusSelect.value : 'VERIFIED';
+  const notes = notesInput ? notesInput.value.trim() : '';
+
+  try {
+    showToast('Saving verification override...', 'info');
+    const res = await API.verifyEmergencySalary({
+      month: currentEmergMonth,
+      employeeId: selectedEmergEmpIdForOverride,
+      verifiedCredit,
+      status,
+      notes,
+      verifiedBy: 'Admin 1'
+    });
+
+    if (res && res.success) {
+      showToast('✅ Credit verification saved!', 'success');
+      closeEmergReviewModal();
+      await loadEmergencySalaryGenerator(currentEmergMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to save verification', 'error');
+    }
+  } catch (err) {
+    showToast('Error saving verification: ' + err.message, 'error');
+  }
+}
+
+async function openEmergApproveModal(empId) {
+  if (!currentEmergReport || !currentEmergReport.employees) return;
+  const emp = currentEmergReport.employees.find(e => e.id === empId);
+  if (!emp) return;
+
+  const passcode = prompt(`Senior Admin Passcode required to approve salary for ${emp.name}:\n\n(Default Passcode: 9999)`);
+  if (!passcode) return;
+
+  try {
+    showToast(`Approving salary for ${emp.name}...`, 'info');
+    const res = await API.approveEmergencySalary({
+      month: currentEmergMonth,
+      employeeId: empId,
+      passcode,
+      approvedBy: 'Senior Admin',
+      notes: 'Approved via Emergency Generator'
+    });
+
+    if (res && res.success) {
+      showToast(`🛡️ Salary approved for ${emp.name}!`, 'success');
+      await loadEmergencySalaryGenerator(currentEmergMonth);
+    } else {
+      showToast((res && res.error) || 'Failed to approve salary', 'error');
+    }
+  } catch (err) {
+    showToast('Approval error: ' + err.message, 'error');
+  }
+}
+
+// Warning Modal Handlers
+function openEmergWarningModal(discrepancies) {
+  const modal = document.getElementById('modal-emerg-warning');
+  const textEl = document.getElementById('emerg-warning-text');
+
+  if (textEl) {
+    textEl.innerHTML = `
+      There ${discrepancies.length === 1 ? 'is' : 'are'} <strong>${discrepancies.length} unresolved credit discrepancy/discrepancies</strong> in current month (${currentEmergMonth}):
+      <ul style="margin:8px 0 0 18px; padding:0; text-align:left;">
+        ${discrepancies.map(d => `<li><strong>${escapeHtml(d.name)}</strong>: App Credit (PKR ${(d.appCredit||0).toLocaleString()}) vs Bank Credit (PKR ${(d.verifiedCredit||0).toLocaleString()}) [${escapeHtml(d.verificationStatus)}]</li>`).join('')}
+      </ul>
+      <br/>
+      Do you want to proceed with PDF export anyway?
+    `;
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeEmergWarningModal() {
+  const modal = document.getElementById('modal-emerg-warning');
+  if (modal) modal.classList.add('hidden');
+}
+
+function triggerEmergencySalaryPDFExport() {
+  if (!currentEmergReport || !currentEmergReport.employees) {
+    showToast('No emergency salary data loaded.', 'warning');
+    return;
+  }
+
+  const discrepancies = currentEmergReport.employees.filter(e => e.verificationStatus === 'MISMATCH' || e.verificationStatus === 'NEEDS REVIEW');
+  if (discrepancies.length > 0) {
+    openEmergWarningModal(discrepancies);
+  } else {
+    executeProgrammaticSalaryPDFExport(false);
+  }
+}
+
+async function executeProgrammaticSalaryPDFExport(overrideWarning = false) {
+  if (!currentEmergReport || !currentEmergReport.employees) return;
+
+  const month = currentEmergMonth || getCurrentMonthString();
+  const monthTitle = new Date(month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const runId = `SAL-${month.replace('-', '')}-` + String(Math.floor(100 + Math.random() * 900));
+  const generatedAt = new Date().toLocaleString();
+
+  showToast(`Generating Programmatic Salary PDF (${runId})...`, 'info');
+
+  const summary = currentEmergReport.summary || {};
+  const employees = currentEmergReport.employees || [];
+
+  // Construct Printable HTML Document
+  const printContainer = document.createElement('div');
+  printContainer.id = 'emerg-pdf-print-root';
+  printContainer.style.position = 'absolute';
+  printContainer.style.left = '-9999px';
+  printContainer.style.top = '-9999px';
+  printContainer.style.width = '800px';
+  printContainer.style.padding = '24px';
+  printContainer.style.background = '#ffffff';
+  printContainer.style.color = '#1e293b';
+  printContainer.style.fontFamily = "'Inter', Arial, sans-serif";
+
+  printContainer.innerHTML = `
+    <div style="border-bottom:2px solid #334155; padding-bottom:12px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:flex-end;">
+      <div>
+        <h1 style="margin:0; font-size:20px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:0.5px;">Office Attendance & Salary Management System</h1>
+        <h2 style="margin:4px 0 0; font-size:14px; font-weight:600; color:#475569;">Emergency Salary Calculation & Disbursal Sheet</h2>
+      </div>
+      <div style="text-align:right; font-size:11px; color:#64748b;">
+        <div><strong>Run ID:</strong> <span style="font-family:monospace; font-weight:700; color:#0f172a;">${runId}</span></div>
+        <div><strong>Period:</strong> ${monthTitle}</div>
+        <div><strong>Generated:</strong> ${generatedAt}</div>
+      </div>
+    </div>
+
+    <!-- Summary Metrics Box -->
+    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-bottom:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px;">
+      <div style="text-align:center;">
+        <div style="font-size:10px; color:#64748b; font-weight:600; text-transform:uppercase;">Employees</div>
+        <div style="font-size:14px; font-weight:700; color:#0f172a;">${summary.totalEmployees || employees.length}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:10px; color:#64748b; font-weight:600; text-transform:uppercase;">Base Salary</div>
+        <div style="font-size:13px; font-weight:700; color:#3b82f6;">PKR ${(summary.totalBaseSalary || 0).toLocaleString()}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:10px; color:#64748b; font-weight:600; text-transform:uppercase;">Verified Credits</div>
+        <div style="font-size:13px; font-weight:700; color:#10b981;">PKR ${(summary.totalVerifiedCredits || 0).toLocaleString()}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:10px; color:#64748b; font-weight:600; text-transform:uppercase;">Month Expenses</div>
+        <div style="font-size:13px; font-weight:700; color:#ef4444;">PKR ${(summary.totalExpenses || 0).toLocaleString()}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:10px; color:#64748b; font-weight:600; text-transform:uppercase;">Net Payable</div>
+        <div style="font-size:14px; font-weight:800; color:#15803d;">PKR ${(summary.totalFinalPayable || 0).toLocaleString()}</div>
+      </div>
+    </div>
+
+    <!-- Main Salary Table -->
+    <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:20px;">
+      <thead>
+        <tr style="background:#0f172a; color:#ffffff;">
+          <th style="padding:6px 8px; text-align:center; border:1px solid #334155;">#</th>
+          <th style="padding:6px 8px; text-align:left; border:1px solid #334155;">Employee Name</th>
+          <th style="padding:6px 8px; text-align:left; border:1px solid #334155;">Role</th>
+          <th style="padding:6px 8px; text-align:right; border:1px solid #334155;">Base Salary</th>
+          <th style="padding:6px 8px; text-align:right; border:1px solid #334155;">Verified Credits</th>
+          <th style="padding:6px 8px; text-align:right; border:1px solid #334155;">Month Expense</th>
+          <th style="padding:6px 8px; text-align:right; border:1px solid #334155;">Final Payable</th>
+          <th style="padding:6px 8px; text-align:center; border:1px solid #334155;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${employees.map((emp, i) => `
+          <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+            <td style="padding:6px 8px; text-align:center; border:1px solid #cbd5e1; color:#64748b;">${i + 1}</td>
+            <td style="padding:6px 8px; font-weight:600; border:1px solid #cbd5e1; color:#0f172a;">${escapeHtml(emp.name)}</td>
+            <td style="padding:6px 8px; border:1px solid #cbd5e1; color:#475569;">${escapeHtml(emp.role || 'Staff')}</td>
+            <td style="padding:6px 8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace;">${fmtNum(emp.baseSalary)}</td>
+            <td style="padding:6px 8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace; color:#047857; font-weight:600;">${fmtNum(emp.verifiedCredit)}</td>
+            <td style="padding:6px 8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace; color:#b91c1c;">${fmtNum(emp.expenses)}</td>
+            <td style="padding:6px 8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace; font-weight:700; color:#15803d;">PKR ${fmtNum(emp.finalPayable)}</td>
+            <td style="padding:6px 8px; text-align:center; border:1px solid #cbd5e1; font-size:10px; font-weight:700;">
+              ${emp.approvalStatus === 'APPROVED' ? '<span style="color:#047857;">APPROVED</span>' : '<span style="color:#b45309;">VERIFIED</span>'}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="background:#f1f5f9; font-weight:700;">
+          <td colspan="3" style="padding:8px; border:1px solid #94a3b8; text-align:right; font-size:11px;">TOTALS:</td>
+          <td style="padding:8px; border:1px solid #94a3b8; text-align:right; font-family:monospace;">PKR ${(summary.totalBaseSalary || 0).toLocaleString()}</td>
+          <td style="padding:8px; border:1px solid #94a3b8; text-align:right; font-family:monospace; color:#047857;">PKR ${(summary.totalVerifiedCredits || 0).toLocaleString()}</td>
+          <td style="padding:8px; border:1px solid #94a3b8; text-align:right; font-family:monospace; color:#b91c1c;">PKR ${(summary.totalExpenses || 0).toLocaleString()}</td>
+          <td style="padding:8px; border:1px solid #94a3b8; text-align:right; font-family:monospace; color:#15803d; font-size:12px;">PKR ${(summary.totalFinalPayable || 0).toLocaleString()}</td>
+          <td style="padding:8px; border:1px solid #94a3b8;"></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Signatures & Authorization Section -->
+    <div style="margin-top:40px; display:grid; grid-template-columns:1fr 1fr; gap:40px;">
+      <div style="border-top:1px solid #94a3b8; padding-top:8px; text-align:center;">
+        <div style="font-weight:700; font-size:11px; color:#0f172a;">Prepared & Verified By (Admin 1)</div>
+        <div style="font-size:10px; color:#64748b; margin-top:2px;">Signature & Date</div>
+      </div>
+      <div style="border-top:1px solid #94a3b8; padding-top:8px; text-align:center;">
+        <div style="font-weight:700; font-size:11px; color:#0f172a;">Approved By (Senior Admin)</div>
+        <div style="font-size:10px; color:#64748b; margin-top:2px;">Signature & Stamp (Passcode 9999)</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(printContainer);
+
+  const opt = {
+    margin: [10, 10, 10, 10],
+    filename: `Salary_Sheet_${month}_${runId}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    if (window.html2pdf) {
+      await window.html2pdf().set(opt).from(printContainer).save();
+    } else {
+      window.print();
+    }
+
+    showToast(`✅ PDF ${opt.filename} generated successfully!`, 'success');
+
+    // Log run to database
+    await API.logEmergencyPdfRun({
+      month,
+      runId,
+      totalEmployees: summary.totalEmployees || employees.length,
+      totalPayable: summary.totalFinalPayable || 0,
+      generatedBy: 'Admin'
+    });
+
+  } catch (err) {
+    console.error('PDF export error:', err);
+    showToast('Failed to export PDF: ' + err.message, 'error');
+  } finally {
+    if (document.body.contains(printContainer)) {
+      document.body.removeChild(printContainer);
+    }
+  }
+}
+
+async function generateIndividualEmployeePDF(empId) {
+  if (!currentEmergReport || !currentEmergReport.employees) return;
+  const emp = currentEmergReport.employees.find(e => e.id === empId);
+  if (!emp) {
+    showToast('Employee record not found', 'error');
+    return;
+  }
+
+  const month = currentEmergMonth || getCurrentMonthString();
+  const monthTitle = new Date(month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const generatedAt = new Date().toLocaleString();
+
+  showToast(`Generating Pay Slip PDF for ${emp.name}...`, 'info');
+
+  const printContainer = document.createElement('div');
+  printContainer.style.position = 'absolute';
+  printContainer.style.left = '-9999px';
+  printContainer.style.top = '-9999px';
+  printContainer.style.width = '700px';
+  printContainer.style.padding = '24px';
+  printContainer.style.background = '#ffffff';
+  printContainer.style.color = '#1e293b';
+  printContainer.style.fontFamily = "'Inter', Arial, sans-serif";
+
+  printContainer.innerHTML = `
+    <div style="border:2px solid #0f172a; padding:20px; border-radius:8px;">
+      <div style="border-bottom:2px solid #0f172a; padding-bottom:12px; margin-bottom:16px; text-align:center;">
+        <h2 style="margin:0; font-size:18px; font-weight:800; color:#0f172a; text-transform:uppercase;">Office Attendance & Salary Management System</h2>
+        <h3 style="margin:4px 0 0; font-size:14px; font-weight:600; color:#475569;">EMPLOYEE PAY SLIP — ${monthTitle.toUpperCase()}</h3>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; font-size:12px; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
+        <div><strong>Employee Name:</strong> ${escapeHtml(emp.name)}</div>
+        <div><strong>Designation / Role:</strong> ${escapeHtml(emp.role || 'Staff')}</div>
+        <div><strong>Pay Month:</strong> ${monthTitle}</div>
+        <div><strong>Issue Date:</strong> ${generatedAt}</div>
+      </div>
+
+      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:20px;">
+        <thead>
+          <tr style="background:#0f172a; color:#ffffff;">
+            <th style="padding:8px; text-align:left; border:1px solid #334155;">Description</th>
+            <th style="padding:8px; text-align:right; border:1px solid #334155;">Amount (PKR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:8px; border:1px solid #cbd5e1;">Base Monthly Salary</td>
+            <td style="padding:8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace; font-weight:600;">${fmtNum(emp.baseSalary)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #cbd5e1; color:#047857;">Less: Verified Bank Advances / Credits Received</td>
+            <td style="padding:8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace; color:#047857;">− ${fmtNum(emp.verifiedCredit)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #cbd5e1; color:#b91c1c;">Less: Month Expense Deductions</td>
+            <td style="padding:8px; text-align:right; border:1px solid #cbd5e1; font-family:monospace; color:#b91c1c;">− ${fmtNum(emp.expenses)}</td>
+          </tr>
+          <tr style="background:#f1f5f9; font-weight:800; font-size:13px;">
+            <td style="padding:10px; border:2px solid #0f172a; color:#0f172a;">NET PAYABLE SALARY</td>
+            <td style="padding:10px; text-align:right; border:2px solid #0f172a; font-family:monospace; color:#15803d;">PKR ${fmtNum(emp.finalPayable)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="font-size:10px; color:#64748b; margin-top:20px; border-top:1px solid #e2e8f0; padding-top:8px;">
+        <div>Verification Status: <strong>${escapeHtml(emp.verificationStatus || 'VERIFIED')}</strong></div>
+        <div>Approval Status: <strong>${escapeHtml(emp.approvalStatus || 'APPROVED')}</strong></div>
+      </div>
+
+      <div style="margin-top:36px; display:grid; grid-template-columns:1fr 1fr; gap:30px;">
+        <div style="border-top:1px solid #94a3b8; padding-top:6px; text-align:center; font-size:11px;">
+          Employer Signature
+        </div>
+        <div style="border-top:1px solid #94a3b8; padding-top:6px; text-align:center; font-size:11px;">
+          Employee Acknowledgment Signature
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(printContainer);
+
+  const opt = {
+    margin: [10, 10, 10, 10],
+    filename: `PaySlip_${emp.name.replace(/\s+/g, '_')}_${month}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    if (window.html2pdf) {
+      await window.html2pdf().set(opt).from(printContainer).save();
+    } else {
+      window.print();
+    }
+    showToast(`✅ Pay slip downloaded for ${emp.name}`, 'success');
+  } catch (err) {
+    showToast('Failed to export Pay Slip PDF: ' + err.message, 'error');
+  } finally {
+    if (document.body.contains(printContainer)) {
+      document.body.removeChild(printContainer);
+    }
+  }
+}
+
+function promptAndGenerateIndividualPDF() {
+  if (!currentEmergReport || !currentEmergReport.employees || currentEmergReport.employees.length === 0) {
+    showToast('No employee data loaded.', 'warning');
+    return;
+  }
+  const empList = currentEmergReport.employees.map((e, idx) => `${idx + 1}. ${e.name}`).join('\n');
+  const sel = prompt(`Select employee number for Pay Slip PDF:\n\n${empList}`);
+  if (!sel) return;
+  const num = parseInt(sel, 10);
+  if (isNaN(num) || num < 1 || num > currentEmergReport.employees.length) {
+    showToast('Invalid selection.', 'warning');
+    return;
+  }
+  const targetEmp = currentEmergReport.employees[num - 1];
+  generateIndividualEmployeePDF(targetEmp.id);
+}
+
+window.initEmergencySalaryGenerator = initEmergencySalaryGenerator;
+window.loadEmergencySalaryGenerator = loadEmergencySalaryGenerator;
+window.processAndVerifyEmergPDFs = processAndVerifyEmergPDFs;
+window.openEmergReviewModal = openEmergReviewModal;
+window.closeEmergReviewModal = closeEmergReviewModal;
+window.saveEmergencyOverrideSubmit = saveEmergencyOverrideSubmit;
+window.openEmergApproveModal = openEmergApproveModal;
+window.openEmergWarningModal = openEmergWarningModal;
+window.closeEmergWarningModal = closeEmergWarningModal;
+window.triggerEmergencySalaryPDFExport = triggerEmergencySalaryPDFExport;
+window.executeProgrammaticSalaryPDFExport = executeProgrammaticSalaryPDFExport;
+window.generateIndividualEmployeePDF = generateIndividualEmployeePDF;
+window.promptAndGenerateIndividualPDF = promptAndGenerateIndividualPDF;
+
