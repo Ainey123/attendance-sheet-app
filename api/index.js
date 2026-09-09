@@ -441,12 +441,12 @@ module.exports = async (req, res) => {
       try {
         const settings = await db.getSettings();
         if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' });
-        const body = await parseBody(req);
-        if (!body.month || !body.pdfBase64) return res.status(400).json({ success: false, error: 'month and pdfBase64 required', code: 'MISSING_FIELDS' });
+        const pdfInput = body.extractedText || body.pdfBase64;
+        if (!body.month || !pdfInput) return res.status(400).json({ success: false, error: 'month and PDF data or extracted text required', code: 'MISSING_FIELDS' });
         
-        console.log(`[PDF Upload Request] Month: ${body.month}, File: ${body.fileName || 'accounts.pdf'}, Base64 length: ${body.pdfBase64.length}`);
+        console.log(`[PDF Upload Request] Month: ${body.month}, File: ${body.fileName || 'accounts.pdf'}, Type: ${body.extractedText ? 'ExtractedText' : 'Base64'}`);
 
-        const accountsPdf = await db.saveAccountsPdf(body.month, body.fileName || 'accounts.pdf', body.pdfBase64, 'Admin', Boolean(body.replace), body.pdfId);
+        const accountsPdf = await db.saveAccountsPdf(body.month, body.fileName || 'accounts.pdf', pdfInput, 'Admin', Boolean(body.replace), body.pdfId);
         return res.json({ success: true, accountsPdf });
       } catch (err) {
         console.error('[PDF Upload Error]:', err.stack || err.message || err);
@@ -514,14 +514,22 @@ module.exports = async (req, res) => {
       }
     }
 
+    if (path === 'salary/accounts-pdf/file-data' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      const pdfBase64 = await db.getAccountsPdfData(query.month, query.pdfId);
+      if (!pdfBase64) return res.status(404).json({ success: false, error: 'No PDF data found' });
+      return res.json({ success: true, pdfData: pdfBase64 });
+    }
+
     if (path === 'salary/accounts-pdf/view' && method === 'GET') {
       const settings = await db.getSettings();
-      if (adminPasscode !== settings.adminPasscode) return res.status(401).json({ error: 'Unauthorized' });
-      const accountsPdf = await db.getAccountsPdf(query.month);
-      if (!accountsPdf || !accountsPdf.pdfData) return res.status(404).send('No PDF found');
-      const pdfBuffer = Buffer.from(accountsPdf.pdfData, 'base64');
+      if (adminPasscode !== settings.adminPasscode) return res.status(401).send('Unauthorized');
+      const pdfBase64 = await db.getAccountsPdfData(query.month, query.pdfId);
+      if (!pdfBase64) return res.status(404).send('No PDF found');
+      const pdfBuffer = Buffer.from(pdfBase64, 'base64');
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${accountsPdf.fileName || 'accounts.pdf'}"`);
+      res.setHeader('Content-Disposition', `inline; filename="accounts_${query.month || 'statement'}.pdf"`);
       return res.send(pdfBuffer);
     }
 

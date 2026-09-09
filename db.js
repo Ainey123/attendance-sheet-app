@@ -2080,6 +2080,27 @@ const db = {
     return map;
   },
 
+  async getAccountsPdfData(month, pdfId = null) {
+    if (!month) return null;
+    let found = null;
+    if (!useLocalFallback && supabase) {
+      try {
+        const { data } = await supabase.from('accounts_pdfs').select('pdfData, pdfs').eq('salaryMonth', month).maybeSingle();
+        if (data) found = data;
+      } catch (e) {}
+    }
+    if (!found) {
+      const data = loadLocalData();
+      found = (data.accountsPdfs || []).find(p => p.salaryMonth === month);
+    }
+    if (!found) return null;
+    if (pdfId && Array.isArray(found.pdfs)) {
+      const f = found.pdfs.find(p => p.id === pdfId);
+      if (f && f.pdfData) return f.pdfData;
+    }
+    return found.pdfData || null;
+  },
+
   async getAccountsPdf(month) {
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       const now = new Date();
@@ -2091,7 +2112,7 @@ const db = {
       try {
         const { data, error } = await supabase
           .from('accounts_pdfs')
-          .select('*')
+          .select('id, salaryMonth, fileName, fileSize, uploadedAt, uploadedBy, processingStatus, extractedData, extractedEntries, manualMappings, auditLog, summary, verificationResults, unmatchedPdfEntries, pdfs')
           .eq('salaryMonth', month)
           .maybeSingle();
         if (data && !error) {
@@ -2113,7 +2134,7 @@ const db = {
       let allPdfs = [];
       if (!useLocalFallback && supabase) {
         try {
-          const { data } = await supabase.from('accounts_pdfs').select('*');
+          const { data } = await supabase.from('accounts_pdfs').select('id, salaryMonth, fileName, fileSize, uploadedAt, uploadedBy, processingStatus, extractedData, extractedEntries, summary, verificationResults, unmatchedPdfEntries, pdfs');
           if (data && data.length > 0) allPdfs = data;
         } catch (e) {}
       }
@@ -2174,29 +2195,41 @@ const db = {
     if (!found) return null;
 
     // Refresh live verification using current application expenses, roster, and exact date matching
-    return await this.reverifyAccountsPdf(month, found);
+    const res = await this.reverifyAccountsPdf(month, found);
+    return sanitizeAccountsPdfForClient(res);
   },
 
-  async saveAccountsPdf(month, fileName, pdfBase64, uploadedBy = 'Admin', replace = false, pdfId = null) {
+  async saveAccountsPdf(month, fileName, pdfInput, uploadedBy = 'Admin', replace = false, pdfId = null) {
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       throw new Error('Invalid salary month format (expected YYYY-MM)');
     }
-    if (!pdfBase64) {
-      throw new Error('PDF data is required');
+    if (!pdfInput) {
+      throw new Error('PDF data or extracted text is required');
     }
 
-    const cleanBase64 = String(pdfBase64).replace(/^data:.*?;base64,/, '').replace(/\s+/g, '');
-    const pdfBuffer = Buffer.from(cleanBase64, 'base64');
-    const fileSize = pdfBuffer.length;
-    const newPdfId = pdfId || generateId('pdf_file');
-
-    // Parse PDF
     const { parseAccountsPdf, matchAndVerifyExpenses } = require('./pdf-parser-helper');
+    const newPdfId = pdfId || generateId('pdf_file');
     let parsed;
-    try {
-      parsed = await parseAccountsPdf(pdfBuffer, fileName || 'accounts.pdf', newPdfId);
-    } catch (err) {
-      throw new Error('PDF Parsing failed: ' + err.message);
+    let cleanBase64 = '';
+    let fileSize = 0;
+
+    if (pdfInput && typeof pdfInput === 'object' && Array.isArray(pdfInput.pages)) {
+      fileSize = pdfInput.fileSize || 1024;
+      cleanBase64 = pdfInput.base64 || '';
+      try {
+        parsed = await parseAccountsPdf(pdfInput, fileName || 'accounts.pdf', newPdfId);
+      } catch (err) {
+        throw new Error('PDF Parsing failed: ' + err.message);
+      }
+    } else {
+      cleanBase64 = String(pdfInput).replace(/^data:.*?;base64,/, '').replace(/\s+/g, '');
+      const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+      fileSize = pdfBuffer.length;
+      try {
+        parsed = await parseAccountsPdf(pdfBuffer, fileName || 'accounts.pdf', newPdfId);
+      } catch (err) {
+        throw new Error('PDF Parsing failed: ' + err.message);
+      }
     }
 
     const employees = await this.getEmployees(false);
@@ -2208,7 +2241,7 @@ const db = {
     let existing = null;
     if (!useLocalFallback && supabase) {
       try {
-        const { data } = await supabase.from('accounts_pdfs').select('*').eq('salaryMonth', month).maybeSingle();
+        const { data } = await supabase.from('accounts_pdfs').select('id, salaryMonth, fileName, fileSize, uploadedAt, uploadedBy, processingStatus, extractedData, summary, manualMappings, auditLog, pdfs').eq('salaryMonth', month).maybeSingle();
         if (data) existing = data;
       } catch (e) {}
     }
@@ -2292,7 +2325,7 @@ const db = {
 
       existing.fileName = fileName;
       existing.fileSize = fileSize;
-      existing.pdfData = cleanBase64;
+      if (cleanBase64) existing.pdfData = cleanBase64;
       existing.replacedAt = replace ? nowIso : existing.replacedAt;
       existing.replacedBy = replace ? uploadedBy : existing.replacedBy;
       existing.processingStatus = 'PROCESSED';
@@ -2354,7 +2387,7 @@ const db = {
       }
     }
 
-    return existing;
+    return sanitizeAccountsPdfForClient(existing);
   },
 
   async deleteAccountsPdfFile(month, pdfId, deletedBy = 'Admin') {
@@ -3114,5 +3147,17 @@ const db = {
     };
   }
 };
+
+function sanitizeAccountsPdfForClient(record) {
+  if (!record) return null;
+  const clone = JSON.parse(JSON.stringify(record));
+  delete clone.pdfData;
+  if (Array.isArray(clone.pdfs)) {
+    clone.pdfs.forEach(p => {
+      delete p.pdfData;
+    });
+  }
+  return clone;
+}
 
 module.exports = db;

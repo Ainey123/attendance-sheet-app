@@ -234,24 +234,35 @@ async function extractPdfStructure(pdfBuffer) {
 /**
  * Universal Normalized Transaction Parser supporting Bank Alfalah, UBL, and Generic bank statements
  */
-async function parseAccountsPdf(pdfBuffer, sourceFileName = 'accounts.pdf', sourcePdfId = 'pdf_1') {
-  if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer)) {
-    throw new Error('Invalid PDF data provided: expected a Buffer');
-  }
-
+async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourcePdfId = 'pdf_1') {
   let pdfStructure;
-  try {
-    pdfStructure = await extractPdfStructure(pdfBuffer);
-  } catch (err) {
-    const rawMsg = err.message || String(err);
-    console.error('PDF Extraction Error:', rawMsg);
-    if (/password|encrypt/i.test(rawMsg)) {
-      throw new Error('This PDF is password-protected or encrypted. Please upload an unprotected PDF.');
+
+  if (pdfInput && typeof pdfInput === 'object' && Array.isArray(pdfInput.pages)) {
+    pdfStructure = pdfInput;
+  } else if (Buffer.isBuffer(pdfInput)) {
+    try {
+      pdfStructure = await extractPdfStructure(pdfInput);
+    } catch (err) {
+      const rawMsg = err.message || String(err);
+      console.error('PDF Extraction Error:', rawMsg);
+      if (/password|encrypt/i.test(rawMsg)) {
+        throw new Error('This PDF is password-protected or encrypted. Please upload an unprotected PDF.');
+      }
+      if (/format|invalid|bad xref|corrupt/i.test(rawMsg)) {
+        throw new Error('The uploaded file is corrupt or not a valid PDF document.');
+      }
+      throw new Error('Unable to process PDF document: ' + rawMsg);
     }
-    if (/format|invalid|bad xref|corrupt/i.test(rawMsg)) {
-      throw new Error('The uploaded file is corrupt or not a valid PDF document.');
+  } else if (typeof pdfInput === 'string' && pdfInput.trim().length > 0) {
+    try {
+      const cleanBase64 = pdfInput.replace(/^data:.*?;base64,/, '').replace(/\s+/g, '');
+      const buf = Buffer.from(cleanBase64, 'base64');
+      pdfStructure = await extractPdfStructure(buf);
+    } catch (err) {
+      throw new Error('Unable to process PDF base64 string: ' + err.message);
     }
-    throw new Error('Unable to process PDF document: ' + rawMsg);
+  } else {
+    throw new Error('Invalid PDF data provided: expected a Buffer, base64 string, or pre-extracted pages object');
   }
 
   const { numPages, pdfInfo, pages, rawText } = pdfStructure;

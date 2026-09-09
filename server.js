@@ -578,12 +578,13 @@ app.get('/api/salary/accounts-pdf', checkAdminAuth, async (req, res) => {
 // POST /api/salary/accounts-pdf/upload
 app.post('/api/salary/accounts-pdf/upload', checkAdminAuth, async (req, res) => {
   try {
-    const { month, fileName, pdfBase64, replace, pdfId } = req.body;
-    if (!month || !pdfBase64) {
-      return res.status(400).json({ success: false, error: 'month and pdfBase64 are required', code: 'MISSING_FIELDS' });
+    const { month, fileName, pdfBase64, extractedText, replace, pdfId } = req.body;
+    const pdfInput = extractedText || pdfBase64;
+    if (!month || !pdfInput) {
+      return res.status(400).json({ success: false, error: 'month and PDF data or extracted text are required', code: 'MISSING_FIELDS' });
     }
-    console.log(`[Server PDF Upload] Month: ${month}, File: ${fileName || 'accounts.pdf'}, Base64 length: ${pdfBase64.length}`);
-    const accountsPdf = await db.saveAccountsPdf(month, fileName || 'accounts.pdf', pdfBase64, 'Admin', Boolean(replace), pdfId);
+    console.log(`[Server PDF Upload] Month: ${month}, File: ${fileName || 'accounts.pdf'}, Type: ${extractedText ? 'ExtractedText' : 'Base64'}`);
+    const accountsPdf = await db.saveAccountsPdf(month, fileName || 'accounts.pdf', pdfInput, 'Admin', Boolean(replace), pdfId);
     res.json({ success: true, accountsPdf });
   } catch (err) {
     console.error('[Server PDF Upload Error]:', err.stack || err.message || err);
@@ -645,17 +646,29 @@ app.delete('/api/salary/accounts-pdf', checkAdminAuth, async (req, res) => {
   }
 });
 
-// GET /api/salary/accounts-pdf/view?month=YYYY-MM
+// GET /api/salary/accounts-pdf/file-data?month=YYYY-MM&pdfId=...
+app.get('/api/salary/accounts-pdf/file-data', checkAdminAuth, async (req, res) => {
+  try {
+    const { month, pdfId } = req.query;
+    const pdfBase64 = await db.getAccountsPdfData(month, pdfId);
+    if (!pdfBase64) return res.status(404).json({ success: false, error: 'No PDF data found' });
+    res.json({ success: true, pdfData: pdfBase64 });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/salary/accounts-pdf/view?month=YYYY-MM&pdfId=...
 app.get('/api/salary/accounts-pdf/view', checkAdminAuth, async (req, res) => {
   try {
-    const month = req.query.month;
-    const accountsPdf = await db.getAccountsPdf(month);
-    if (!accountsPdf || !accountsPdf.pdfData) {
+    const { month, pdfId } = req.query;
+    const pdfBase64 = await db.getAccountsPdfData(month, pdfId);
+    if (!pdfBase64) {
       return res.status(404).send('No PDF found for this month');
     }
-    const pdfBuffer = Buffer.from(accountsPdf.pdfData, 'base64');
+    const pdfBuffer = Buffer.from(pdfBase64, 'base64');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${accountsPdf.fileName || 'accounts.pdf'}"`);
+    res.setHeader('Content-Disposition', `inline; filename="accounts_${month || 'statement'}.pdf"`);
     res.send(pdfBuffer);
   } catch (err) {
     res.status(500).send('Error loading PDF: ' + err.message);
