@@ -452,6 +452,7 @@ module.exports = async (req, res) => {
       try {
         const settings = await db.getSettings();
         if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' });
+        const body = await parseBody(req);
         const pdfInput = body.extractedText || body.pdfBase64;
         if (!body.month || !pdfInput) return res.status(400).json({ success: false, error: 'month and PDF data or extracted text required', code: 'MISSING_FIELDS' });
         
