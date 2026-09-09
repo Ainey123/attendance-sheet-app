@@ -5614,7 +5614,7 @@ function renderAccountsPdfPanel(pdf) {
   // Render Attached PDFs list
   const pdfFiles = Array.isArray(pdf.pdfs) && pdf.pdfs.length > 0 ? pdf.pdfs : [{
     id: pdf.id || 'pdf_legacy',
-    fileName: pdf.fileName || 'accounts.pdf',
+    fileName: pdf.fileName || 'Bank_Statement.pdf',
     fileSize: pdf.fileSize || 0,
     uploadedAt: pdf.uploadedAt,
     uploadedBy: pdf.uploadedBy || 'Admin',
@@ -5975,7 +5975,7 @@ function viewAccountsPdfViewerModal(pdfId = null) {
     }
   }
 
-  const fileName = (targetPdf && targetPdf.fileName) || currentAccountsPdf.fileName || 'Accounts.pdf';
+  const fileName = (targetPdf && targetPdf.fileName) || currentAccountsPdf.fileName || 'Bank_Statement.pdf';
   const pdfBase64 = (targetPdf && targetPdf.pdfData) || currentAccountsPdf.pdfData || '';
 
   if (titleEl) titleEl.textContent = `Bank Statement: ${fileName}`;

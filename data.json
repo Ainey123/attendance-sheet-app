@@ -195,11 +195,11 @@
       "claimedAmount": 35000,
       "verifiedAmount": 35000,
       "verifiedBy": "Admin 1 User",
-      "verifiedAt": "2026-09-09T10:58:58.308Z",
+      "verifiedAt": "2026-09-09T11:10:36.180Z",
       "verificationStatus": "VERIFIED",
       "approvedAmount": 35000,
       "approvedBy": "Senior Admin User",
-      "approvedAt": "2026-09-09T10:58:59.650Z",
+      "approvedAt": "2026-09-09T11:10:46.763Z",
       "approvalStatus": "APPROVED",
       "notes": "",
       "auditLog": [
@@ -378,10 +378,26 @@
           "by": "Senior Admin User",
           "at": "2026-09-09T10:58:59.650Z",
           "notes": ""
+        },
+        {
+          "action": "RE-VERIFIED",
+          "oldVerifiedAmount": 35000,
+          "verifiedAmount": 35000,
+          "by": "Admin 1 User",
+          "at": "2026-09-09T11:10:36.180Z",
+          "notes": ""
+        },
+        {
+          "action": "RE-APPROVED",
+          "oldApprovedAmount": 35000,
+          "approvedAmount": 35000,
+          "by": "Senior Admin User",
+          "at": "2026-09-09T11:10:46.763Z",
+          "notes": ""
         }
       ],
       "createdAt": "2026-09-09T09:11:25.485Z",
-      "updatedAt": "2026-09-09T10:58:59.650Z"
+      "updatedAt": "2026-09-09T11:10:46.763Z"
     }
   ]
 }
