@@ -1875,6 +1875,7 @@ const db = {
   },
 
   async setSalaryBasic(employeeId, month, basicSalary) {
+    const numSalary = Number(basicSalary) || 0;
     const data = loadLocalData();
     if (!data.salaries) data.salaries = [];
     let rec = data.salaries.find(s => s.employeeId === employeeId && s.month === month);
@@ -1892,8 +1893,20 @@ const db = {
       };
       data.salaries.push(rec);
     }
-    rec.basicSalary = Number(basicSalary) || 0;
+    rec.basicSalary = numSalary;
+    if (data.employees) {
+      const localEmp = data.employees.find(e => e.id === employeeId);
+      if (localEmp) localEmp.baseSalary = numSalary;
+    }
     saveLocalData(data);
+
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('employees').update({ baseSalary: numSalary }).eq('id', employeeId);
+      } catch (err) {
+        console.warn('Supabase employee baseSalary update notice:', err.message);
+      }
+    }
 
     // Immediately trigger full calculation and return updated salary object
     return await this.generateSalary(employeeId, month);
@@ -1984,7 +1997,7 @@ const db = {
       }
     });
 
-    const basicSalary = salRec.basicSalary || 0;
+    const basicSalary = salRec.basicSalary || (emp ? (Number(emp.baseSalary) || Number(emp.basicSalary) || 0) : 0);
 
     // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day divisor per office policy)
     const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
@@ -3174,7 +3187,7 @@ const db = {
       const pdfVerif = pdfVerifMap[empId] || {};
       const dbVerif = verifMap[empId] || {};
 
-      const monthlySalary = sal.basicSalary || 0;
+      const monthlySalary = sal.basicSalary || (Number(emp.baseSalary) || Number(emp.basicSalary) || 0);
       const appCredit = sal.earnedSalary || 0;
       const bankCredit = pdfVerif.bankCreditTotal !== undefined ? pdfVerif.bankCreditTotal : 0;
       const matchedTxList = pdfVerif.matchedCredits || [];

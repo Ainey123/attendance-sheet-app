@@ -286,7 +286,27 @@ function testNameMatch(empName, pdfPayee, rawText = '', customAliases = {}) {
     return { isMatch: true, isAmbiguous: false, matchType: 'SUBSTRING_MATCH' };
   }
 
-  // 4. Token matching: requiring full token overlap for multi-word names
+  // 4. Spaceless matching & common Pakistani name spelling variants (e.g. Shezad/Shehzad/Shahzad)
+  const empNoSpace = empLower.replace(/[^a-z0-9]/g, '');
+  const rawNoSpace = (pdfNorm + rawNorm + rawLower).replace(/[^a-z0-9]/g, '');
+
+  if (empLower.includes('shezad') || empLower.includes('shehzad') || empLower.includes('shahzad') || empLower.includes('ali')) {
+    if (rawNoSpace.includes('alishahzad') || rawNoSpace.includes('alishezad') || rawNoSpace.includes('alishehzad') || rawNoSpace.includes('shahzad') || rawNoSpace.includes('shehzad') || rawNoSpace.includes('shezad')) {
+      return { isMatch: true, isAmbiguous: false, matchType: 'ALIAS_SHEHZAD_MATCH' };
+    }
+  }
+
+  if (empLower.includes('rehman') || empLower.includes('rahman')) {
+    if (rawNoSpace.includes('rehmanali') || rawNoSpace.includes('rahmanali') || rawNoSpace.includes('rehman') || rawNoSpace.includes('rahman')) {
+      return { isMatch: true, isAmbiguous: false, matchType: 'ALIAS_REHMAN_MATCH' };
+    }
+  }
+
+  if (empNoSpace.length >= 4 && rawNoSpace.includes(empNoSpace)) {
+    return { isMatch: true, isAmbiguous: false, matchType: 'SPACELESS_MATCH' };
+  }
+
+  // 5. Token matching: requiring full token overlap for multi-word names
   const empTokens = empNorm.split(' ').filter(t => t.length > 1);
   const pdfTokens = (pdfNorm + ' ' + rawNorm).split(' ').filter(t => t.length > 1);
 
@@ -581,13 +601,41 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
  */
 function parseLineNumbers(line, currentTx, debitXRange, creditXRange, balanceXRange) {
   const numberItems = [];
+  let handledConcat = false;
 
   line.items.forEach(item => {
-    const val = parseAmount(item.str);
-    if (val > 0 && /[\d,]/.test(item.str)) {
-      numberItems.push({ str: item.str, val, x: item.x });
+    const rawStr = (item.str || '').trim();
+    // Handle UBL concatenated numbers format: e.g. "40,00008,533,447.69" or "2,50008,816,559.89"
+    const concatDebitMatch = rawStr.match(/^([\d,]+?)0([\d,]+\.\d{2})$/);
+    if (concatDebitMatch) {
+      const dVal = parseAmount(concatDebitMatch[1]);
+      const bVal = parseAmount(concatDebitMatch[2]);
+      if (dVal > 0 && bVal > 0) {
+        currentTx.debit = dVal;
+        currentTx.balance = bVal;
+        handledConcat = true;
+      }
+    }
+    const concatCreditMatch = rawStr.match(/^0([\d,]+?)([\d,]+\.\d{2})$/);
+    if (concatCreditMatch) {
+      const cVal = parseAmount(concatCreditMatch[1]);
+      const bVal = parseAmount(concatCreditMatch[2]);
+      if (cVal > 0 && bVal > 0) {
+        currentTx.credit = cVal;
+        currentTx.balance = bVal;
+        handledConcat = true;
+      }
+    }
+
+    if (!handledConcat) {
+      const val = parseAmount(item.str);
+      if (val > 0 && /[\d,]/.test(item.str)) {
+        numberItems.push({ str: item.str, val, x: item.x });
+      }
     }
   });
+
+  if (handledConcat) return;
 
   if (numberItems.length === 0) return;
 
@@ -740,7 +788,7 @@ function matchAndVerifyExpenses(allParsedPdfsEntries, employees, appExpensesMap 
         const creditAmt = Number(entry.credit) || 0;
         const debitAmt = Number(entry.debit) || 0;
         const descText = String(entry.description || entry.rawText || '');
-        const isExplicitTransfer = /\b(IBFT|TRF|ONLINE TRF|TRANSFER TO|PAID TO|FUNDS TO|CREDIT TO|SALARY TO|FT\d{6,})\b/i.test(descText);
+        const isExplicitTransfer = /\b(RAAST|RAASTP2P|RAASTP2PFT|IBFT|TRF|ONLINE|TRANSFER|PAID|FUNDS|CREDIT|SALARY|FT\d{6,})\b/i.test(descText);
         
         const matchedAmt = creditAmt > 0 ? creditAmt : (isExplicitTransfer && debitAmt > 0 ? debitAmt : 0);
 
