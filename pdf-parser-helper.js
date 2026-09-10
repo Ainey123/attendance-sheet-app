@@ -155,12 +155,29 @@ function validateSalaryClaimMonth(extractedMonth, targetMonth, rawText = '') {
   const actualExtractedMonth = metadata.statementMonth || extractedMonth;
 
   if (actualExtractedMonth && actualExtractedMonth !== targetMonth) {
-    const extractedMonthName = metadata.extractedMonthName || formatMonthName(actualExtractedMonth);
-    const targetMonthName = formatMonthName(targetMonth);
-    return {
-      valid: false,
-      error: `Uploaded statement belongs to ${extractedMonthName}. Salary is being claimed for ${targetMonthName}. Please upload the correct month's statement.`
-    };
+    // Check if target month appears in transactions or period text
+    const [tYear, tMon] = targetMonth.split('-');
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const shortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const tMonIdx = parseInt(tMon, 10) - 1;
+    const tMonName = monthNames[tMonIdx] || '';
+    const tMonShort = shortNames[tMonIdx] || '';
+
+    const hasTargetMonthInText = Boolean(rawText && (
+      rawText.toLowerCase().includes(tMonName.toLowerCase()) ||
+      rawText.toLowerCase().includes(tMonShort.toLowerCase()) ||
+      new RegExp(`[\\-\\/.\\s]0?${parseInt(tMon, 10)}[\\-\\/.\\s]${tYear}`, 'i').test(rawText) ||
+      new RegExp(`${tYear}[\\-\\/.\\s]0?${parseInt(tMon, 10)}`, 'i').test(rawText)
+    ));
+
+    if (!hasTargetMonthInText) {
+      const extractedMonthName = metadata.extractedMonthName || formatMonthName(actualExtractedMonth);
+      const targetMonthName = formatMonthName(targetMonth);
+      return {
+        valid: false,
+        error: `Uploaded statement belongs to ${extractedMonthName}. Salary is being claimed for ${targetMonthName}. Please upload the correct month's statement.`
+      };
+    }
   }
   return { valid: true };
 }

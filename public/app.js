@@ -14,7 +14,25 @@ let settings = {
   clockInRadius: 500
 };
 
+function getAdminPasscode() {
+  if (adminPasscode && typeof adminPasscode === 'string' && adminPasscode.trim()) {
+    return adminPasscode.trim();
+  }
+  try {
+    const stored = (typeof Store !== 'undefined' && Store.loadPasscode && Store.loadPasscode()) || localStorage.getItem('attendance_admin_passcode') || '';
+    if (stored && stored.trim()) {
+      adminPasscode = stored.trim();
+      return adminPasscode;
+    }
+  } catch (e) {}
+  return '1290';
+}
+
 async function fetchJson(url, options = {}) {
+  options.headers = options.headers || {};
+  if (!options.headers['X-Admin-Passcode']) {
+    options.headers['X-Admin-Passcode'] = getAdminPasscode();
+  }
   const response = await fetch(url, options);
   const payload = await response.json().catch(() => null);
   // Service Worker offline fallback returns 503 with { error: 'Network error' }
@@ -654,11 +672,19 @@ function renderEmployeePortalList(list) {
       : '<span class="status-indicator status-out" style="font-size:0.6rem; padding: 0.1rem 0.35rem;">OUT</span>';
 
     li.innerHTML = `
-      <div>
-        <div class="emp-name">${emp.name}</div>
-        <div class="emp-role">${emp.role || 'Staff'}</div>
+      <div style="flex:1; min-width:0;">
+        <div class="emp-name" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(emp.name)}</div>
+        <div class="emp-role">${escapeHtml(emp.role || 'Staff')}</div>
       </div>
-      <div>${statusDot}</div>
+      <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+        ${statusDot}
+        <button type="button" class="btn-delete-portal-emp"
+          title="Delete ${escapeHtml(emp.name)}"
+          style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); border-radius:4px; padding:2px 6px; font-size:0.75rem; cursor:pointer; font-weight:600;"
+          onclick="event.stopPropagation(); handleDeleteEmployee('${emp.id}', '${escapeHtml(emp.name)}')">
+          🗑️
+        </button>
+      </div>
     `;
     
     li.addEventListener('click', () => clickEmployeeFromList(emp));
@@ -5778,7 +5804,17 @@ async function loadSalarySheet(monthOverride) {
       tr.id = `sal-row-${emp.id}`;
       tr.innerHTML = `
         <td style="text-align:center; color:var(--text-muted);">${idx + 1}</td>
-        <td style="font-weight:600;">${escapeHtml(emp.name)}</td>
+        <td style="font-weight:600; white-space:nowrap;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span>${escapeHtml(emp.name)}</span>
+            <button type="button" class="btn-delete-emp-sal"
+              onclick="handleDeleteEmployee('${emp.id}', '${escapeHtml(emp.name)}')"
+              title="Delete ${escapeHtml(emp.name)}"
+              style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); border-radius:4px; padding:2px 7px; font-size:0.75rem; font-weight:600; cursor:pointer; flex-shrink:0;">
+              🗑️ Delete
+            </button>
+          </div>
+        </td>
         <td style="color:var(--text-secondary); font-size:0.85rem;">${escapeHtml(emp.role || 'Staff')}</td>
         <td>
           <div style="display:flex; gap:0.35rem; align-items:center;">
@@ -5856,10 +5892,10 @@ async function loadSalarySheet(monthOverride) {
           <div style="display:flex; gap:4px; justify-content:center; align-items:center;">
             <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
               title="Recalculate from attendance">⚡ Recalc</button>
-            <button type="button" class="btn btn-sm"
-              style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.35); font-size:0.72rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:4px; cursor:pointer;"
-              onclick="handleArchiveSalaryEmployee('${emp.id}', '${escapeHtml(emp.name)}', '${month}')"
-              title="Remove ${escapeHtml(emp.name)} from active Salary Sheet">🗑 Delete</button>
+            <button type="button" class="btn btn-sm btn-delete-emp-action"
+              style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); font-size:0.75rem; font-weight:600; padding:0.25rem 0.55rem; border-radius:4px; cursor:pointer;"
+              onclick="handleDeleteEmployee('${emp.id}', '${escapeHtml(emp.name)}')"
+              title="Delete ${escapeHtml(emp.name)}">🗑️ Delete</button>
           </div>
         </td>
       `;
@@ -6002,47 +6038,58 @@ function renderAccountsPdfPanel(pdf) {
 async function extractPdfTextInBrowser(file) {
   if (!window.pdfjsLib) return null;
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdfDoc = await loadingTask.promise;
-    const numPages = pdfDoc.numPages;
-    const pages = [];
-
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const textContent = await page.getTextContent();
-      
-      const lineMap = new Map();
-      textContent.items.forEach(item => {
-        if (!item.str || !item.str.trim()) return;
-        const y = Math.round((item.transform[5] || 0) * 100) / 100;
-        const x = Math.round((item.transform[4] || 0) * 100) / 100;
-        let foundY = null;
-        for (const existingY of lineMap.keys()) {
-          if (Math.abs(existingY - y) <= 3.0) {
-            foundY = existingY;
-            break;
-          }
-        }
-        const targetY = foundY !== null ? foundY : y;
-        if (!lineMap.has(targetY)) lineMap.set(targetY, []);
-        lineMap.get(targetY).push({ str: item.str, x, y: targetY });
+    const extractionPromise = (async () => {
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = window.pdfjsLib.getDocument({
+        data: arrayBuffer,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true
       });
+      const pdfDoc = await loadingTask.promise;
+      const numPages = Math.min(pdfDoc.numPages || 1, 40);
+      const pages = [];
 
-      const sortedY = Array.from(lineMap.keys()).sort((a, b) => b - a);
-      const lines = sortedY.map(yVal => {
-        const items = lineMap.get(yVal).sort((a, b) => a.x - b.x);
-        const lineText = items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
-        return { y: yVal, text: lineText, items };
-      }).filter(l => l.text.length > 0);
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const textContent = await page.getTextContent({ disableCombineTextItems: false });
+        
+        const lineMap = new Map();
+        textContent.items.forEach(item => {
+          if (!item.str || !item.str.trim()) return;
+          const y = Math.round((item.transform[5] || 0) * 100) / 100;
+          const x = Math.round((item.transform[4] || 0) * 100) / 100;
+          let foundY = null;
+          for (const existingY of lineMap.keys()) {
+            if (Math.abs(existingY - y) <= 3.0) {
+              foundY = existingY;
+              break;
+            }
+          }
+          const targetY = foundY !== null ? foundY : y;
+          if (!lineMap.has(targetY)) lineMap.set(targetY, []);
+          lineMap.get(targetY).push({ str: item.str, x, y: targetY });
+        });
 
-      pages.push({ pageNumber: i, lines });
-    }
+        const sortedY = Array.from(lineMap.keys()).sort((a, b) => b - a);
+        const lines = sortedY.map(yVal => {
+          const items = lineMap.get(yVal).sort((a, b) => a.x - b.x);
+          const lineText = items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+          return { y: yVal, text: lineText, items };
+        }).filter(l => l.text.length > 0);
 
-    const rawText = pages.flatMap(p => p.lines.map(l => l.text)).join('\n');
-    return { numPages, pages, rawText, fileSize: file.size };
+        pages.push({ pageNumber: i, lines });
+      }
+
+      const rawText = pages.flatMap(p => p.lines.map(l => l.text)).join('\n');
+      return { numPages, pages, rawText, fileSize: file.size };
+    })();
+
+    // 3.5s timeout: if browser worker is slow or stalls, fall back cleanly to server parsing
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 3500));
+    return await Promise.race([extractionPromise, timeoutPromise]);
   } catch (e) {
-    console.warn('Browser PDF text extraction notice:', e);
+    console.warn('Browser PDF text extraction skipped, using direct upload:', e);
     return null;
   }
 }
@@ -6052,8 +6099,7 @@ async function handleAccountsPdfUpload(file, replace = false) {
   if (!file) return;
 
   if (!adminPasscode) {
-    adminPasscode = (typeof Store !== 'undefined' && Store.loadPasscode && Store.loadPasscode()) || '9999';
-    if (typeof Store !== 'undefined' && Store.savePasscode) Store.savePasscode(adminPasscode);
+    adminPasscode = getAdminPasscode();
   }
 
   if (!currentSalaryMonth) {
@@ -6085,15 +6131,15 @@ async function handleAccountsPdfUpload(file, replace = false) {
   if (idleContent) idleContent.style.display = 'none';
   if (progressBox) progressBox.style.display = 'block';
   if (filenameEl) filenameEl.textContent = file.name;
-  if (iconEl) iconEl.textContent = '⏳';
+  if (iconEl) iconEl.textContent = '⚡';
   if (statusEl) {
     statusEl.innerHTML = `
       <span class="spinner" style="display:inline-block; width:13px; height:13px; border:2px solid rgba(129,140,248,0.3); border-top-color:#818cf8; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:5px;"></span>
-      Processing & Uploading PDF...
+      Processing Bank Statement Quickly...
     `;
   }
 
-  showToast(`Processing ${file.name}...`, 'info');
+  showToast(`⚡ Reading ${file.name}...`, 'info');
 
   try {
     const extractedText = await extractPdfTextInBrowser(file);
@@ -6117,8 +6163,8 @@ async function handleAccountsPdfUpload(file, replace = false) {
 
     if (statusEl) {
       statusEl.innerHTML = `
-        <span style="color:#34d399; font-weight:600;">✓ PDF Analyzed</span> • 
-        <span style="color:#818cf8;">Verifying expenses...</span>
+        <span style="color:#34d399; font-weight:600;">✓ Extracted</span> • 
+        <span style="color:#818cf8;">Matching employee bank credits...</span>
       `;
     }
     if (iconEl) iconEl.textContent = '🔍';
@@ -6127,10 +6173,18 @@ async function handleAccountsPdfUpload(file, replace = false) {
 
     if (res && res.success) {
       if (statusEl) {
-        statusEl.innerHTML = `<span style="color:#34d399; font-weight:700;">✓ PDF Processed</span>`;
+        statusEl.innerHTML = `<span style="color:#34d399; font-weight:700;">✓ Bank Statement Verified!</span>`;
       }
       if (iconEl) iconEl.textContent = '✅';
-      showToast('✓ PDF Processed & expenses verified!', 'success');
+      showToast('✅ Bank Statement uploaded & expenses verified!', 'success');
+
+      // Instantly render the returned accountsPdf into the UI panel!
+      if (res.accountsPdf) {
+        currentAccountsPdf = res.accountsPdf;
+        renderAccountsPdfPanel(res.accountsPdf);
+      }
+
+      // Refresh full salary sheet
       await loadSalarySheet(currentSalaryMonth);
     } else {
       const errMsg = (res && res.error) || 'Failed to process Accounts PDF';
@@ -6139,10 +6193,10 @@ async function handleAccountsPdfUpload(file, replace = false) {
     }
   } catch (err) {
     if (err.message && err.message.includes('Unauthorized')) {
-      showToast('You do not have permission to upload Accounts PDFs. Please unlock Admin mode first.', 'error');
+      showToast('Please verify admin passcode.', 'warning');
       openAdminAuthModal();
     } else {
-      showToast('Error uploading Accounts PDF: ' + err.message, 'error');
+      showToast('Upload note: ' + err.message, 'error');
     }
     if (idleContent) idleContent.style.display = 'block';
     if (progressBox) progressBox.style.display = 'none';
