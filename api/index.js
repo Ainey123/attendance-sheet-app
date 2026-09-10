@@ -470,6 +470,30 @@ module.exports = async (req, res) => {
       return res.json({ success: true, ...result });
     }
 
+    // ── POST /api/salary/set-sunday-bonus ─────────────────────────────────────
+    if (path === 'salary/set-sunday-bonus' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month || body.sundayBonus === undefined) {
+        return res.status(400).json({ error: 'employeeId, month, and sundayBonus required' });
+      }
+      const result = await db.setManualSundayBonus(body.employeeId, body.month, body.sundayBonus, body.editedBy || 'Admin');
+      return res.json({ success: true, ...result });
+    }
+
+    // ── POST /api/salary/reset-sunday-bonus ───────────────────────────────────
+    if (path === 'salary/reset-sunday-bonus' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month) {
+        return res.status(400).json({ error: 'employeeId and month required' });
+      }
+      const result = await db.resetManualSundayBonus(body.employeeId, body.month);
+      return res.json({ success: true, ...result });
+    }
+
     // ── POST /api/salary/archive-employee ─────────────────────────────────────
     if (path === 'salary/archive-employee' && method === 'POST') {
       const settings = await db.getSettings();

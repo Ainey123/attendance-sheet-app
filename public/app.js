@@ -131,6 +131,16 @@ const API = {
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify({ employeeId, month })
   }),
+  setManualSundayBonus: (employeeId, month, sundayBonus) => fetchJson('/api/salary/set-sunday-bonus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month, sundayBonus })
+  }),
+  resetManualSundayBonus: (employeeId, month) => fetchJson('/api/salary/reset-sunday-bonus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month })
+  }),
   archiveSalaryEmployee: (employeeId) => fetchJson('/api/salary/archive-employee', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
@@ -1433,7 +1443,7 @@ async function loadAdminRoster() {
 
       // Delete listener
       tr.querySelector('.btn-delete-emp').addEventListener('click', (e) => {
-        const id = e.target.getAttribute('data-id');
+        const id = e.currentTarget.getAttribute('data-id') || emp.id;
         handleDeleteEmployee(id, emp.name);
       });
 
@@ -1471,19 +1481,81 @@ async function loadAdminRoster() {
   }
 }
 
+// Confirmation dialog modal for deleting employee
+function confirmDeleteEmployeeModal(name) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('modal-delete-employee');
+    const cancelBtn = document.getElementById('btn-cancel-delete-employee');
+    const confirmBtn = document.getElementById('btn-confirm-delete-employee');
+    const textEl = document.getElementById('delete-employee-modal-text');
+
+    if (!modal || !cancelBtn || !confirmBtn) {
+      const ok = window.confirm("Are you sure you want to delete this employee?\nThis action cannot be undone.");
+      return resolve(ok);
+    }
+
+    if (textEl) {
+      textEl.textContent = "Are you sure you want to delete this employee?\nThis action cannot be undone.";
+    }
+
+    modal.classList.remove('hidden');
+
+    const cleanup = (result) => {
+      modal.classList.add('hidden');
+      cancelBtn.onclick = null;
+      confirmBtn.onclick = null;
+      resolve(result);
+    };
+
+    cancelBtn.onclick = () => cleanup(false);
+    confirmBtn.onclick = () => cleanup(true);
+  });
+}
+
 // Delete staff record (SOFT DELETE — all past data is preserved and visible in admin reports)
 async function handleDeleteEmployee(id, name) {
-  if (!confirm(`Are you sure you want to delete "${name}" from the active roster?\n\n✅ All their past attendance logs, work records, and expense history will be KEPT.\n❌ They will no longer be able to log in using their link.\n\nThis action archives the employee — it does NOT erase any data.`)) {
+  if (!id) {
+    showToast('Employee ID is required', 'error');
     return;
   }
+
+  const confirmed = await confirmDeleteEmployeeModal(name);
+  if (!confirmed) return;
 
   try {
     const res = await API.deleteEmployee(id);
     if (res && res.success) {
-      showToast(`✅ ${name} archived successfully. All their past data is preserved.`, 'success');
-      loadAdminRoster();
+      showToast(`✅ ${name || 'Employee'} deleted successfully. All past data is preserved.`, 'success');
+      
+      // 1. Refresh admin roster table
+      await loadAdminRoster();
+      
+      // 2. Refresh portal employee list
+      await loadEmployeesList();
+
+      // 3. Clear selected employee if this was the one open
+      if (selectedEmployee && selectedEmployee.id === id) {
+        selectedEmployee = null;
+        localStorage.removeItem('loggedInEmployeeId');
+        const cardContent = document.getElementById('clock-card-content');
+        const cardPlaceholder = document.getElementById('clock-card-placeholder');
+        if (cardContent) cardContent.classList.add('hidden');
+        if (cardPlaceholder) cardPlaceholder.classList.remove('hidden');
+      }
+
+      // 4. If individual attendance select exists, remove employee option
+      const indivSelect = document.getElementById('indiv-employee-select');
+      if (indivSelect) {
+        const opt = indivSelect.querySelector(`option[value="${id}"]`);
+        if (opt) opt.remove();
+      }
+
+      // 5. If salary sheet is loaded, refresh it
+      if (currentSalaryMonth) {
+        loadSalarySheet(currentSalaryMonth).catch(() => {});
+      }
     } else {
-      const msg = (res && res.error) ? res.error : 'Failed to archive employee';
+      const msg = (res && res.error) ? res.error : 'Failed to delete employee';
       showToast(`Error: ${msg}`, 'error');
     }
   } catch (err) {
@@ -3581,6 +3653,31 @@ document.addEventListener('DOMContentLoaded', () => {
     switchView('employee');
   });
 
+  // Delete Employee buttons on Employee Details views
+  const btnDeleteDetails = document.getElementById('btn-delete-employee-details');
+  if (btnDeleteDetails) {
+    btnDeleteDetails.addEventListener('click', () => {
+      if (!selectedEmployee) {
+        showToast('No employee currently selected', 'warning');
+        return;
+      }
+      handleDeleteEmployee(selectedEmployee.id, selectedEmployee.name);
+    });
+  }
+  const btnDeleteIndiv = document.getElementById('btn-delete-individual-emp');
+  if (btnDeleteIndiv) {
+    btnDeleteIndiv.addEventListener('click', () => {
+      const select = document.getElementById('indiv-employee-select');
+      const empId = select ? select.value : '';
+      if (!empId) {
+        showToast('Please select an employee first.', 'warning');
+        return;
+      }
+      const empName = select.options[select.selectedIndex]?.text || 'Employee';
+      handleDeleteEmployee(empId, empName);
+    });
+  }
+
   // Tab bindings for Admin panel
   document.querySelectorAll('.sidebar-nav button[data-tab]').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -5503,8 +5600,13 @@ async function loadSalarySheet(monthOverride) {
       // Per day = Math.round(basic / 30)
       const perDay = emp.perDaySalary !== undefined ? emp.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
       const regularEarned = emp.regularEarned !== undefined ? emp.regularEarned : (perDay * regularDays);
-      const sundayBonus = emp.sundayBonus !== undefined ? emp.sundayBonus : (perDay * sundayDays);
-      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : (perDay * totalPresentDays);
+      const isManualSunday = Boolean(emp.isManualSundayBonus);
+      const autoSundayBonus = emp.autoSundayBonus !== undefined ? emp.autoSundayBonus : (perDay * sundayDays);
+      const currentSundayBonus = emp.sundayBonus !== undefined ? emp.sundayBonus : autoSundayBonus;
+      const sundayEditedBy = emp.sundayBonusEditedBy || (emp.sundayBonusAudit && emp.sundayBonusAudit.editedBy) || 'Admin';
+      const sundayEditedAt = emp.sundayBonusEditedAt || (emp.sundayBonusAudit && emp.sundayBonusAudit.editedAt) || '';
+      const sundayBonus = currentSundayBonus;
+      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : (regularEarned + sundayBonus);
       const expenses = emp.totalExpenses !== undefined ? emp.totalExpenses : (sal.totalExpenses !== undefined ? sal.totalExpenses : 0);
       const itemizedExpenses = emp.itemizedExpenses || [];
 
@@ -5716,8 +5818,31 @@ async function loadSalarySheet(monthOverride) {
         </td>
         <td class="cell-perday" style="text-align:right; font-family:monospace;">${fmtNum(perDay)}</td>
         <td class="cell-regular-earned" style="text-align:right; font-family:monospace; color:#a5b4fc;">${fmtNum(regularEarned)}</td>
-        <td class="cell-sunday-bonus" style="text-align:right; font-family:monospace; color:${sundayDays > 0 ? '#fbbf24' : 'var(--text-muted)'}">
-          ${sundayDays > 0 ? '☀️ +' + fmtNum(sundayBonus) : '—'}
+        <td class="cell-sunday-bonus" style="text-align:center; min-width:145px; padding:6px 4px; vertical-align:middle;">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+            <div style="display:flex; align-items:center; gap:4px;">
+              <input type="number" class="salary-sunday-input" 
+                data-empid="${emp.id}" data-month="${month}" data-auto="${autoSundayBonus}"
+                value="${currentSundayBonus !== undefined && currentSundayBonus !== null ? currentSundayBonus : 0}" min="0" step="100"
+                style="width:64px; text-align:center; font-weight:700; font-size:0.85rem; padding:2px 4px; border-radius:5px; background:rgba(0,0,0,0.5); color:#fbbf24; border:1px solid rgba(251,191,36,0.4);" />
+              <button type="button" class="salary-save-btn btn-save-sunday" 
+                data-empid="${emp.id}" data-month="${month}"
+                onclick="handleSaveSundayBonus('${emp.id}', '${month}', this)"
+                style="padding:3px 7px; font-size:0.75rem; font-weight:600; border-radius:4px; background:#f59e0b; color:#fff; border:none; cursor:pointer;"
+                title="Save manual Sunday Bonus">💾 Save</button>
+            </div>
+            <div class="sunday-badge-container" style="display:flex; align-items:center; gap:4px; font-size:0.72rem;">
+              ${isManualSunday ? `
+                <span class="badge-manual" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); border-radius:4px; padding:1px 5px; font-weight:600;" title="Edited by ${escapeHtml(sundayEditedBy)} ${sundayEditedAt ? 'on ' + new Date(sundayEditedAt).toLocaleDateString() : ''}">✏️ Manual</span>
+                <button type="button" class="btn-reset-sunday" 
+                  onclick="handleResetSundayBonus('${emp.id}', '${month}', this)"
+                  style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; cursor:pointer; text-decoration:underline; padding:0;"
+                  title="Reset to auto-calculated Sunday bonus (${autoSundayBonus})">↺ Reset</button>
+              ` : `
+                <span class="badge-auto" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 5px; font-weight:500;">🤖 Auto</span>
+              `}
+            </div>
+          </div>
         </td>
         <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
         ${expenseCellHtml}
@@ -5751,6 +5876,12 @@ async function loadSalarySheet(monthOverride) {
       const presentInput = tr.querySelector('.salary-present-input');
       if (presentInput) {
         presentInput.addEventListener('input', () => updateRowSalaryLive(tr));
+      }
+
+      // Real-time live input listener for sunday bonus typing
+      const sundayInput = tr.querySelector('.salary-sunday-input');
+      if (sundayInput) {
+        sundayInput.addEventListener('input', () => updateRowSalaryLive(tr));
       }
     });
 
@@ -6697,7 +6828,7 @@ async function handleRevokeSalaryApproval() {
   }
 }
 
-// Live recalculation as admin types basic salary or present days
+// Live recalculation as admin types basic salary, present days, or Sunday bonus
 function updateRowSalaryLive(tr, basicVal) {
   const basicInput = tr.querySelector('.salary-basic-input');
   if (!basicInput) return;
@@ -6711,23 +6842,87 @@ function updateRowSalaryLive(tr, basicVal) {
   const effSunday = Math.min(sundayDays, totalPresentDays);
   const effRegular = Math.max(0, totalPresentDays - effSunday);
   const regularEarned = perDay * effRegular;
-  const sundayBonus = perDay * effSunday;
+
+  const sundayInput = tr.querySelector('.salary-sunday-input');
+  let sundayBonus = 0;
+  if (sundayInput) {
+    const inputVal = parseFloat(sundayInput.value);
+    sundayBonus = !isNaN(inputVal) && inputVal >= 0 ? inputVal : (perDay * effSunday);
+  } else {
+    sundayBonus = perDay * effSunday;
+  }
+
   const earnedSalary = regularEarned + sundayBonus;
   const netSalary = earnedSalary - expenses;
 
   const cellPerDay = tr.querySelector('.cell-perday');
   const cellRegularEarned = tr.querySelector('.cell-regular-earned');
-  const cellSundayBonus = tr.querySelector('.cell-sunday-bonus');
   const cellEarned = tr.querySelector('.cell-earned');
   const cellNet = tr.querySelector('.cell-net');
 
   if (cellPerDay) cellPerDay.textContent = perDay > 0 ? perDay.toLocaleString() : '0';
   if (cellRegularEarned) cellRegularEarned.textContent = regularEarned > 0 ? regularEarned.toLocaleString() : '0';
-  if (cellSundayBonus) cellSundayBonus.textContent = effSunday > 0 ? '☀️ +' + sundayBonus.toLocaleString() : '—';
   if (cellEarned) cellEarned.textContent = earnedSalary > 0 ? earnedSalary.toLocaleString() : '0';
   if (cellNet) {
     cellNet.textContent = netSalary.toLocaleString();
     cellNet.className = 'cell-net ' + (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative');
+  }
+}
+
+async function handleSaveSundayBonus(empId, month, btn) {
+  const tr = document.getElementById(`sal-row-${empId}`);
+  const input = tr ? tr.querySelector('.salary-sunday-input') : document.querySelector(`.salary-sunday-input[data-empid="${empId}"]`);
+  if (!input) return;
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val < 0) {
+    showToast('Please enter a valid Sunday bonus amount (>= 0).', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+
+  try {
+    const res = await API.setManualSundayBonus(empId, month, val);
+    if (res && res.success) {
+      showToast(`✅ Sunday bonus saved (PKR ${val.toLocaleString()})! Salary recalculated.`, 'success');
+      await loadSalarySheet(month);
+    } else {
+      showToast((res && res.error) || 'Failed to save Sunday bonus', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to save Sunday bonus: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '💾 Save';
+    }
+  }
+}
+
+async function handleResetSundayBonus(empId, month, btn) {
+  if (!confirm('Reset Sunday Bonus to auto-calculated value? This will remove the manual override.')) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+  try {
+    const res = await API.resetManualSundayBonus(empId, month);
+    if (res && res.success) {
+      showToast('↺ Reset to auto-calculated Sunday bonus!', 'success');
+      await loadSalarySheet(month);
+    } else {
+      showToast((res && res.error) || 'Failed to reset Sunday bonus', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to reset: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '↺ Reset';
+    }
   }
 }
 
@@ -7000,8 +7195,8 @@ async function printSalarySheet() {
               </td>
               <td style="padding: 4px 6px; text-align: right; font-family: monospace;">${fmt(e.perDaySalary)}</td>
               <td style="padding: 4px 6px; text-align: right; font-family: monospace;">${fmt(e.regularEarned)}</td>
-              <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: ${e.sundayBonus > 0 ? '#b45309' : '#94a3b8'};">
-                ${e.sundayBonus > 0 ? '+' + fmt(e.sundayBonus) : '—'}
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: ${e.sundayBonus > 0 ? '#b45309' : '#64748b'};">
+                ${e.sundayBonus > 0 ? '+' + fmt(e.sundayBonus) : '0'}${e.isManualSundayBonus ? ' <span style="font-size:7.5px; background:#fef3c7; color:#b45309; padding:1px 3px; border-radius:2px; font-weight:700;">(Manual)</span>' : ''}
               </td>
               <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 700; background: #f8fafc;">${fmt(e.earnedSalary)}</td>
               <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: #b91c1c; font-weight: 600;">
@@ -7165,6 +7360,7 @@ async function exportSalarySheetCSV(monthOverride) {
     'Per Day Rate (PKR)',
     'Regular Earned (PKR)',
     'Sunday Bonus (PKR)',
+    'Sunday Bonus Type',
     'Earned Total (PKR)',
     'Claimed Expenses (PKR)',
     'Net Payable (PKR)',
@@ -7189,6 +7385,7 @@ async function exportSalarySheetCSV(monthOverride) {
       emp.perDaySalary || 0,
       emp.regularEarned || 0,
       emp.sundayBonus || 0,
+      emp.isManualSundayBonus ? 'Manual' : 'Auto',
       emp.earnedSalary || 0,
       emp.totalExpenses || 0,
       emp.netSalary || 0,
@@ -7202,13 +7399,14 @@ async function exportSalarySheetCSV(monthOverride) {
 
   // Summary row
   if (report.summary) {
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(escapeCsv).join(','));
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(escapeCsv).join(','));
     const summaryRow = [
       'TOTALS',
       '',
       `Total Staff: ${report.summary.totalEmployees}`,
       '',
       report.summary.totalBaseSalary || 0,
+      '',
       '',
       '',
       '',
@@ -8380,6 +8578,10 @@ window.generateIndividualEmployeePDF = generateIndividualEmployeePDF;
 window.promptAndGenerateIndividualPDF = promptAndGenerateIndividualPDF;
 window.handleSavePresentDays = handleSavePresentDays;
 window.handleResetPresentDays = handleResetPresentDays;
+window.handleSaveSundayBonus = handleSaveSundayBonus;
+window.handleResetSundayBonus = handleResetSundayBonus;
+window.handleDeleteEmployee = handleDeleteEmployee;
+window.confirmDeleteEmployeeModal = confirmDeleteEmployeeModal;
 window.handleArchiveSalaryEmployee = handleArchiveSalaryEmployee;
 window.exportSalarySheetCSV = exportSalarySheetCSV;
 window.updateRowSalaryLive = updateRowSalaryLive;

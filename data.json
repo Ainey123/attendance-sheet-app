@@ -599,7 +599,7 @@
       "role": "complaint supervisor",
       "month": "2026-08",
       "basicSalary": 40000,
-      "generatedAt": "2026-09-10T07:39:13.669Z",
+      "generatedAt": "2026-09-10T08:39:45.268Z",
       "totalDaysInMonth": 31,
       "workingDays": 30,
       "regularPresentDays": 0,
@@ -615,7 +615,12 @@
       "isManualPresentDays": false,
       "manualPresentDays": null,
       "editedBy": null,
-      "editedAt": null
+      "editedAt": null,
+      "isManualSundayBonus": false,
+      "manualSundayBonus": null,
+      "autoSundayBonus": 0,
+      "sundayBonusEditedBy": null,
+      "sundayBonusEditedAt": null
     },
     {
       "id": "sal_mtub3e56_bmyw3",

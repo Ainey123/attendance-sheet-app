@@ -625,6 +625,32 @@ app.post('/api/salary/reset-present-days', checkAdminAuth, async (req, res) => {
   }
 });
 
+// POST /api/salary/set-sunday-bonus
+app.post('/api/salary/set-sunday-bonus', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month, sundayBonus, editedBy } = req.body;
+    if (!employeeId || !month || sundayBonus === undefined) {
+      return res.status(400).json({ error: 'employeeId, month and sundayBonus required' });
+    }
+    const result = await db.setManualSundayBonus(employeeId, month, sundayBonus, editedBy || 'Admin');
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/reset-sunday-bonus
+app.post('/api/salary/reset-sunday-bonus', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month } = req.body;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const result = await db.resetManualSundayBonus(employeeId, month);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/salary/archive-employee
 app.post('/api/salary/archive-employee', checkAdminAuth, async (req, res) => {
   try {

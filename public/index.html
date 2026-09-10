@@ -147,6 +147,7 @@
                 <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem; flex-wrap: wrap;">
                   <span id="selected-employee-role" class="badge-role">Role</span>
                   <button id="btn-change-pin" class="btn-change-pin-link">Change PIN</button>
+                  <button type="button" id="btn-delete-employee-details" class="btn btn-danger btn-sm" style="padding: 0.2rem 0.55rem; font-size: 0.75rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 4px; cursor: pointer;" title="Delete this employee">🗑️ Delete Employee</button>
                 </div>
               </div>
               <div id="selected-employee-status" class="status-indicator status-out">Clocked Out</div>
@@ -1172,6 +1173,9 @@
                   </button>
                   <button id="btn-export-individual-csv" class="btn btn-secondary">
                     Export CSV
+                  </button>
+                  <button type="button" id="btn-delete-individual-emp" class="btn btn-danger" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #f87171;" title="Delete selected employee">
+                    🗑️ Delete Employee
                   </button>
                 </div>
               </div>
@@ -2447,6 +2451,24 @@
     </div>
   </div>
 
+  <!-- DELETE EMPLOYEE CONFIRMATION MODAL -->
+  <div id="modal-delete-employee" class="modal-overlay hidden" style="z-index: 10005;">
+    <div class="modal-content" style="max-width: 440px; text-align: center; border: 1px solid rgba(239, 68, 68, 0.4); background: #161a23; border-radius: 12px; padding: 1.75rem; box-shadow: 0 20px 45px rgba(0,0,0,0.7);">
+      <div style="font-size: 2.6rem; margin-bottom: 0.6rem;">⚠️</div>
+      <h3 style="color:#fff; font-size:1.2rem; margin-bottom:0.75rem;">Delete Employee</h3>
+      <p id="delete-employee-modal-text" style="font-size:0.95rem; color:#cbd5e1; line-height: 1.6; margin-bottom:1.5rem; white-space:pre-line;">Are you sure you want to delete this employee?
+This action cannot be undone.</p>
+      <div style="display:flex; gap:0.75rem; justify-content:center;">
+        <button type="button" id="btn-cancel-delete-employee" class="btn btn-secondary" style="flex:1; padding:0.65rem 1.25rem; font-weight:600; cursor:pointer;">
+          Cancel
+        </button>
+        <button type="button" id="btn-confirm-delete-employee" class="btn btn-danger" style="flex:1; padding:0.65rem 1.25rem; background:#ef4444; border-color:#ef4444; color:#fff; font-weight:600; cursor:pointer;">
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Notification Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
@@ -2467,6 +2489,6 @@
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=256"></script>
+  <script src="app.js?v=258"></script>
 </body>
 </html>

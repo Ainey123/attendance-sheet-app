@@ -36,7 +36,7 @@ function runTest(name, fn) {
 
 async function runAllTests() {
   console.log('\n=============================================================');
-  console.log('  STARTING PRODUCTION VERIFICATION TEST SUITE (16 TEST CASES)');
+  console.log('  STARTING PRODUCTION VERIFICATION TEST SUITE (18 TEST CASES)');
   console.log('=============================================================\n');
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -436,6 +436,82 @@ async function runAllTests() {
     const postResetEmp = postResetReport.employees.find(e => e.id === testEmp.id);
     assert.strictEqual(postResetEmp.isManualPresentDays, false, 'isManualPresentDays must be false after reset');
     assert.strictEqual(postResetEmp.presentDays, originalPresentDays, 'presentDays must revert to original auto-calculated value');
+  });
+
+  // -------------------------------------------------------------------------
+  // TEST 17: Editable Sunday Bonus, persistence across recalculation, and reset to auto
+  // -------------------------------------------------------------------------
+  await runTest('Test 17: Editable Sunday Bonus, persistence across recalculation, and reset to auto', async () => {
+    const employees = await db.getEmployees(false);
+    assert.ok(employees.length > 0, 'Employees must exist');
+    const testEmp = employees[0];
+    const testMonth = '2026-08';
+
+    // 1. Initial report before override
+    const initialReport = await db.getFinalizedSalaryReport(testMonth);
+    const initialEmpReport = initialReport.employees.find(e => e.id === testEmp.id);
+    assert.ok(initialEmpReport, 'Employee must exist in August report');
+    const originalSundayBonus = initialEmpReport.sundayBonus;
+
+    // 2. Set manual Sunday bonus to 5,000 PKR
+    const manualBonus = 5000;
+    const saveRes = await db.setManualSundayBonus(testEmp.id, testMonth, manualBonus, 'Admin Test');
+    assert.strictEqual(saveRes.success, true);
+    assert.strictEqual(saveRes.manualSundayBonus, 5000);
+
+    // 3. Verify getFinalizedSalaryReport reflects the manual Sunday bonus
+    const updatedReport = await db.getFinalizedSalaryReport(testMonth);
+    const updatedEmpReport = updatedReport.employees.find(e => e.id === testEmp.id);
+    assert.strictEqual(updatedEmpReport.isManualSundayBonus, true, 'isManualSundayBonus flag must be true');
+    assert.strictEqual(updatedEmpReport.sundayBonus, 5000, 'sundayBonus must be 5000');
+    assert.strictEqual(updatedEmpReport.earnedSalary, updatedEmpReport.regularEarned + 5000, 'Earned salary must be regularEarned + manual Sunday bonus');
+
+    // 4. Recalculate salary (generateSalary) and verify manual override is preserved
+    await db.generateSalary(testEmp.id, testMonth);
+    const postRecalcReport = await db.getFinalizedSalaryReport(testMonth);
+    const postRecalcEmp = postRecalcReport.employees.find(e => e.id === testEmp.id);
+    assert.strictEqual(postRecalcEmp.isManualSundayBonus, true, 'isManualSundayBonus must persist across generateSalary');
+    assert.strictEqual(postRecalcEmp.sundayBonus, 5000, 'sundayBonus must remain 5000 after recalc');
+
+    // 5. Reset manual override back to auto
+    const resetRes = await db.resetManualSundayBonus(testEmp.id, testMonth);
+    assert.strictEqual(resetRes.success, true);
+
+    const postResetReport = await db.getFinalizedSalaryReport(testMonth);
+    const postResetEmp = postResetReport.employees.find(e => e.id === testEmp.id);
+    assert.strictEqual(postResetEmp.isManualSundayBonus, false, 'isManualSundayBonus must be false after reset');
+    assert.strictEqual(postResetEmp.sundayBonus, originalSundayBonus, 'sundayBonus must revert to original auto-calculated value');
+  });
+
+  // -------------------------------------------------------------------------
+  // TEST 18: Employee deletion soft-delete and attendance record preservation
+  // -------------------------------------------------------------------------
+  await runTest('Test 18: Employee deletion soft-delete and attendance record preservation', async () => {
+    // 1. Create a dedicated test employee to delete safely
+    const addRes = await db.addEmployee('Test Deletion Target', 'Temporary QA');
+    const targetId = addRes.id || (addRes.employee && addRes.employee.id);
+    assert.ok(targetId, 'Test employee created successfully');
+
+    // 2. Add an attendance record for this test employee
+    const attRec = await db.clockIn(targetId, { latitude: 31.5204, longitude: 74.3587 });
+    assert.ok(attRec, 'Attendance record clocked in for test employee');
+
+    // Verify employee is in active roster
+    const activeBefore = await db.getEmployees(false);
+    assert.ok(activeBefore.some(e => e.id === targetId), 'Employee must be present in active roster before deletion');
+
+    // 3. Perform soft delete
+    const delRes = await db.deleteEmployee(targetId);
+    assert.strictEqual(delRes, true, 'deleteEmployee must return true');
+
+    // 4. Verify employee is removed from active roster
+    const activeAfter = await db.getEmployees(false);
+    assert.ok(!activeAfter.some(e => e.id === targetId), 'Deleted employee must be removed from active roster');
+
+    // 5. Verify attendance record is intact and preserved
+    const allAtt = await db.getAttendance();
+    const empAtt = allAtt.filter(a => a.employeeId === targetId);
+    assert.ok(empAtt.length > 0, 'Attendance records must remain preserved after employee deletion');
   });
 
   console.log('\n=============================================================');

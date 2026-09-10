@@ -1412,14 +1412,14 @@ const db = {
       let records = data.formSubmissions || [];
       if (employeeId) records = records.filter(r => r.employeeId === employeeId);
       if (formType) records = records.filter(r => r.formType === formType);
-      else records = records.filter(r => r.formType !== 'manual_present_days');
+      else records = records.filter(r => r.formType !== 'manual_present_days' && r.formType !== 'manual_sunday_bonus');
       return records.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
     }
     try {
       let query = supabase.from('form_submissions').select('*').order('submittedAt', { ascending: false });
       if (employeeId) query = query.eq('employeeId', employeeId);
       if (formType) query = query.eq('formType', formType);
-      else query = query.neq('formType', 'manual_present_days');
+      else query = query.neq('formType', 'manual_present_days').neq('formType', 'manual_sunday_bonus');
 
       const { data, error } = await query;
       if (error) {
@@ -1817,6 +1817,192 @@ const db = {
     }
 
     // Re-generate salary to revert back to auto attendance
+    await this.generateSalary(employeeId, month);
+
+    return {
+      success: true,
+      employeeId,
+      month
+    };
+  },
+
+  // --- Manual Sunday Bonus Override Methods ---
+  async getManualSundayBonuses(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const resultMap = {};
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const subs = data.formSubmissions || [];
+      subs.forEach(s => {
+        if (s && s.formType === 'manual_sunday_bonus' && s.formData && s.formData.month === month) {
+          resultMap[s.employeeId] = {
+            id: s.id,
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+            month: s.formData.month,
+            originalAutoSundayBonus: Number(s.formData.originalAutoSundayBonus) || 0,
+            manualSundayBonus: Number(s.formData.manualSundayBonus) || 0,
+            editedBy: s.formData.editedBy || 'Admin',
+            editedAt: s.formData.editedAt || s.submittedAt
+          };
+        }
+      });
+      return resultMap;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('*')
+        .eq('formType', 'manual_sunday_bonus');
+
+      if (error) {
+        console.warn('Supabase getManualSundayBonuses notice:', error.message);
+        return resultMap;
+      }
+
+      (data || []).forEach(s => {
+        if (s && s.formData && s.formData.month === month) {
+          resultMap[s.employeeId] = {
+            id: s.id,
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+            month: s.formData.month,
+            originalAutoSundayBonus: Number(s.formData.originalAutoSundayBonus) || 0,
+            manualSundayBonus: Number(s.formData.manualSundayBonus) || 0,
+            editedBy: s.formData.editedBy || 'Admin',
+            editedAt: s.formData.editedAt || s.submittedAt
+          };
+        }
+      });
+
+      return resultMap;
+    } catch (err) {
+      console.warn('getManualSundayBonuses exception:', err.message);
+      return resultMap;
+    }
+  },
+
+  async setManualSundayBonus(employeeId, month, manualSundayBonus, editedBy = 'Admin') {
+    if (!employeeId) throw new Error('Employee ID is required');
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error('Valid month (YYYY-MM) is required');
+
+    const numBonus = parseInt(manualSundayBonus, 10);
+    if (isNaN(numBonus) || numBonus < 0) {
+      throw new Error('Sunday bonus must be a non-negative number');
+    }
+
+    const employees = await this.getEmployees(true);
+    const emp = (employees || []).find(e => e.id === employeeId);
+    if (!emp) throw new Error(`Employee ${employeeId} not found`);
+
+    // Compute original auto Sunday bonus from attendance
+    const allAttendance = await this.getAttendance();
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+    const empAtt = (allAttendance || []).filter(a => a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeave(a));
+    const presentDates = new Set();
+    empAtt.forEach(a => presentDates.add(a.date));
+
+    let sundayDays = 0;
+    presentDates.forEach(dateStr => {
+      const parts = dateStr.split('-');
+      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      if (dt.getDay() === 0) sundayDays++;
+    });
+
+    const basicSalary = Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
+    const perDay = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
+    const originalAutoSundayBonus = perDay * sundayDays;
+
+    const recordId = `msb_${employeeId}_${month}`;
+    const nowIso = new Date().toISOString();
+
+    const record = {
+      id: recordId,
+      employeeId,
+      employeeName: emp.name,
+      formType: 'manual_sunday_bonus',
+      formData: {
+        month,
+        originalAutoSundayBonus,
+        manualSundayBonus: numBonus,
+        editedBy: String(editedBy || 'Admin').trim(),
+        editedAt: nowIso
+      },
+      submittedAt: nowIso
+    };
+
+    // Save to local cache
+    const data = loadLocalData();
+    if (!data.formSubmissions) data.formSubmissions = [];
+    const localIdx = data.formSubmissions.findIndex(s => s.id === recordId || (s.employeeId === employeeId && s.formType === 'manual_sunday_bonus' && s.formData?.month === month));
+    if (localIdx >= 0) {
+      data.formSubmissions[localIdx] = record;
+    } else {
+      data.formSubmissions.push(record);
+    }
+    saveLocalData(data);
+
+    // Save to Supabase if active
+    if (!useLocalFallback && supabase) {
+      try {
+        const { error } = await supabase
+          .from('form_submissions')
+          .upsert(record);
+        if (error) {
+          console.warn('Supabase setManualSundayBonus upsert notice:', error.message);
+        }
+      } catch (err) {
+        console.warn('Supabase setManualSundayBonus exception:', err.message);
+      }
+    }
+
+    // Trigger salary recalculation
+    await this.generateSalary(employeeId, month);
+
+    return {
+      success: true,
+      employeeId,
+      employeeName: emp.name,
+      month,
+      manualSundayBonus: numBonus,
+      originalAutoSundayBonus,
+      editedBy: record.formData.editedBy,
+      editedAt: nowIso
+    };
+  },
+
+  async resetManualSundayBonus(employeeId, month) {
+    if (!employeeId) throw new Error('Employee ID is required');
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error('Valid month (YYYY-MM) is required');
+
+    const recordId = `msb_${employeeId}_${month}`;
+
+    // Remove from local cache
+    const data = loadLocalData();
+    if (data.formSubmissions) {
+      data.formSubmissions = data.formSubmissions.filter(s => !(s.id === recordId || (s.employeeId === employeeId && s.formType === 'manual_sunday_bonus' && s.formData?.month === month)));
+      saveLocalData(data);
+    }
+
+    // Remove from Supabase
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase
+          .from('form_submissions')
+          .delete()
+          .eq('id', recordId);
+      } catch (err) {
+        console.warn('Supabase resetManualSundayBonus delete notice:', err.message);
+      }
+    }
+
+    // Re-generate salary to revert back to auto Sunday bonus
     await this.generateSalary(employeeId, month);
 
     return {
@@ -2396,6 +2582,12 @@ const db = {
       manualOverrides = await this.getManualPresentDays(month);
     } catch (e) {}
 
+    // Check for manual Sunday bonus override
+    let manualSundayOverrides = {};
+    try {
+      manualSundayOverrides = await this.getManualSundayBonuses(month);
+    } catch (e) {}
+
     const override = manualOverrides[employeeId];
     const isManual = Boolean(override && typeof override.manualPresentDays === 'number');
     const effectivePresentDays = isManual ? override.manualPresentDays : autoTotalDays;
@@ -2443,11 +2635,14 @@ const db = {
     // Regular earned = per day × regular weekday present days
     const regularEarned = perDaySalary * effectiveRegularDays;
 
-    // Sunday bonus = per day × Sunday days worked
-    const sundayBonus = perDaySalary * effectiveSundayDays;
+    // Sunday bonus: check manual override or auto-calculate
+    const sunOverride = manualSundayOverrides[employeeId];
+    const isManualSunday = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
+    const autoSundayBonus = perDaySalary * effectiveSundayDays;
+    const sundayBonus = isManualSunday ? sunOverride.manualSundayBonus : autoSundayBonus;
 
-    // Total earned salary
-    const earnedSalary = perDaySalary * effectivePresentDays;
+    // Total earned salary = regular earned + Sunday bonus
+    const earnedSalary = regularEarned + sundayBonus;
 
     // Net salary = earned − expenses (expenses recorded at clock-out are deducted)
     const netSalary = earnedSalary - Math.round(totalExpenses);
@@ -2465,6 +2660,11 @@ const db = {
       manualPresentDays: isManual ? override.manualPresentDays : null,
       editedBy: isManual ? override.editedBy : null,
       editedAt: isManual ? override.editedAt : null,
+      isManualSundayBonus: isManualSunday,
+      manualSundayBonus: isManualSunday ? sunOverride.manualSundayBonus : null,
+      autoSundayBonus,
+      sundayBonusEditedBy: isManualSunday ? sunOverride.editedBy : null,
+      sundayBonusEditedAt: isManualSunday ? sunOverride.editedAt : null,
       perDaySalary,
       regularEarned,
       sundayBonus,
@@ -3805,7 +4005,7 @@ const db = {
       month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides] = await Promise.all([
+    const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides, manualSundayOverrides] = await Promise.all([
       this.getEmployees(false),
       this.getAttendance().catch(() => []),
       this.getWorkRecords(null, month).catch(() => []),
@@ -3823,7 +4023,8 @@ const db = {
       this.getSalaryApprovals(month).catch(() => []),
       this.getExpenseVerifications(month).catch(() => []),
       this.getSettings().catch(() => ({})),
-      this.getManualPresentDays(month).catch(() => ({}))
+      this.getManualPresentDays(month).catch(() => ({})),
+      this.getManualSundayBonuses(month).catch(() => ({}))
     ]);
 
     const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
@@ -3903,8 +4104,12 @@ const db = {
       const basicSalary = Number(salRec.basicSalary) || Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
       const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
       const regularEarned = perDaySalary * effectiveRegularDays;
-      const sundayBonus = perDaySalary * effectiveSundayDays;
-      const earnedSalary = perDaySalary * effectivePresentDays;
+
+      const sunOverride = manualSundayOverrides[empId] || null;
+      const isManualSundayBonus = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
+      const autoSundayBonus = perDaySalary * effectiveSundayDays;
+      const sundayBonus = isManualSundayBonus ? sunOverride.manualSundayBonus : autoSundayBonus;
+      const earnedSalary = regularEarned + sundayBonus;
 
       // Itemized expenses strictly for this month
       const itemizedExpenses = [];
@@ -4012,6 +4217,16 @@ const db = {
         manualPresentDays: isManualPresentDays ? override.manualPresentDays : null,
         editedBy: override ? override.editedBy : null,
         editedAt: override ? override.editedAt : null,
+        isManualSundayBonus,
+        manualSundayBonus: isManualSundayBonus ? sunOverride.manualSundayBonus : null,
+        autoSundayBonus,
+        sundayBonusEditedBy: sunOverride ? sunOverride.editedBy : null,
+        sundayBonusEditedAt: sunOverride ? sunOverride.editedAt : null,
+        sundayBonusAudit: sunOverride ? {
+          originalAutoSundayBonus: sunOverride.originalAutoSundayBonus,
+          editedBy: sunOverride.editedBy,
+          editedAt: sunOverride.editedAt
+        } : null,
         perDaySalary,
         regularEarned,
         sundayBonus,
