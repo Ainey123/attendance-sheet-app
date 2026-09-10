@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "build": "node -e \"console.log('Build completed successfully')\"",
+    "test": "node tests/production_verification.test.js",
     "dump:supabase": "node ./scripts/dump_supabase_data.js",
     "start": "node server.js"
   },

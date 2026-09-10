@@ -422,8 +422,8 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
 
   const { numPages, pdfInfo, pages, rawText } = pdfStructure;
 
-  if (!pages || pages.length === 0 || !rawText || rawText.trim().length === 0) {
-    throw new Error('No readable text found in this PDF. It may be a scanned image without selectable text.');
+  if (!pages || pages.length === 0 || !rawText || rawText.trim().length < 20) {
+    throw new Error('Scanned image PDF detected. This PDF does not contain selectable digital text. Please upload an official digital bank statement PDF with selectable text.');
   }
 
   // Detect bank statement type & extract metadata from content
@@ -601,51 +601,36 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
  */
 function parseLineNumbers(line, currentTx, debitXRange, creditXRange, balanceXRange) {
   const numberItems = [];
-  let handledConcat = false;
 
   line.items.forEach(item => {
     const rawStr = (item.str || '').trim();
-    // Handle UBL concatenated numbers format: e.g. "40,00008,533,447.69" or "2,50008,816,559.89"
-    const concatDebitMatch = rawStr.match(/^([\d,]+?)0([\d,]+\.\d{2})$/);
-    if (concatDebitMatch) {
-      const dVal = parseAmount(concatDebitMatch[1]);
-      const bVal = parseAmount(concatDebitMatch[2]);
-      if (dVal > 0 && bVal > 0) {
-        currentTx.debit = dVal;
-        currentTx.balance = bVal;
-        handledConcat = true;
+    // Match valid numeric amounts (e.g. 17,000.00 or 7,309,834.63 or 500)
+    if (/^-?[\d,]+(?:\.\d+)?$/.test(rawStr) || /^-?[\d,]+$/.test(rawStr)) {
+      const val = parseAmount(rawStr);
+      if (val > 0) {
+        numberItems.push({ str: rawStr, val, x: item.x, width: item.width || 0 });
       }
-    }
-    const concatCreditMatch = rawStr.match(/^0([\d,]+?)([\d,]+\.\d{2})$/);
-    if (concatCreditMatch) {
-      const cVal = parseAmount(concatCreditMatch[1]);
-      const bVal = parseAmount(concatCreditMatch[2]);
-      if (cVal > 0 && bVal > 0) {
-        currentTx.credit = cVal;
-        currentTx.balance = bVal;
-        handledConcat = true;
-      }
-    }
-
-    if (!handledConcat) {
-      const val = parseAmount(item.str);
-      if (val > 0 && /[\d,]/.test(item.str)) {
-        numberItems.push({ str: item.str, val, x: item.x });
+    } else {
+      const pkrMatch = rawStr.match(/(?:PKR|RS\.?|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i);
+      if (pkrMatch) {
+        const val = parseAmount(pkrMatch[1]);
+        if (val > 0) {
+          numberItems.push({ str: pkrMatch[1], val, x: item.x, width: item.width || 0 });
+        }
       }
     }
   });
-
-  if (handledConcat) return;
 
   if (numberItems.length === 0) return;
 
   // 1. Try X-coordinate positioning if range exists
   numberItems.forEach(num => {
-    if (creditXRange && num.x >= creditXRange.min && num.x <= creditXRange.max) {
+    const itemCenter = num.x + (num.width > 0 ? num.width / 2 : 0);
+    if (creditXRange && ((num.x >= creditXRange.min && num.x <= creditXRange.max) || (itemCenter >= creditXRange.min && itemCenter <= creditXRange.max))) {
       currentTx.credit = num.val;
-    } else if (debitXRange && num.x >= debitXRange.min && num.x <= debitXRange.max) {
+    } else if (debitXRange && ((num.x >= debitXRange.min && num.x <= debitXRange.max) || (itemCenter >= debitXRange.min && itemCenter <= debitXRange.max))) {
       currentTx.debit = num.val;
-    } else if (balanceXRange && num.x >= balanceXRange.min && num.x <= balanceXRange.max) {
+    } else if (balanceXRange && ((num.x >= balanceXRange.min && num.x <= balanceXRange.max) || (itemCenter >= balanceXRange.min && itemCenter <= balanceXRange.max))) {
       currentTx.balance = num.val;
     }
   });

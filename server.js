@@ -555,11 +555,83 @@ app.post('/api/comments/mark-read', async (req, res) => {
 
 // ─── Salary Routes ─────────────────────────────────────────────────────────
 
+// GET /api/salary/finalized-report?month=YYYY-MM — unified calculation for UI & PDF
+app.get('/api/salary/finalized-report', checkAdminAuth, async (req, res) => {
+  try {
+    const report = await db.getFinalizedSalaryReport(req.query.month || null);
+    res.json({ success: true, report });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/salary?month=YYYY-MM — list all salary records for a month
 app.get('/api/salary', checkAdminAuth, async (req, res) => {
   try {
     const records = await db.getAllSalaries(req.query.month || null);
     res.json({ success: true, salaries: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/set-basic
+app.post('/api/salary/set-basic', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month, basicSalary } = req.body;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const rec = await db.setSalaryBasic(employeeId, month, basicSalary || 0);
+    res.json({ success: true, salary: rec });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/generate
+app.post('/api/salary/generate', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month } = req.body;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const rec = await db.generateSalary(employeeId, month);
+    res.json({ success: true, salary: rec });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/set-present-days
+app.post('/api/salary/set-present-days', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month, presentDays, editedBy } = req.body;
+    if (!employeeId || !month || presentDays === undefined) {
+      return res.status(400).json({ error: 'employeeId, month and presentDays required' });
+    }
+    const result = await db.setManualPresentDays(employeeId, month, presentDays, editedBy || 'Admin');
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/reset-present-days
+app.post('/api/salary/reset-present-days', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId, month } = req.body;
+    if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+    const result = await db.resetManualPresentDays(employeeId, month);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/salary/archive-employee
+app.post('/api/salary/archive-employee', checkAdminAuth, async (req, res) => {
+  try {
+    const { employeeId } = req.body;
+    if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+    await db.deleteEmployee(employeeId);
+    res.json({ success: true, employeeId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

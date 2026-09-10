@@ -100,6 +100,9 @@ const API = {
     return fetchJson(`/api/attendance/individual?${q.toString()}`);
   },
   // Salary APIs
+  getFinalizedSalaryReport: (month) => fetchJson(`/api/salary/finalized-report?month=${encodeURIComponent(month)}`, {
+    headers: { 'X-Admin-Passcode': adminPasscode }
+  }),
   getSalaries: (month) => fetchJson(`/api/salary?month=${encodeURIComponent(month)}`, {
     headers: { 'X-Admin-Passcode': adminPasscode }
   }),
@@ -117,6 +120,21 @@ const API = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify({ month })
+  }),
+  setManualPresentDays: (employeeId, month, presentDays) => fetchJson('/api/salary/set-present-days', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month, presentDays })
+  }),
+  resetManualPresentDays: (employeeId, month) => fetchJson('/api/salary/reset-present-days', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId, month })
+  }),
+  archiveSalaryEmployee: (employeeId) => fetchJson('/api/salary/archive-employee', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify({ employeeId })
   }),
   // Accounts PDF Verification APIs
   getAccountsPdf: (month) => fetchJson(`/api/salary/accounts-pdf?month=${encodeURIComponent(month)}`, {
@@ -5219,6 +5237,9 @@ function initSalaryTab() {
   const btnPrint = document.getElementById('btn-print-salary-sheet');
   if (btnPrint) btnPrint.addEventListener('click', printSalarySheet);
 
+  const btnExportCsv = document.getElementById('btn-export-salary-csv');
+  if (btnExportCsv) btnExportCsv.addEventListener('click', () => exportSalarySheetCSV());
+
   // Accounts PDF Handlers
   const btnTriggerUpload = document.getElementById('btn-upload-accounts-pdf');
   const fileInput = document.getElementById('accounts-pdf-file-input');
@@ -5418,8 +5439,9 @@ async function loadSalarySheet(monthOverride) {
   if (statMonth) statMonth.textContent = month;
 
   try {
-    // Fetch employees, salaries, Accounts PDF, salary approvals, and expense verifications in parallel
-    const [empRes, salRes, accPdfRes, apprRes, expVerRes] = await Promise.all([
+    // Fetch finalized report, employees, Accounts PDF, salary approvals, and expense verifications in parallel
+    const [finalizedRes, empRes, salRes, accPdfRes, apprRes, expVerRes] = await Promise.all([
+      API.getFinalizedSalaryReport(month).catch(() => null),
       API.getEmployees(),
       API.getSalaries(month),
       API.getAccountsPdf(month).catch(() => ({ success: false, accountsPdf: null })),
@@ -5427,7 +5449,10 @@ async function loadSalarySheet(monthOverride) {
       API.getExpenseVerifications(month).catch(() => ({ success: false, verifications: [] }))
     ]);
 
-    const employees = empRes.employees || empRes || [];
+    const report = finalizedRes && finalizedRes.report;
+    window.currentFinalizedSalaryReport = report;
+
+    const employees = (report && report.employees) ? report.employees : (empRes.employees || empRes || []);
     currentSalaryEmployees = employees;
     const salaries = (salRes && salRes.salaries) ? salRes.salaries : [];
     currentAccountsPdf = (accPdfRes && accPdfRes.accountsPdf) ? accPdfRes.accountsPdf : null;
@@ -5465,31 +5490,39 @@ async function loadSalarySheet(monthOverride) {
 
     employees.forEach((emp, idx) => {
       const sal = salMap[emp.id] || {};
-      const basicSalary = sal.basicSalary || 0;
-      const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0);
-      const sundayDays = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
-      const totalPresentDays = sal.presentDays !== undefined ? sal.presentDays : (regularDays + sundayDays);
+      const basicSalary = emp.basicSalary !== undefined ? emp.basicSalary : (sal.basicSalary || 0);
+      const regularDays = emp.regularPresentDays !== undefined ? emp.regularPresentDays : (sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0));
+      const sundayDays = emp.sundayPresentDays !== undefined ? emp.sundayPresentDays : (sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0);
+      const isManual = Boolean(emp.isManualPresentDays);
+      const autoDays = emp.autoPresentDays !== undefined ? emp.autoPresentDays : (regularDays + sundayDays);
+      const currentPresentDays = emp.presentDays !== undefined ? emp.presentDays : autoDays;
+      const editedBy = emp.editedBy || 'Admin';
+      const editedAt = emp.editedAt || '';
+      const totalPresentDays = currentPresentDays;
 
       // Per day = Math.round(basic / 30)
-      const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
-      const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : (perDay * regularDays);
-      const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (perDay * sundayDays);
-      const earnedSalary = sal.earnedSalary !== undefined ? sal.earnedSalary : (perDay * totalPresentDays);
-      const expenses = sal.totalExpenses !== undefined ? sal.totalExpenses : 0;
+      const perDay = emp.perDaySalary !== undefined ? emp.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
+      const regularEarned = emp.regularEarned !== undefined ? emp.regularEarned : (perDay * regularDays);
+      const sundayBonus = emp.sundayBonus !== undefined ? emp.sundayBonus : (perDay * sundayDays);
+      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : (perDay * totalPresentDays);
+      const expenses = emp.totalExpenses !== undefined ? emp.totalExpenses : (sal.totalExpenses !== undefined ? sal.totalExpenses : 0);
+      const itemizedExpenses = emp.itemizedExpenses || [];
 
       // Expense Verification & Senior Admin Approval integration
       const expVer = expVerMap[emp.id];
-      const isExpVerified = Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
-      const isExpApproved = Boolean(expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined)));
+      const isExpVerified = emp.isExpVerified !== undefined ? emp.isExpVerified : Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
+      const isExpApproved = emp.isExpApproved !== undefined ? emp.isExpApproved : Boolean(expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined)));
 
       let effectiveExpense = expenses;
-      if (isExpApproved && typeof expVer.approvedAmount === 'number') {
+      if (emp.effectiveExpense !== undefined) {
+        effectiveExpense = emp.effectiveExpense;
+      } else if (isExpApproved && expVer && typeof expVer.approvedAmount === 'number') {
         effectiveExpense = expVer.approvedAmount;
-      } else if (isExpVerified && typeof expVer.verifiedAmount === 'number') {
+      } else if (isExpVerified && expVer && typeof expVer.verifiedAmount === 'number') {
         effectiveExpense = expVer.verifiedAmount;
       }
 
-      const netSalary = earnedSalary - effectiveExpense;
+      const netSalary = emp.netSalary !== undefined ? emp.netSalary : (earnedSalary - effectiveExpense);
 
       if (typeof netSalary === 'number') totalPayable += netSalary;
       if (typeof effectiveExpense === 'number') totalExpenses += effectiveExpense;
@@ -5500,14 +5533,29 @@ async function loadSalarySheet(monthOverride) {
       // Accounts PDF Verification & Admin Approval columns
       const verif = verifMap[emp.id];
       const approval = (verif && verif.approval) || approvalsMap[emp.id];
-      const isApproved = Boolean(approval && approval.approvalStatus === 'APPROVED');
+      const isApproved = emp.salaryApprovalStatus === 'APPROVED' || Boolean(approval && approval.approvalStatus === 'APPROVED');
 
       let pdfExpHtml = '<span class="verif-none">—</span>';
       let diffHtml = '<span class="verif-none">—</span>';
       let statusHtml = '<span class="verif-none">—</span>';
       let approvalHtml = '<span class="verif-none">—</span>';
 
-      if (currentAccountsPdf) {
+      if (emp.bankCredits !== undefined && emp.bankStatus) {
+        pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">PKR ${fmtNum(emp.bankCredits)}</span>`;
+        const diffVal = emp.bankDifference !== undefined ? emp.bankDifference : Math.abs(emp.bankCredits - netSalary);
+        const diffColor = Math.abs(diffVal) < 1.0 ? '#4ade80' : '#fbbf24';
+        diffHtml = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;">PKR ${fmtNum(diffVal)}</span>`;
+
+        if (emp.bankStatus === 'MATCHED' || emp.bankStatus === 'MATCHED_ZERO') {
+          statusHtml = `<span class="verif-badge verif-matched clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view full breakdown">✓ MATCHED</span>`;
+        } else if (emp.bankStatus === 'MISMATCH') {
+          statusHtml = `<span class="verif-badge verif-discrepancy clickable" onclick="openDiscrepancyModal('${emp.id}')" title="Click to view discrepancy details">⚠ MISMATCH</span>`;
+        } else if (emp.bankStatus === 'NOT_IN_PDF') {
+          statusHtml = `<span class="verif-badge verif-notfound clickable" onclick="openDiscrepancyModal('${emp.id}')" title="No qualifying transactions in PDF">? NOT IN PDF</span>`;
+        } else {
+          statusHtml = '<span class="verif-none">—</span>';
+        }
+      } else if (currentAccountsPdf) {
         if (verif && (verif.isFoundInPdf || verif.includedTransactionsCount > 0)) {
           const bankCredits = verif.bankCreditTotal !== undefined ? verif.bankCreditTotal : (verif.pdfExpense || 0);
           pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">PKR ${fmtNum(bankCredits)}</span>`;
@@ -5536,11 +5584,12 @@ async function loadSalarySheet(monthOverride) {
         }
       }
 
+      const displayApprAmt = (emp.approvedAmount !== null && emp.approvedAmount !== undefined) ? emp.approvedAmount : ((approval && approval.approvedAmount !== undefined) ? approval.approvedAmount : netSalary);
       if (isApproved) {
         approvalHtml = `
           <button type="button" class="btn btn-sm" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.75rem; font-weight:700; padding:0.25rem 0.55rem; border-radius:4px; cursor:pointer;"
-            onclick="openSalaryApprovalModal('${emp.id}')" title="Approved PKR ${fmtNum(approval.approvedAmount)} by ${escapeHtml(approval.approvedBy || 'Admin')} on ${new Date(approval.approvedAt).toLocaleDateString()}">
-            ✅ PKR ${fmtNum(approval.approvedAmount)}
+            onclick="openSalaryApprovalModal('${emp.id}')" title="Approved PKR ${fmtNum(displayApprAmt)}">
+            ✅ PKR ${fmtNum(displayApprAmt)}
           </button>
         `;
       } else {
@@ -5554,11 +5603,12 @@ async function loadSalarySheet(monthOverride) {
 
       // Expense Section Action Buttons
       let verifyBtnHtml = '';
+      const verifiedDisplayAmt = emp.verifiedAmount !== null && emp.verifiedAmount !== undefined ? emp.verifiedAmount : (expVer && expVer.verifiedAmount);
       if (isExpVerified) {
         verifyBtnHtml = `
           <button type="button" class="btn btn-sm" style="background:rgba(59,130,246,0.18); color:#60a5fa; border:1px solid rgba(59,130,246,0.5); font-size:0.72rem; font-weight:700; padding:0.22rem 0.45rem; border-radius:4px; cursor:pointer; white-space:nowrap;"
-            onclick="openExpenseVerifyModal('${emp.id}')" title="Verified by ${escapeHtml(expVer.verifiedBy || 'Admin 1')}: PKR ${fmtNum(expVer.verifiedAmount)}">
-            ✓ Ver: ${fmtNum(expVer.verifiedAmount)}
+            onclick="openExpenseVerifyModal('${emp.id}')" title="Verified by ${escapeHtml((expVer && expVer.verifiedBy) || emp.verifiedBy || 'Admin 1')}: PKR ${fmtNum(verifiedDisplayAmt)}">
+            ✓ Ver: ${fmtNum(verifiedDisplayAmt)}
           </button>
         `;
       } else {
@@ -5571,11 +5621,12 @@ async function loadSalarySheet(monthOverride) {
       }
 
       let approveBtnHtml = '';
+      const approvedDisplayAmt = emp.approvedAmount !== null && emp.approvedAmount !== undefined ? emp.approvedAmount : (expVer && expVer.approvedAmount);
       if (isExpApproved) {
         approveBtnHtml = `
           <button type="button" class="btn btn-sm" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.5); font-size:0.72rem; font-weight:700; padding:0.22rem 0.45rem; border-radius:4px; cursor:pointer; white-space:nowrap;"
-            onclick="openExpenseApproveModal('${emp.id}')" title="Approved by ${escapeHtml(expVer.approvedBy || 'Senior Admin')}: PKR ${fmtNum(expVer.approvedAmount)}">
-            ✅ Appr: ${fmtNum(expVer.approvedAmount)}
+            onclick="openExpenseApproveModal('${emp.id}')" title="Approved by ${escapeHtml((expVer && expVer.approvedBy) || emp.approvedBy || 'Senior Admin')}: PKR ${fmtNum(approvedDisplayAmt)}">
+            ✅ Appr: ${fmtNum(approvedDisplayAmt)}
           </button>
         `;
       } else {
@@ -5592,7 +5643,13 @@ async function loadSalarySheet(monthOverride) {
           <div style="display:flex; flex-direction:column; gap:4px;">
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
               <span style="color:var(--text-muted); font-size:0.74rem;">Claimed:</span>
-              <strong style="font-family:monospace; color:#f87171;">${expenses > 0 ? 'PKR ' + fmtNum(expenses) : '0'}</strong>
+              ${expenses > 0 ? `
+                <strong class="clickable" onclick="openExpenseVerifyModal('${emp.id}')" title="Click to view itemized entries (${itemizedExpenses.length} items)" style="font-family:monospace; color:#f87171; cursor:pointer; text-decoration:underline dotted;">
+                  PKR ${fmtNum(expenses)} <span style="font-size:0.72rem; color:var(--text-muted);">(${itemizedExpenses.length})</span>
+                </strong>
+              ` : `
+                <span style="font-family:monospace; color:#94a3b8; font-weight:600;">PKR 0 (Nil)</span>
+              `}
             </div>
             <div style="display:flex; gap:4px; align-items:center;">
               ${verifyBtnHtml}
@@ -5624,14 +5681,39 @@ async function loadSalarySheet(monthOverride) {
         <td>
           <div style="display:flex; gap:0.35rem; align-items:center;">
             <input type="number" class="salary-basic-input" data-empid="${emp.id}" data-month="${month}"
-              data-regular="${regularDays}" data-sunday="${sundayDays}" data-expenses="${expenses}"
+              data-regular="${regularDays}" data-sunday="${sundayDays}" data-expenses="${effectiveExpense}" data-present="${currentPresentDays}"
               value="${basicSalary > 0 ? basicSalary : ''}" placeholder="Enter Basic" min="0" />
             <button class="salary-save-btn" data-empid="${emp.id}" data-month="${month}"
               onclick="handleSetBasicSalary(this)">Save</button>
           </div>
         </td>
         <td style="text-align:center;">30</td>
-        <td style="text-align:center; color:#22c55e; font-weight:700;">${fmtNum(regularDays)}</td>
+        <td class="cell-present-days" style="text-align:center; min-width:140px; padding:6px 4px; vertical-align:middle;">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+            <div style="display:flex; align-items:center; gap:4px;">
+              <input type="number" class="salary-present-input" 
+                data-empid="${emp.id}" data-month="${month}" data-auto="${autoDays}" data-sunday="${sundayDays}"
+                value="${currentPresentDays}" min="0" max="31" step="1"
+                style="width:52px; text-align:center; font-weight:700; font-size:0.9rem; padding:2px 4px; border-radius:5px; background:rgba(0,0,0,0.5); color:#22c55e; border:1px solid rgba(34,197,94,0.4);" />
+              <button type="button" class="salary-save-btn btn-save-present" 
+                data-empid="${emp.id}" data-month="${month}"
+                onclick="handleSavePresentDays('${emp.id}', '${month}', this)"
+                style="padding:3px 7px; font-size:0.75rem; font-weight:600; border-radius:4px; background:#10b981; color:#fff; border:none; cursor:pointer;"
+                title="Save manual Present Days">💾 Save</button>
+            </div>
+            <div class="present-badge-container" style="display:flex; align-items:center; gap:4px; font-size:0.72rem;">
+              ${isManual ? `
+                <span class="badge-manual" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); border-radius:4px; padding:1px 5px; font-weight:600;" title="Edited by ${escapeHtml(editedBy)} ${editedAt ? 'on ' + new Date(editedAt).toLocaleDateString() : ''}">✏️ Manual</span>
+                <button type="button" class="btn-reset-present" 
+                  onclick="handleResetPresentDays('${emp.id}', '${month}', this)"
+                  style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; cursor:pointer; text-decoration:underline; padding:0;"
+                  title="Reset to auto-calculated attendance (${autoDays} days)">↺ Reset</button>
+              ` : `
+                <span class="badge-auto" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 5px; font-weight:500;">🤖 Auto</span>
+              `}
+            </div>
+          </div>
+        </td>
         <td class="cell-perday" style="text-align:right; font-family:monospace;">${fmtNum(perDay)}</td>
         <td class="cell-regular-earned" style="text-align:right; font-family:monospace; color:#a5b4fc;">${fmtNum(regularEarned)}</td>
         <td class="cell-sunday-bonus" style="text-align:right; font-family:monospace; color:${sundayDays > 0 ? '#fbbf24' : 'var(--text-muted)'}">
@@ -5645,9 +5727,15 @@ async function loadSalarySheet(monthOverride) {
         <td style="text-align:right; background:rgba(99,102,241,0.04);">${diffHtml}</td>
         <td style="text-align:center; background:rgba(99,102,241,0.04);">${statusHtml}</td>
         <td style="text-align:center; background:rgba(16,185,129,0.04);">${approvalHtml}</td>
-        <td class="no-print">
-          <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
-            title="Recalculate from attendance">⚡ Recalc</button>
+        <td class="no-print" style="white-space:nowrap; text-align:center;">
+          <div style="display:flex; gap:4px; justify-content:center; align-items:center;">
+            <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
+              title="Recalculate from attendance">⚡ Recalc</button>
+            <button type="button" class="btn btn-sm"
+              style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.35); font-size:0.72rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:4px; cursor:pointer;"
+              onclick="handleArchiveSalaryEmployee('${emp.id}', '${escapeHtml(emp.name)}', '${month}')"
+              title="Remove ${escapeHtml(emp.name)} from active Salary Sheet">🗑 Delete</button>
+          </div>
         </td>
       `;
       tbody.appendChild(tr);
@@ -5658,15 +5746,27 @@ async function loadSalarySheet(monthOverride) {
         basicInput.addEventListener('input', (e) => updateRowSalaryLive(tr, e.target.value));
         basicInput.addEventListener('change', (e) => saveBasicSalaryFromInput(e.target));
       }
+
+      // Real-time live input listener for present days typing
+      const presentInput = tr.querySelector('.salary-present-input');
+      if (presentInput) {
+        presentInput.addEventListener('input', () => updateRowSalaryLive(tr));
+      }
     });
 
     // Update stat cards
     const salTotalEl = document.getElementById('sal-stat-total');
-    if (salTotalEl) salTotalEl.textContent = employees.length;
     const salPayEl = document.getElementById('sal-stat-payable');
-    if (salPayEl) salPayEl.textContent = 'PKR ' + totalPayable.toLocaleString();
     const salExpEl = document.getElementById('sal-stat-expenses');
-    if (salExpEl) salExpEl.textContent = 'PKR ' + totalExpenses.toLocaleString();
+    if (report && report.summary) {
+      if (salTotalEl) salTotalEl.textContent = report.summary.totalEmployees;
+      if (salPayEl) salPayEl.textContent = 'PKR ' + (report.summary.totalNetSalary || 0).toLocaleString();
+      if (salExpEl) salExpEl.textContent = 'PKR ' + (report.summary.totalEffectiveExpenses || 0).toLocaleString();
+    } else {
+      if (salTotalEl) salTotalEl.textContent = employees.length;
+      if (salPayEl) salPayEl.textContent = 'PKR ' + totalPayable.toLocaleString();
+      if (salExpEl) salExpEl.textContent = 'PKR ' + totalExpenses.toLocaleString();
+    }
 
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="16" class="table-empty" style="color:var(--color-danger);">Failed to load salary data.</td></tr>';
@@ -6597,18 +6697,21 @@ async function handleRevokeSalaryApproval() {
   }
 }
 
-// Live recalculation as admin types basic salary in input
+// Live recalculation as admin types basic salary or present days
 function updateRowSalaryLive(tr, basicVal) {
-  const input = tr.querySelector('.salary-basic-input');
-  if (!input) return;
-  const basic = parseFloat(basicVal) || 0;
-  const regularDays = parseFloat(input.dataset.regular) || 0;
-  const sundayDays = parseFloat(input.dataset.sunday) || 0;
-  const expenses = parseFloat(input.dataset.expenses) || 0;
+  const basicInput = tr.querySelector('.salary-basic-input');
+  if (!basicInput) return;
+  const basic = (basicVal !== undefined ? parseFloat(basicVal) : parseFloat(basicInput.value)) || 0;
+  const presentInput = tr.querySelector('.salary-present-input');
+  const totalPresentDays = presentInput ? (parseFloat(presentInput.value) || 0) : (parseFloat(basicInput.dataset.present) || 0);
+  const sundayDays = parseFloat(basicInput.dataset.sunday) || 0;
+  const expenses = parseFloat(basicInput.dataset.expenses) || 0;
 
   const perDay = basic > 0 ? Math.round(basic / 30) : 0;
-  const regularEarned = perDay * regularDays;
-  const sundayBonus = perDay * sundayDays;
+  const effSunday = Math.min(sundayDays, totalPresentDays);
+  const effRegular = Math.max(0, totalPresentDays - effSunday);
+  const regularEarned = perDay * effRegular;
+  const sundayBonus = perDay * effSunday;
   const earnedSalary = regularEarned + sundayBonus;
   const netSalary = earnedSalary - expenses;
 
@@ -6616,17 +6719,92 @@ function updateRowSalaryLive(tr, basicVal) {
   const cellRegularEarned = tr.querySelector('.cell-regular-earned');
   const cellSundayBonus = tr.querySelector('.cell-sunday-bonus');
   const cellEarned = tr.querySelector('.cell-earned');
-  const cellExpenses = tr.querySelector('.cell-expenses');
   const cellNet = tr.querySelector('.cell-net');
 
   if (cellPerDay) cellPerDay.textContent = perDay > 0 ? perDay.toLocaleString() : '0';
   if (cellRegularEarned) cellRegularEarned.textContent = regularEarned > 0 ? regularEarned.toLocaleString() : '0';
-  if (cellSundayBonus) cellSundayBonus.textContent = sundayBonus > 0 ? '☀️ +' + sundayBonus.toLocaleString() : '—';
+  if (cellSundayBonus) cellSundayBonus.textContent = effSunday > 0 ? '☀️ +' + sundayBonus.toLocaleString() : '—';
   if (cellEarned) cellEarned.textContent = earnedSalary > 0 ? earnedSalary.toLocaleString() : '0';
-  if (cellExpenses) cellExpenses.textContent = expenses > 0 ? '−' + expenses.toLocaleString() : '0';
   if (cellNet) {
     cellNet.textContent = netSalary.toLocaleString();
     cellNet.className = 'cell-net ' + (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative');
+  }
+}
+
+async function handleSavePresentDays(empId, month, btn) {
+  const tr = document.getElementById(`sal-row-${empId}`);
+  const input = tr ? tr.querySelector('.salary-present-input') : document.querySelector(`.salary-present-input[data-empid="${empId}"]`);
+  if (!input) return;
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val < 0 || val > 31) {
+    showToast('Please enter a valid number of present days between 0 and 31.', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+
+  try {
+    const res = await API.setManualPresentDays(empId, month, val);
+    if (res && res.success) {
+      showToast(`✅ Present days saved (${val} days)! Salary recalculated.`, 'success');
+      await loadSalarySheet(month);
+    } else {
+      showToast((res && res.error) || 'Failed to save present days', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to save present days: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '💾 Save';
+    }
+  }
+}
+
+async function handleResetPresentDays(empId, month, btn) {
+  if (!confirm('Reset Present Days to auto-calculated attendance? This will remove the manual override.')) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+  try {
+    const res = await API.resetManualPresentDays(empId, month);
+    if (res && res.success) {
+      showToast('↺ Reset to auto-calculated attendance!', 'success');
+      await loadSalarySheet(month);
+    } else {
+      showToast((res && res.error) || 'Failed to reset present days', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to reset: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '↺ Reset';
+    }
+  }
+}
+
+async function handleArchiveSalaryEmployee(empId, empName, month) {
+  const confirmMsg = `Are you sure you want to remove "${empName}" from the Salary Sheet?\n\n` +
+    `• They will be archived and hidden from the active Salary Sheet, PDF, and CSV.\n` +
+    `• ALL historical attendance records and past salary data will be SAFELY PRESERVED.\n\n` +
+    `Click OK to proceed.`;
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const res = await API.archiveSalaryEmployee(empId);
+    if (res && res.success) {
+      showToast(`🗑 Employee "${empName}" removed from Salary Sheet.`, 'success');
+      await loadSalarySheet(month);
+    } else {
+      showToast((res && res.error) || 'Failed to archive employee', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to archive employee: ' + err.message, 'error');
   }
 }
 
@@ -6696,12 +6874,366 @@ async function handleGenerateAllSalaries() {
   }
 }
 
-function printSalarySheet() {
-  if (!currentSalaryMonth) {
-    showToast('Please load a salary sheet first.', 'warning');
+async function printSalarySheet() {
+  const month = currentSalaryMonth || getCurrentMonthString();
+  if (!month) {
+    showToast('Please select and load a salary sheet first.', 'warning');
     return;
   }
-  window.print();
+
+  showToast('Generating official finalized Salary Sheet PDF...', 'info');
+
+  let report = window.currentFinalizedSalaryReport;
+  if (!report || report.month !== month) {
+    try {
+      const res = await API.getFinalizedSalaryReport(month);
+      report = res.report;
+      window.currentFinalizedSalaryReport = report;
+    } catch (e) {
+      console.warn('Could not fetch report for print:', e);
+    }
+  }
+
+  if (!report || !report.employees || report.employees.length === 0) {
+    showToast('No salary data found to export.', 'error');
+    return;
+  }
+
+  const fmt = (v) => typeof v === 'number' ? v.toLocaleString() : (v || '0');
+  const orgName = report.officeName || (settings && settings.officeName) || 'Company Office';
+  const monthTitle = report.formattedMonth || month;
+  const nowStr = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const runId = `SAL-${month.replace('-', '')}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+
+  const printContainer = document.createElement('div');
+  printContainer.className = 'pdf-export-container';
+  printContainer.style.position = 'absolute';
+  printContainer.style.left = '-9999px';
+  printContainer.style.top = '-9999px';
+  printContainer.style.width = '1080px';
+  printContainer.style.padding = '24px 30px';
+  printContainer.style.background = '#ffffff';
+  printContainer.style.color = '#111827';
+  printContainer.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+  printContainer.style.fontSize = '11px';
+  printContainer.style.lineHeight = '1.4';
+
+  printContainer.innerHTML = `
+    <!-- HEADER -->
+    <div style="border-bottom: 2px solid #1e293b; padding-bottom: 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start;">
+      <div>
+        <h1 style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;">${escapeHtml(orgName)}</h1>
+        <h2 style="font-size: 13px; font-weight: 700; color: #4338ca; margin: 0; text-transform: uppercase;">Finalized Salary Sheet & Expense Reconciliation</h2>
+        <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Billing Period: <strong>${escapeHtml(monthTitle)}</strong> • Divisor: <strong>30 Days</strong></div>
+      </div>
+      <div style="text-align: right; font-size: 10px; color: #475569;">
+        <div>Reference ID: <strong style="font-family: monospace; color: #0f172a;">${runId}</strong></div>
+        <div>Generated: <strong>${nowStr}</strong></div>
+        <div style="margin-top: 4px; display: inline-block; padding: 2px 6px; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 3px; font-weight: 700; font-size: 9px;">OFFICIAL FINALIZED REPORT</div>
+      </div>
+    </div>
+
+    <!-- SUMMARY KPI CARDS -->
+    <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 18px;">
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; text-align: center;">
+        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 600;">Total Staff</div>
+        <div style="font-size: 14px; font-weight: 800; color: #0f172a;">${report.summary.totalEmployees}</div>
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; text-align: center;">
+        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 600;">Base Payroll</div>
+        <div style="font-size: 13px; font-weight: 800; color: #3b82f6;">PKR ${fmt(report.summary.totalBaseSalary)}</div>
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; text-align: center;">
+        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 600;">Earned Total</div>
+        <div style="font-size: 13px; font-weight: 800; color: #6366f1;">PKR ${fmt(report.summary.totalEarnedSalary)}</div>
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; text-align: center;">
+        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 600;">Expenses Claimed</div>
+        <div style="font-size: 13px; font-weight: 800; color: #ef4444;">PKR ${fmt(report.summary.totalClaimedExpenses)}</div>
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; text-align: center;">
+        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 600;">Net Payable</div>
+        <div style="font-size: 14px; font-weight: 800; color: #10b981;">PKR ${fmt(report.summary.totalNetSalary)}</div>
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; text-align: center;">
+        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 600;">Bank Credits</div>
+        <div style="font-size: 13px; font-weight: 800; color: #0284c7;">PKR ${fmt(report.summary.totalBankCredits)}</div>
+      </div>
+    </div>
+
+    <!-- MASTER SALARY TABLE -->
+    <div style="margin-bottom: 22px;">
+      <h3 style="font-size: 11px; font-weight: 700; color: #1e293b; text-transform: uppercase; margin: 0 0 6px 0; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+        1. Master Employee Payroll & Reconciliation Schedule
+      </h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 9.5px;">
+        <thead>
+          <tr style="background: #f1f5f9; border-top: 1px solid #cbd5e1; border-bottom: 2px solid #94a3b8; text-align: left;">
+            <th style="padding: 5px 4px; width: 24px; text-align: center;">#</th>
+            <th style="padding: 5px 6px;">Employee Name</th>
+            <th style="padding: 5px 6px;">Role</th>
+            <th style="padding: 5px 6px; text-align: right;">Basic (PKR)</th>
+            <th style="padding: 5px 4px; text-align: center;">Days</th>
+            <th style="padding: 5px 4px; text-align: center;">Present</th>
+            <th style="padding: 5px 6px; text-align: right;">Per Day</th>
+            <th style="padding: 5px 6px; text-align: right;">Reg. Earned</th>
+            <th style="padding: 5px 6px; text-align: right;">Sun. Bonus</th>
+            <th style="padding: 5px 6px; text-align: right; background: #f8fafc;">Earned Total</th>
+            <th style="padding: 5px 6px; text-align: right; color: #b91c1c;">Expenses</th>
+            <th style="padding: 5px 6px; text-align: right; font-weight: 700; background: #f0fdf4;">Net Payable</th>
+            <th style="padding: 5px 6px; text-align: right;">Bank Credit</th>
+            <th style="padding: 5px 6px; text-align: right;">Diff</th>
+            <th style="padding: 5px 4px; text-align: center;">Bank Match</th>
+            <th style="padding: 5px 4px; text-align: center;">Approval</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${report.employees.map((e, idx) => `
+            <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background: #fbfcfe;' : ''}">
+              <td style="padding: 4px; text-align: center; color: #64748b;">${idx + 1}</td>
+              <td style="padding: 4px 6px; font-weight: 700; color: #0f172a;">${escapeHtml(e.name)}</td>
+              <td style="padding: 4px 6px; color: #475569;">${escapeHtml(e.role || 'Staff')}</td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace;">${fmt(e.basicSalary)}</td>
+              <td style="padding: 4px; text-align: center; color: #64748b;">30</td>
+              <td style="padding: 4px; text-align: center; font-weight: 700; color: #16a34a;">
+                ${e.presentDays}${e.isManualPresentDays ? ' <span style="font-size:7.5px; background:#fef3c7; color:#b45309; padding:1px 3px; border-radius:2px; font-weight:700;">(Manual)</span>' : ''}
+              </td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace;">${fmt(e.perDaySalary)}</td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace;">${fmt(e.regularEarned)}</td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: ${e.sundayBonus > 0 ? '#b45309' : '#94a3b8'};">
+                ${e.sundayBonus > 0 ? '+' + fmt(e.sundayBonus) : '—'}
+              </td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 700; background: #f8fafc;">${fmt(e.earnedSalary)}</td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: #b91c1c; font-weight: 600;">
+                ${e.totalExpenses > 0 ? fmt(e.totalExpenses) : '0'}
+              </td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #15803d; background: #f0fdf4;">${fmt(e.netSalary)}</td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: #0369a1;">${fmt(e.bankCredits)}</td>
+              <td style="padding: 4px 6px; text-align: right; font-family: monospace; color: ${e.bankDifference < 1.0 ? '#15803d' : '#b45309'};">
+                ${fmt(e.bankDifference)}
+              </td>
+              <td style="padding: 4px; text-align: center; font-size: 8.5px; font-weight: 700;">
+                ${e.bankStatus === 'MATCHED' || e.bankStatus === 'MATCHED_ZERO' ? '<span style="color: #16a34a;">✓ MATCHED</span>' : (e.bankStatus === 'MISMATCH' ? '<span style="color: #b45309;">⚠ MISMATCH</span>' : '<span style="color: #64748b;">—</span>')}
+              </td>
+              <td style="padding: 4px; text-align: center; font-size: 8.5px; font-weight: 700;">
+                ${e.salaryApprovalStatus === 'APPROVED' ? '<span style="color: #15803d;">✅ APPROVED</span>' : '<span style="color: #64748b;">PENDING</span>'}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background: #f1f5f9; border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a; font-weight: 800;">
+            <td colspan="3" style="padding: 6px; text-align: right; text-transform: uppercase;">Totals:</td>
+            <td style="padding: 6px; text-align: right; font-family: monospace;">PKR ${fmt(report.summary.totalBaseSalary)}</td>
+            <td colspan="2"></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td style="padding: 6px; text-align: right; font-family: monospace; background: #f8fafc;">PKR ${fmt(report.summary.totalEarnedSalary)}</td>
+            <td style="padding: 6px; text-align: right; font-family: monospace; color: #b91c1c;">PKR ${fmt(report.summary.totalClaimedExpenses)}</td>
+            <td style="padding: 6px; text-align: right; font-family: monospace; color: #15803d; background: #f0fdf4;">PKR ${fmt(report.summary.totalNetSalary)}</td>
+            <td style="padding: 6px; text-align: right; font-family: monospace; color: #0369a1;">PKR ${fmt(report.summary.totalBankCredits)}</td>
+            <td colspan="3"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- ITEMIZED EXPENSES SECTION -->
+    <div style="margin-bottom: 24px; page-break-inside: avoid;">
+      <h3 style="font-size: 11px; font-weight: 700; color: #1e293b; text-transform: uppercase; margin: 0 0 6px 0; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">
+        2. Itemized Monthly Expenses Breakdown (Per Employee)
+      </h3>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+        ${report.employees.map(e => `
+          <div style="border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 8px; background: #fafafa; font-size: 9px;">
+            <div style="display: flex; justify-content: space-between; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; margin-bottom: 4px;">
+              <span>${escapeHtml(e.name)} <span style="font-weight: 400; color: #64748b;">(${escapeHtml(e.role || 'Staff')})</span></span>
+              <span style="color: ${e.totalExpenses > 0 ? '#b91c1c' : '#15803d'};">
+                Total: PKR ${fmt(e.totalExpenses)}
+              </span>
+            </div>
+            ${e.itemizedExpenses && e.itemizedExpenses.length > 0 ? `
+              <table style="width: 100%; border-collapse: collapse; font-size: 8.5px;">
+                ${e.itemizedExpenses.map(item => `
+                  <tr style="border-bottom: 1px dotted #e2e8f0;">
+                    <td style="color: #64748b; width: 65px; padding: 2px 0;">${item.date}</td>
+                    <td style="padding: 2px 4px; color: #334155;">${escapeHtml(item.description || 'Expense')}</td>
+                    <td style="text-align: right; font-family: monospace; font-weight: 600; color: #b91c1c; padding: 2px 0;">PKR ${fmt(item.amount)}</td>
+                  </tr>
+                `).join('')}
+              </table>
+            ` : `
+              <div style="color: #64748b; font-style: italic; padding: 2px 0;">Expenses: PKR 0 (No expenses recorded)</div>
+            `}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- CERTIFICATION & SIGN-OFF BLOCKS -->
+    <div style="border-top: 2px solid #cbd5e1; padding-top: 14px; margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; page-break-inside: avoid;">
+      <div style="border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px; background: #f8fafc;">
+        <div style="font-size: 10px; font-weight: 700; color: #1e293b; text-transform: uppercase; margin-bottom: 4px;">1. Admin 1 Expense Verification</div>
+        <div style="font-size: 9px; color: #475569; margin-bottom: 18px;">I have inspected all receipts, clock-out submissions, and verified legitimate operational expenses.</div>
+        <div style="display: flex; justify-content: space-between; border-top: 1px dashed #94a3b8; padding-top: 4px; font-size: 9px; color: #475569;">
+          <span>Verified By: <strong>Admin 1</strong></span>
+          <span>Date: ________________</span>
+          <span>Signature: ________________</span>
+        </div>
+      </div>
+      <div style="border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px; background: #f8fafc;">
+        <div style="font-size: 10px; font-weight: 700; color: #1e293b; text-transform: uppercase; margin-bottom: 4px;">2. Senior Admin Final Approval</div>
+        <div style="font-size: 9px; color: #475569; margin-bottom: 18px;">I hereby approve the finalized attendance records, disbursements, and reconciled net salary figures.</div>
+        <div style="display: flex; justify-content: space-between; border-top: 1px dashed #94a3b8; padding-top: 4px; font-size: 9px; color: #475569;">
+          <span>Approved By: <strong>Senior Admin</strong></span>
+          <span>Date: ________________</span>
+          <span>Signature: ________________</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(printContainer);
+
+  const opt = {
+    margin: [8, 8, 8, 8],
+    filename: `Salary_Sheet_${month}_${runId}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+  };
+
+  try {
+    if (window.html2pdf) {
+      await window.html2pdf().set(opt).from(printContainer).save();
+      showToast(`✅ PDF ${opt.filename} downloaded successfully!`, 'success');
+    } else {
+      window.print();
+    }
+  } catch (err) {
+    console.error('PDF export error:', err);
+    showToast('Failed to export PDF: ' + err.message, 'error');
+  } finally {
+    if (document.body.contains(printContainer)) {
+      document.body.removeChild(printContainer);
+    }
+  }
+}
+
+async function exportSalarySheetCSV(monthOverride) {
+  const picker = document.getElementById('salary-month-picker');
+  const month = monthOverride || (picker ? picker.value : '') || currentSalaryMonth || getCurrentMonthString();
+  if (!month) {
+    showToast('Please select a month first.', 'warning');
+    return;
+  }
+
+  showToast('Generating Salary Sheet CSV...', 'info');
+
+  let report = window.currentFinalizedSalaryReport;
+  if (!report || report.month !== month) {
+    try {
+      const res = await API.getFinalizedSalaryReport(month);
+      report = res && res.report;
+      window.currentFinalizedSalaryReport = report;
+    } catch (e) {
+      console.warn('Could not fetch finalized report for CSV:', e);
+    }
+  }
+
+  if (!report || !report.employees || report.employees.length === 0) {
+    showToast('No salary records found to export.', 'error');
+    return;
+  }
+
+  const escapeCsv = (val) => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const headers = [
+    'Sr No',
+    'Employee ID',
+    'Employee Name',
+    'Role',
+    'Basic Salary (PKR)',
+    'Divisor Days',
+    'Present Days',
+    'Calculation Type',
+    'Per Day Rate (PKR)',
+    'Regular Earned (PKR)',
+    'Sunday Bonus (PKR)',
+    'Earned Total (PKR)',
+    'Claimed Expenses (PKR)',
+    'Net Payable (PKR)',
+    'Bank Credits (PKR)',
+    'Bank Difference (PKR)',
+    'Bank Match Status',
+    'Salary Approval Status'
+  ];
+
+  const rows = [headers.map(escapeCsv).join(',')];
+
+  report.employees.forEach((emp, idx) => {
+    const row = [
+      idx + 1,
+      emp.id,
+      emp.name,
+      emp.role || 'Staff',
+      emp.basicSalary || 0,
+      30,
+      emp.presentDays,
+      emp.isManualPresentDays ? 'Manual' : 'Auto',
+      emp.perDaySalary || 0,
+      emp.regularEarned || 0,
+      emp.sundayBonus || 0,
+      emp.earnedSalary || 0,
+      emp.totalExpenses || 0,
+      emp.netSalary || 0,
+      emp.bankCredits || 0,
+      emp.bankDifference || 0,
+      emp.bankStatus || '—',
+      emp.salaryApprovalStatus || 'PENDING'
+    ];
+    rows.push(row.map(escapeCsv).join(','));
+  });
+
+  // Summary row
+  if (report.summary) {
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(escapeCsv).join(','));
+    const summaryRow = [
+      'TOTALS',
+      '',
+      `Total Staff: ${report.summary.totalEmployees}`,
+      '',
+      report.summary.totalBaseSalary || 0,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      report.summary.totalEarnedSalary || 0,
+      report.summary.totalClaimedExpenses || 0,
+      report.summary.totalNetSalary || 0,
+      report.summary.totalBankCredits || 0,
+      '',
+      '',
+      ''
+    ];
+    rows.push(summaryRow.map(escapeCsv).join(','));
+  }
+
+  const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(rows.join('\r\n'));
+  const link = document.createElement('a');
+  link.setAttribute('href', csvContent);
+  link.setAttribute('download', `Salary_Sheet_${month}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast(`✅ Salary Sheet CSV exported for ${month}!`, 'success');
 }
 
 // ─── Expense Verification & Senior Admin Approval UI Logic ───────────────────
@@ -7846,4 +8378,9 @@ window.triggerEmergencySalaryPDFExport = triggerEmergencySalaryPDFExport;
 window.executeProgrammaticSalaryPDFExport = executeProgrammaticSalaryPDFExport;
 window.generateIndividualEmployeePDF = generateIndividualEmployeePDF;
 window.promptAndGenerateIndividualPDF = promptAndGenerateIndividualPDF;
+window.handleSavePresentDays = handleSavePresentDays;
+window.handleResetPresentDays = handleResetPresentDays;
+window.handleArchiveSalaryEmployee = handleArchiveSalaryEmployee;
+window.exportSalarySheetCSV = exportSalarySheetCSV;
+window.updateRowSalaryLive = updateRowSalaryLive;
 

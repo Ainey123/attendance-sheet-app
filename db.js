@@ -264,6 +264,9 @@ const db = {
   },
 
   async getEmployeeByToken(token) {
+    if (!token || typeof token !== 'string' || token.startsWith('EXPIRED_') || token.startsWith('REVOKED_') || token.startsWith('LEGACY_')) {
+      return null;
+    }
     let emp = null;
     if (useLocalFallback) {
       const data = loadLocalData();
@@ -599,26 +602,51 @@ const db = {
   },
 
   async getTodayAttendanceForEmployee(employeeId) {
-    await this.autoCompleteOldAttendance().catch(() => {});
+    await this.autoCompleteOldAttendance(employeeId).catch(() => {});
     const today = getLocalDateString();
     if (useLocalFallback) {
       const data = loadLocalData();
-      const records = (data.attendance || [])
-        .filter(r => r.employeeId === employeeId && r.date === today)
+      const empRecords = (data.attendance || [])
+        .filter(r => r.employeeId === employeeId)
         .sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
-      
-      if (records.length === 0) return null;
-      const leaveRecord = records.find(isLeaveAttendanceRecord);
-      if (leaveRecord) return leaveRecord;
-      const active = records.find(r => !r.clockOutTime);
+
+      if (empRecords.length === 0) return null;
+
+      // First check if there is an active unclosed record
+      const active = empRecords.find(r => !r.clockOutTime);
       if (active) {
         const emp = (data.employees || []).find(e => e.id === employeeId);
         if (emp && emp.status !== 'IN') { emp.status = 'IN'; saveLocalData(data); }
         return active;
       }
-      return records[0];
+
+      // Check today's records
+      const todayRecords = empRecords.filter(r => r.date === today);
+      if (todayRecords.length > 0) {
+        const leaveRecord = todayRecords.find(isLeaveAttendanceRecord);
+        if (leaveRecord) return leaveRecord;
+        return todayRecords[0];
+      }
+      return null;
     }
     try {
+      // 1. Check for active unclosed record for this employee
+      const { data: activeRecords, error: activeErr } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employeeId', employeeId)
+        .is('clockOutTime', null)
+        .order('clockInTime', { ascending: false })
+        .limit(1);
+
+      if (!activeErr && activeRecords && activeRecords.length > 0) {
+        try {
+          await supabase.from('employees').update({ status: 'IN' }).eq('id', employeeId).neq('status', 'IN');
+        } catch (e) {}
+        return activeRecords[0];
+      }
+
+      // 2. Fetch today's records
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
@@ -631,19 +659,11 @@ const db = {
         return null;
       }
       if (!data || data.length === 0) {
-        console.log(`[getTodayAttendanceForEmployee] No records for emp ${employeeId} on date ${today}`);
         return null;
       }
 
       const leaveRecord = data.find(isLeaveAttendanceRecord);
       if (leaveRecord) return leaveRecord;
-      const active = data.find(r => !r.clockOutTime);
-      if (active) {
-        try {
-          await supabase.from('employees').update({ status: 'IN' }).eq('id', employeeId).neq('status', 'IN');
-        } catch (e) {}
-        return active;
-      }
       return data[0];
     } catch (error) {
       console.error('[getTodayAttendanceForEmployee] Exception:', error.message);
@@ -656,15 +676,26 @@ const db = {
       throw new Error('Please turn on location first');
     }
 
-    await this.autoCompleteOldAttendance().catch(() => {});
+    await this.autoCompleteOldAttendance(employeeId).catch(() => {});
+    const now = new Date();
+    const today = getLocalDateString(now);
 
     if (useLocalFallback) {
       const data = loadLocalData();
       const employee = data.employees.find(e => e.id === employeeId);
       if (!employee) throw new Error('Employee not found');
 
-      const now = new Date();
-      const today = getLocalDateString(now);
+      // Auto-complete any older unclosed attendance record from prior days so it cannot block new shift
+      (data.attendance || []).forEach(r => {
+        if (r.employeeId === employeeId && !r.clockOutTime && r.date !== today) {
+          const inTime = new Date(r.clockInTime);
+          r.clockOutTime = now.toISOString();
+          r.duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+          r.autoClockOut = true;
+          r.autoClockOutNote = 'Auto-closed on next shift clock-in';
+        }
+      });
+
       const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
       const activeRecord = todayRecords.find(r => !r.clockOutTime);
       if (activeRecord) {
@@ -700,8 +731,28 @@ const db = {
 
       if (empError || !employee) throw new Error('Employee not found');
 
-      const now = new Date();
-      const today = getLocalDateString(now);
+      // Check for any unclosed records from prior days and auto-complete them so they never block today's shift
+      const { data: priorUnclosed } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employeeId', employeeId)
+        .neq('date', today)
+        .is('clockOutTime', null);
+
+      if (priorUnclosed && priorUnclosed.length > 0) {
+        for (const pr of priorUnclosed) {
+          const inTime = new Date(pr.clockInTime);
+          const duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+          await supabase.from('attendance').update({
+            clockOutTime: now.toISOString(),
+            duration,
+            autoClockOut: true,
+            autoClockOutNote: 'Auto-closed on next shift clock-in'
+          }).eq('id', pr.id);
+        }
+      }
+
+      // Check for active unclosed record for today
       const { data: todayRecords, error: todayError } = await supabase
         .from('attendance')
         .select('*')
@@ -758,7 +809,7 @@ const db = {
   },
 
   async clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) {
-    await this.autoCompleteOldAttendance().catch(() => {});
+    await this.autoCompleteOldAttendance(employeeId).catch(() => {});
     const now = new Date();
     const today = getLocalDateString(now);
     const finalNotes = (performanceNotes && String(performanceNotes).trim()) || 'Shift Completed';
@@ -770,11 +821,12 @@ const db = {
       const employee = data.employees.find(e => e.id === employeeId);
       if (!employee) throw new Error('Employee not found');
 
-      const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
-      let record = todayRecords.find(r => !r.clockOutTime);
+      // 1. Check for active unclosed record for this employee
+      let record = (data.attendance || []).slice().reverse().find(r => r.employeeId === employeeId && !r.clockOutTime);
 
       if (!record) {
-        record = todayRecords.find(r => r.clockOutTime);
+        // 2. Fall back to latest record today to update
+        record = (data.attendance || []).slice().reverse().find(r => r.employeeId === employeeId && r.date === today);
       }
 
       if (record) {
@@ -847,14 +899,14 @@ const db = {
 
       if (empError || !employee) throw new Error('Employee not found');
 
-      // 1. Check for active unclosed record today
+      // 1. Check for active unclosed record for this employee (regardless of whether it started today or yesterday)
       const { data: activeRecords } = await supabase
         .from('attendance')
         .select('*')
         .eq('employeeId', employeeId)
-        .eq('date', today)
         .is('clockOutTime', null)
-        .order('clockInTime', { ascending: false });
+        .order('clockInTime', { ascending: false })
+        .limit(1);
 
       let record = activeRecords && activeRecords.length > 0 ? activeRecords[0] : null;
 
@@ -1033,69 +1085,90 @@ const db = {
     }
   },
 
-  async autoCompleteOldAttendance() {
-    // Auto clock-out all records from PREVIOUS days (not today) that have no clockOutTime
-    const today = getLocalDateString();
+  async autoCompleteOldAttendance(targetEmployeeId = null) {
+    // Truly 24-hour auto clock-out: only close records where 24 hours have actually elapsed from clockInTime
+    const now = new Date();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
     try {
       if (useLocalFallback) {
         const data = loadLocalData();
         let changed = false;
+        const empIdsToUpdate = new Set();
         (data.attendance || []).forEach(r => {
-          if (!r.clockOutTime && r.date && r.date < today) {
-            // Clock out at 23:59:59 of the clock-in date
-            const autoOut = new Date(r.date + 'T23:59:59');
-            const inTime = new Date(r.clockInTime);
-            const duration = isNaN(inTime.getTime()) ? 0 : Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
-            r.clockOutTime = autoOut.toISOString();
-            r.duration = duration;
-            r.autoClockOut = true;
-            r.autoClockOutNote = 'Auto clock-out by system — employee did not manually clock out';
-            changed = true;
+          if (!r.clockOutTime && (!targetEmployeeId || r.employeeId === targetEmployeeId)) {
+            const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
+            const inTimeMs = inTime.getTime();
+            if (!isNaN(inTimeMs) && (now.getTime() - inTimeMs) >= twentyFourHoursMs) {
+              const autoOut = new Date(inTimeMs + twentyFourHoursMs);
+              r.clockOutTime = autoOut.toISOString();
+              r.duration = 24 * 60;
+              r.autoClockOut = true;
+              r.autoClockOutNote = 'Auto clock-out by system — 24 hours elapsed without manual clock-out';
+              empIdsToUpdate.add(r.employeeId);
+              changed = true;
+            }
           }
         });
-        if (changed) saveLocalData(data);
+        if (changed) {
+          empIdsToUpdate.forEach(empId => {
+            const hasActive = (data.attendance || []).some(a => a.employeeId === empId && !a.clockOutTime);
+            if (!hasActive) {
+              const emp = (data.employees || []).find(e => e.id === empId);
+              if (emp) emp.status = 'OUT';
+            }
+          });
+          saveLocalData(data);
+        }
         return;
       }
-      // Supabase: find all attendance records from before today with no clockOutTime
-      const { data: stale, error } = await supabase
+
+      // Supabase: find unclosed records
+      let query = supabase
         .from('attendance')
         .select('*')
-        .lt('date', today)
         .is('clockOutTime', null);
-      if (error || !stale || stale.length === 0) return;
+      if (targetEmployeeId) {
+        query = query.eq('employeeId', targetEmployeeId);
+      }
+
+      const { data: unclosed, error } = await query;
+      if (error || !unclosed || unclosed.length === 0) return;
+
+      const stale = unclosed.filter(r => {
+        const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
+        const inTimeMs = inTime.getTime();
+        return !isNaN(inTimeMs) && (now.getTime() - inTimeMs) >= twentyFourHoursMs;
+      });
+
+      if (stale.length === 0) return;
 
       const empIdsToUpdate = new Set();
-      const updates = stale.map(r => {
-        const autoOut = new Date(r.date + 'T23:59:59');
-        const inTime = new Date(r.clockInTime);
-        const duration = isNaN(inTime.getTime()) ? 0 : Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
+      for (const r of stale) {
+        const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
+        const autoOut = new Date(inTime.getTime() + twentyFourHoursMs);
         empIdsToUpdate.add(r.employeeId);
-        return supabase.from('attendance').update({
+        await supabase.from('attendance').update({
           clockOutTime: autoOut.toISOString(),
-          duration,
+          duration: 24 * 60,
           autoClockOut: true,
-          autoClockOutNote: 'Auto clock-out by system — employee did not manually clock out'
+          autoClockOutNote: 'Auto clock-out by system — 24 hours elapsed without manual clock-out'
         }).eq('id', r.id);
-      });
-      await Promise.all(updates);
+      }
 
       if (empIdsToUpdate.size > 0) {
-        const { data: todayActive } = await supabase
-          .from('attendance')
-          .select('employeeId')
-          .eq('date', today)
-          .is('clockOutTime', null);
-
-        const activeTodayEmpIds = new Set((todayActive || []).map(a => a.employeeId));
-        const empIdsToSetOut = Array.from(empIdsToUpdate).filter(id => !activeTodayEmpIds.has(id));
-
-        if (empIdsToSetOut.length > 0) {
-          await supabase.from('employees')
-            .update({ status: 'OUT' })
-            .in('id', empIdsToSetOut);
+        for (const empId of empIdsToUpdate) {
+          const { data: stillActive } = await supabase
+            .from('attendance')
+            .select('id')
+            .eq('employeeId', empId)
+            .is('clockOutTime', null)
+            .limit(1);
+          if (!stillActive || stillActive.length === 0) {
+            await supabase.from('employees').update({ status: 'OUT' }).eq('id', empId);
+          }
         }
       }
-      console.log(`[Auto Clock-Out] Completed ${stale.length} unclosed records from previous days`);
+      console.log(`[Auto Clock-Out] Completed ${stale.length} records that exceeded 24 hours`);
     } catch (err) {
       console.warn('[Auto Clock-Out] Error:', err.message);
     }
@@ -1339,12 +1412,14 @@ const db = {
       let records = data.formSubmissions || [];
       if (employeeId) records = records.filter(r => r.employeeId === employeeId);
       if (formType) records = records.filter(r => r.formType === formType);
+      else records = records.filter(r => r.formType !== 'manual_present_days');
       return records.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
     }
     try {
       let query = supabase.from('form_submissions').select('*').order('submittedAt', { ascending: false });
       if (employeeId) query = query.eq('employeeId', employeeId);
       if (formType) query = query.eq('formType', formType);
+      else query = query.neq('formType', 'manual_present_days');
 
       const { data, error } = await query;
       if (error) {
@@ -1573,6 +1648,182 @@ const db = {
     } catch (error) {
       handleSupabaseError(error, 'delete form submission');
     }
+  },
+
+  // --- Manual Present Days Override Methods ---
+  async getManualPresentDays(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const resultMap = {};
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const subs = data.formSubmissions || [];
+      subs.forEach(s => {
+        if (s && s.formType === 'manual_present_days' && s.formData && s.formData.month === month) {
+          resultMap[s.employeeId] = {
+            id: s.id,
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+            month: s.formData.month,
+            originalAutoPresentDays: Number(s.formData.originalAutoPresentDays) || 0,
+            manualPresentDays: Number(s.formData.manualPresentDays) || 0,
+            editedBy: s.formData.editedBy || 'Admin',
+            editedAt: s.formData.editedAt || s.submittedAt
+          };
+        }
+      });
+      return resultMap;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('*')
+        .eq('formType', 'manual_present_days');
+
+      if (error) {
+        console.warn('Supabase getManualPresentDays notice:', error.message);
+        return resultMap;
+      }
+
+      (data || []).forEach(s => {
+        if (s && s.formData && s.formData.month === month) {
+          resultMap[s.employeeId] = {
+            id: s.id,
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+            month: s.formData.month,
+            originalAutoPresentDays: Number(s.formData.originalAutoPresentDays) || 0,
+            manualPresentDays: Number(s.formData.manualPresentDays) || 0,
+            editedBy: s.formData.editedBy || 'Admin',
+            editedAt: s.formData.editedAt || s.submittedAt
+          };
+        }
+      });
+
+      return resultMap;
+    } catch (err) {
+      console.warn('getManualPresentDays exception:', err.message);
+      return resultMap;
+    }
+  },
+
+  async setManualPresentDays(employeeId, month, manualPresentDays, editedBy = 'Admin') {
+    if (!employeeId) throw new Error('Employee ID is required');
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error('Valid month (YYYY-MM) is required');
+
+    const numDays = parseInt(manualPresentDays, 10);
+    if (isNaN(numDays) || numDays < 0 || numDays > 31) {
+      throw new Error('Present days must be a number between 0 and 31');
+    }
+
+    const employees = await this.getEmployees(true);
+    const emp = (employees || []).find(e => e.id === employeeId);
+    if (!emp) throw new Error(`Employee ${employeeId} not found`);
+
+    // Compute original auto present days from attendance
+    const allAttendance = await this.getAttendance();
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+    const empAtt = (allAttendance || []).filter(a => a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeave(a));
+    const presentDates = new Set();
+    empAtt.forEach(a => presentDates.add(a.date));
+    const originalAutoPresentDays = presentDates.size;
+
+    const recordId = `mpd_${employeeId}_${month}`;
+    const nowIso = new Date().toISOString();
+
+    const record = {
+      id: recordId,
+      employeeId,
+      employeeName: emp.name,
+      formType: 'manual_present_days',
+      formData: {
+        month,
+        originalAutoPresentDays,
+        manualPresentDays: numDays,
+        editedBy: String(editedBy || 'Admin').trim(),
+        editedAt: nowIso
+      },
+      submittedAt: nowIso
+    };
+
+    // Save to local cache
+    const data = loadLocalData();
+    if (!data.formSubmissions) data.formSubmissions = [];
+    const localIdx = data.formSubmissions.findIndex(s => s.id === recordId || (s.employeeId === employeeId && s.formType === 'manual_present_days' && s.formData?.month === month));
+    if (localIdx >= 0) {
+      data.formSubmissions[localIdx] = record;
+    } else {
+      data.formSubmissions.push(record);
+    }
+    saveLocalData(data);
+
+    // Save to Supabase if active
+    if (!useLocalFallback && supabase) {
+      try {
+        const { error } = await supabase
+          .from('form_submissions')
+          .upsert(record);
+        if (error) {
+          console.warn('Supabase setManualPresentDays upsert notice:', error.message);
+        }
+      } catch (err) {
+        console.warn('Supabase setManualPresentDays exception:', err.message);
+      }
+    }
+
+    // Trigger salary recalculation
+    await this.generateSalary(employeeId, month);
+
+    return {
+      success: true,
+      employeeId,
+      employeeName: emp.name,
+      month,
+      manualPresentDays: numDays,
+      originalAutoPresentDays,
+      editedBy: record.formData.editedBy,
+      editedAt: nowIso
+    };
+  },
+
+  async resetManualPresentDays(employeeId, month) {
+    if (!employeeId) throw new Error('Employee ID is required');
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error('Valid month (YYYY-MM) is required');
+
+    const recordId = `mpd_${employeeId}_${month}`;
+
+    // Remove from local cache
+    const data = loadLocalData();
+    if (data.formSubmissions) {
+      data.formSubmissions = data.formSubmissions.filter(s => !(s.id === recordId || (s.employeeId === employeeId && s.formType === 'manual_present_days' && s.formData?.month === month)));
+      saveLocalData(data);
+    }
+
+    // Remove from Supabase
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase
+          .from('form_submissions')
+          .delete()
+          .eq('id', recordId);
+      } catch (err) {
+        console.warn('Supabase resetManualPresentDays delete notice:', err.message);
+      }
+    }
+
+    // Re-generate salary to revert back to auto attendance
+    await this.generateSalary(employeeId, month);
+
+    return {
+      success: true,
+      employeeId,
+      month
+    };
   },
 
   async getMonthlySummary(monthStr = null, startDate = null, endDate = null) {
@@ -2137,7 +2388,24 @@ const db = {
       else regularPresentDays++;
     });
 
-    const totalPresentDays = regularPresentDays + sundayPresentDays;
+    const autoTotalDays = regularPresentDays + sundayPresentDays;
+
+    // Check for manual present days override
+    let manualOverrides = {};
+    try {
+      manualOverrides = await this.getManualPresentDays(month);
+    } catch (e) {}
+
+    const override = manualOverrides[employeeId];
+    const isManual = Boolean(override && typeof override.manualPresentDays === 'number');
+    const effectivePresentDays = isManual ? override.manualPresentDays : autoTotalDays;
+
+    let effectiveSundayDays = sundayPresentDays;
+    let effectiveRegularDays = regularPresentDays;
+    if (isManual) {
+      effectiveSundayDays = Math.min(sundayPresentDays, effectivePresentDays);
+      effectiveRegularDays = Math.max(0, effectivePresentDays - effectiveSundayDays);
+    }
 
     // Sum total expenses from clock-out records & work records for this month
     let totalExpenses = 0;
@@ -2173,13 +2441,13 @@ const db = {
     const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
 
     // Regular earned = per day × regular weekday present days
-    const regularEarned = perDaySalary * regularPresentDays;
+    const regularEarned = perDaySalary * effectiveRegularDays;
 
     // Sunday bonus = per day × Sunday days worked
-    const sundayBonus = perDaySalary * sundayPresentDays;
+    const sundayBonus = perDaySalary * effectiveSundayDays;
 
     // Total earned salary
-    const earnedSalary = perDaySalary * totalPresentDays;
+    const earnedSalary = perDaySalary * effectivePresentDays;
 
     // Net salary = earned − expenses (expenses recorded at clock-out are deducted)
     const netSalary = earnedSalary - Math.round(totalExpenses);
@@ -2189,9 +2457,14 @@ const db = {
       role: emp ? (emp.role || 'Staff') : salRec.role,
       totalDaysInMonth,
       workingDays: 30,           // fixed 30-day divisor
-      regularPresentDays,
-      sundayPresentDays,
-      presentDays: totalPresentDays,
+      regularPresentDays: effectiveRegularDays,
+      sundayPresentDays: effectiveSundayDays,
+      presentDays: effectivePresentDays,
+      autoPresentDays: autoTotalDays,
+      isManualPresentDays: isManual,
+      manualPresentDays: isManual ? override.manualPresentDays : null,
+      editedBy: isManual ? override.editedBy : null,
+      editedAt: isManual ? override.editedAt : null,
       perDaySalary,
       regularEarned,
       sundayBonus,
@@ -2306,7 +2579,7 @@ const db = {
     return found.pdfData || null;
   },
 
-  async getAccountsPdf(month) {
+  async getAccountsPdf(month, forceReverify = false) {
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       const now = new Date();
       month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -2339,6 +2612,10 @@ const db = {
     // Reject/filter any documentation or sample PDF filenames
     if (found.fileName && /Accounts_Department|User_Manual|User Manual|Documentation|Sample|Demo|Default|Initial|Mock/i.test(found.fileName)) {
       return null;
+    }
+
+    if (found.verificationResults && !forceReverify) {
+      return sanitizeAccountsPdfForClient(found);
     }
 
     // Refresh live verification using current application expenses, roster, and exact date matching
@@ -3520,6 +3797,267 @@ const db = {
     }
 
     return newRun;
+  },
+
+  async getFinalizedSalaryReport(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides] = await Promise.all([
+      this.getEmployees(false),
+      this.getAttendance().catch(() => []),
+      this.getWorkRecords(null, month).catch(() => []),
+      (async () => {
+        if (!useLocalFallback && supabase) {
+          try {
+            const { data } = await supabase.from('salaries').select('*');
+            if (data && data.length > 0) return data;
+          } catch (e) {}
+        }
+        const local = loadLocalData();
+        return (local.salaries || []);
+      })().catch(() => []),
+      this.getAccountsPdf(month).catch(() => null),
+      this.getSalaryApprovals(month).catch(() => []),
+      this.getExpenseVerifications(month).catch(() => []),
+      this.getSettings().catch(() => ({})),
+      this.getManualPresentDays(month).catch(() => ({}))
+    ]);
+
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+
+    // Filter attendance strictly for this month and non-leave
+    const monthAttendance = (allAttendance || []).filter(a => a.date && a.date.startsWith(month) && !isLeave(a));
+
+    const salariesMap = {};
+    // First map any month match
+    (rawSalaries || []).forEach(s => {
+      if (s.month === month || s.salaryMonth === month) {
+        salariesMap[s.employeeId] = s;
+      }
+    });
+    // Fallback basic salary from other months if not set for this month
+    (rawSalaries || []).forEach(s => {
+      if (!salariesMap[s.employeeId] && s.basicSalary > 0) {
+        salariesMap[s.employeeId] = s;
+      }
+    });
+
+    const approvalsMap = {};
+    (approvals || []).forEach(a => { approvalsMap[a.employeeId] = a; });
+
+    const verificationsMap = {};
+    (verifications || []).forEach(v => { verificationsMap[v.employeeId] = v; });
+
+    // Bank credits map from Accounts PDF
+    const bankCreditsMap = {};
+    if (accountsPdf && Array.isArray(accountsPdf.verificationResults)) {
+      accountsPdf.verificationResults.forEach(vr => {
+        bankCreditsMap[vr.employeeId] = vr;
+      });
+    }
+
+    let totalBaseSalary = 0;
+    let totalEarnedSalary = 0;
+    let totalClaimedExpenses = 0;
+    let totalEffectiveExpenses = 0;
+    let totalNetSalary = 0;
+    let totalBankCredits = 0;
+    let totalVerifiedCount = 0;
+    let totalApprovedCount = 0;
+
+    const employeeReports = (employees || []).map(emp => {
+      const empId = emp.id;
+      const empName = emp.name;
+
+      // Filter attendance records for this employee in this month
+      const empAtt = monthAttendance.filter(a => a.employeeId === empId);
+      const presentDates = new Set();
+      empAtt.forEach(a => presentDates.add(a.date));
+
+      let regularPresentDays = 0;
+      let sundayPresentDays = 0;
+      presentDates.forEach(dateStr => {
+        const parts = dateStr.split('-');
+        const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        if (dt.getDay() === 0) sundayPresentDays++;
+        else regularPresentDays++;
+      });
+
+      const autoTotalDays = regularPresentDays + sundayPresentDays;
+      const override = manualOverrides[empId] || null;
+      const isManualPresentDays = Boolean(override && typeof override.manualPresentDays === 'number');
+      const effectivePresentDays = isManualPresentDays ? override.manualPresentDays : autoTotalDays;
+
+      let effectiveSundayDays = sundayPresentDays;
+      let effectiveRegularDays = regularPresentDays;
+      if (isManualPresentDays) {
+        effectiveSundayDays = Math.min(sundayPresentDays, effectivePresentDays);
+        effectiveRegularDays = Math.max(0, effectivePresentDays - effectiveSundayDays);
+      }
+
+      // Salary definition: sal record basicSalary or emp.baseSalary or emp.basicSalary
+      const salRec = salariesMap[empId] || {};
+      const basicSalary = Number(salRec.basicSalary) || Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
+      const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
+      const regularEarned = perDaySalary * effectiveRegularDays;
+      const sundayBonus = perDaySalary * effectiveSundayDays;
+      const earnedSalary = perDaySalary * effectivePresentDays;
+
+      // Itemized expenses strictly for this month
+      const itemizedExpenses = [];
+      const processedExpenseKeys = new Set();
+
+      // From attendance clock-outs
+      empAtt.forEach(a => {
+        const amt = Number(a.expenseAmount) || Number(a.moneySpent) || 0;
+        if (amt > 0) {
+          const key = `${a.date}_${amt}_${(a.performanceNotes || '').trim()}`;
+          if (!processedExpenseKeys.has(key)) {
+            processedExpenseKeys.add(key);
+            itemizedExpenses.push({
+              date: a.date,
+              amount: amt,
+              description: a.performanceNotes || 'Clock-Out Expense',
+              category: 'Daily Shift Expense',
+              source: 'Attendance Clock-Out'
+            });
+          }
+        }
+      });
+
+      // From work records
+      (workRecords || []).forEach(wr => {
+        if (wr.employeeId === empId && wr.date && wr.date.startsWith(month)) {
+          const amt = Number(wr.expenseAmount) || 0;
+          if (amt > 0) {
+            const key = `${wr.date}_${amt}_${(wr.performedWork || '').trim()}`;
+            if (!processedExpenseKeys.has(key)) {
+              processedExpenseKeys.add(key);
+              itemizedExpenses.push({
+                date: wr.date,
+                amount: amt,
+                description: wr.performedWork || 'Work Record Expense',
+                category: 'Work Expense',
+                source: 'Work Record'
+              });
+            }
+          }
+        }
+      });
+
+      itemizedExpenses.sort((a, b) => a.date.localeCompare(b.date));
+      const totalExpenses = itemizedExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+      // Two-level verification: Admin 1 Verification & Senior Admin Approval
+      const expVer = verificationsMap[empId] || null;
+      const appr = approvalsMap[empId] || null;
+
+      const isExpVerified = Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
+      const verifiedAmount = isExpVerified ? Number(expVer.verifiedAmount) : null;
+      const verifiedBy = isExpVerified ? (expVer.verifiedBy || 'Admin 1') : null;
+      const verifiedAt = isExpVerified ? expVer.verifiedAt : null;
+
+      const isExpApproved = Boolean((expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined))) || (appr && appr.approvalStatus === 'APPROVED'));
+      const approvedAmount = (expVer && expVer.approvedAmount !== null && expVer.approvedAmount !== undefined) ? Number(expVer.approvedAmount) : (appr ? Number(appr.approvedAmount) : null);
+      const approvedBy = isExpApproved ? (expVer?.approvedBy || appr?.approvedBy || 'Senior Admin') : null;
+      const approvedAt = isExpApproved ? (expVer?.approvedAt || appr?.approvedAt) : null;
+
+      let effectiveExpense = totalExpenses;
+      if (isExpApproved && approvedAmount !== null) {
+        effectiveExpense = approvedAmount;
+      } else if (isExpVerified && verifiedAmount !== null) {
+        effectiveExpense = verifiedAmount;
+      }
+
+      const netSalary = earnedSalary - Math.round(effectiveExpense);
+
+      // Bank statement credits from Accounts PDF
+      const pdfVr = bankCreditsMap[empId] || null;
+      const bankCredits = pdfVr ? (Number(pdfVr.bankCreditTotal) !== undefined ? Number(pdfVr.bankCreditTotal) : Number(pdfVr.pdfExpense || 0)) : 0;
+      const bankDifference = Math.round(Math.abs(bankCredits - netSalary) * 100) / 100;
+      
+      let bankStatus = 'NO_PDF';
+      if (accountsPdf) {
+        if (pdfVr && (pdfVr.isFoundInPdf || pdfVr.includedTransactionsCount > 0)) {
+          bankStatus = bankDifference < 1.0 ? 'MATCHED' : 'MISMATCH';
+        } else {
+          bankStatus = netSalary === 0 ? 'MATCHED_ZERO' : 'NOT_IN_PDF';
+        }
+      }
+
+      if (isExpVerified) totalVerifiedCount++;
+      if (isExpApproved) totalApprovedCount++;
+
+      totalBaseSalary += basicSalary;
+      totalEarnedSalary += earnedSalary;
+      totalClaimedExpenses += totalExpenses;
+      totalEffectiveExpenses += effectiveExpense;
+      totalNetSalary += netSalary;
+      totalBankCredits += bankCredits;
+
+      return {
+        id: empId,
+        name: empName,
+        role: emp.role || 'Staff',
+        basicSalary,
+        workingDays: 30,
+        regularPresentDays: effectiveRegularDays,
+        sundayPresentDays: effectiveSundayDays,
+        presentDays: effectivePresentDays,
+        autoPresentDays: autoTotalDays,
+        isManualPresentDays,
+        manualPresentDays: isManualPresentDays ? override.manualPresentDays : null,
+        editedBy: override ? override.editedBy : null,
+        editedAt: override ? override.editedAt : null,
+        perDaySalary,
+        regularEarned,
+        sundayBonus,
+        earnedSalary,
+        itemizedExpenses,
+        totalExpenses,
+        isExpVerified,
+        verifiedAmount,
+        verifiedBy,
+        verifiedAt,
+        isExpApproved,
+        approvedAmount,
+        approvedBy,
+        approvedAt,
+        effectiveExpense,
+        netSalary,
+        bankCredits,
+        bankDifference,
+        bankStatus,
+        salaryApprovalStatus: isExpApproved ? 'APPROVED' : 'NOT_APPROVED'
+      };
+    });
+
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const [yStr, mStr] = month.split('-');
+    const mIdx = parseInt(mStr, 10) - 1;
+    const formattedMonth = `${monthNames[mIdx] || month} ${yStr}`;
+
+    return {
+      month,
+      formattedMonth,
+      officeName: settings.officeName || 'Office',
+      generatedAt: new Date().toISOString(),
+      summary: {
+        totalEmployees: employeeReports.length,
+        totalBaseSalary,
+        totalEarnedSalary,
+        totalClaimedExpenses,
+        totalEffectiveExpenses,
+        totalNetSalary,
+        totalBankCredits,
+        totalVerifiedCount,
+        totalApprovedCount
+      },
+      employees: employeeReports
+    };
   }
 };
 

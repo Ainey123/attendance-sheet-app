@@ -410,6 +410,14 @@ module.exports = async (req, res) => {
     }
 
 
+    // ── GET /api/salary/finalized-report ────────────────────────────────────
+    if (path === 'salary/finalized-report' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const report = await db.getFinalizedSalaryReport(query.month || null);
+      return res.json({ success: true, report });
+    }
+
     // ── GET /api/salary ──────────────────────────────────────────────────────
     if (path === 'salary' && method === 'GET') {
       const settings = await db.getSettings();
@@ -436,6 +444,40 @@ module.exports = async (req, res) => {
       if (!body.employeeId || !body.month) return res.status(400).json({ error: 'employeeId and month required' });
       const rec = await db.generateSalary(body.employeeId, body.month);
       return res.json({ success: true, salary: rec });
+    }
+
+    // ── POST /api/salary/set-present-days ─────────────────────────────────────
+    if (path === 'salary/set-present-days' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month || body.presentDays === undefined) {
+        return res.status(400).json({ error: 'employeeId, month, and presentDays required' });
+      }
+      const result = await db.setManualPresentDays(body.employeeId, body.month, body.presentDays, body.editedBy || 'Admin');
+      return res.json({ success: true, ...result });
+    }
+
+    // ── POST /api/salary/reset-present-days ───────────────────────────────────
+    if (path === 'salary/reset-present-days' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId || !body.month) {
+        return res.status(400).json({ error: 'employeeId and month required' });
+      }
+      const result = await db.resetManualPresentDays(body.employeeId, body.month);
+      return res.json({ success: true, ...result });
+    }
+
+    // ── POST /api/salary/archive-employee ─────────────────────────────────────
+    if (path === 'salary/archive-employee' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const body = await parseBody(req);
+      if (!body.employeeId) return res.status(400).json({ error: 'employeeId required' });
+      await db.deleteEmployee(body.employeeId);
+      return res.json({ success: true, employeeId: body.employeeId });
     }
 
     // ── Emergency Salary Generator Endpoints ─────────────────────────────────────

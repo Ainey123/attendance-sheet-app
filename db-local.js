@@ -165,23 +165,26 @@ const db = {
     return records.sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
   },
 
-  async autoCompleteOldAttendance() {
-    const today = getLocalDateString();
+  async autoCompleteOldAttendance(targetEmployeeId = null) {
+    const now = new Date();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
     let changed = false;
     (data.attendance || []).forEach(r => {
-      if (!r.clockOutTime && r.date && r.date < today) {
-        const autoOut = new Date(r.date + 'T23:59:59');
-        const inTime = new Date(r.clockInTime);
-        const duration = isNaN(inTime.getTime()) ? 0 : Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
-        r.clockOutTime = autoOut.toISOString();
-        r.duration = duration;
-        r.autoClockOut = true;
-        r.autoClockOutNote = 'Auto clock-out by system — employee did not manually clock out';
-        changed = true;
+      if (!r.clockOutTime && (!targetEmployeeId || r.employeeId === targetEmployeeId)) {
+        const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
+        const inTimeMs = inTime.getTime();
+        if (!isNaN(inTimeMs) && (now.getTime() - inTimeMs) >= twentyFourHoursMs) {
+          const autoOut = new Date(inTimeMs + twentyFourHoursMs);
+          r.clockOutTime = autoOut.toISOString();
+          r.duration = 24 * 60;
+          r.autoClockOut = true;
+          r.autoClockOutNote = 'Auto clock-out by system — 24 hours elapsed without manual clock-out';
+          changed = true;
 
-        const emp = (data.employees || []).find(e => e.id === r.employeeId);
-        if (emp && emp.status === 'IN') {
-          emp.status = 'OUT';
+          const emp = (data.employees || []).find(e => e.id === r.employeeId);
+          if (emp && emp.status === 'IN') {
+            emp.status = 'OUT';
+          }
         }
       }
     });
@@ -189,18 +192,29 @@ const db = {
   },
 
   async getTodayAttendanceForEmployee(employeeId) {
-    await this.autoCompleteOldAttendance().catch(() => {});
+    await this.autoCompleteOldAttendance(employeeId).catch(() => {});
     const today = getLocalDateString();
-    const records = (data.attendance || [])
-      .filter(r => r.employeeId === employeeId && r.date === today)
+    const empRecords = (data.attendance || [])
+      .filter(r => r.employeeId === employeeId)
       .sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
     
-    if (records.length === 0) return null;
-    const leaveRecord = records.find(isLeaveAttendanceRecord);
-    if (leaveRecord) return leaveRecord;
-    const active = records.find(r => !r.clockOutTime);
-    if (active) return active;
-    return records[0];
+    if (empRecords.length === 0) return null;
+    
+    // First check for active unclosed record
+    const active = empRecords.find(r => !r.clockOutTime);
+    if (active) {
+      const emp = (data.employees || []).find(e => e.id === employeeId);
+      if (emp && emp.status !== 'IN') { emp.status = 'IN'; saveData(); }
+      return active;
+    }
+
+    const todayRecords = empRecords.filter(r => r.date === today);
+    if (todayRecords.length > 0) {
+      const leaveRecord = todayRecords.find(isLeaveAttendanceRecord);
+      if (leaveRecord) return leaveRecord;
+      return todayRecords[0];
+    }
+    return null;
   },
 
   async clockIn(employeeId, location) {
@@ -208,12 +222,25 @@ const db = {
       throw new Error('Please turn on location first');
     }
 
-    await this.autoCompleteOldAttendance().catch(() => {});
+    await this.autoCompleteOldAttendance(employeeId).catch(() => {});
 
     const employee = data.employees.find(e => e.id === employeeId);
     if (!employee) throw new Error('Employee not found');
 
-    const today = getLocalDateString();
+    const now = new Date();
+    const today = getLocalDateString(now);
+
+    // Auto-close any unclosed prior shift from previous days so it never blocks new shift
+    (data.attendance || []).forEach(r => {
+      if (r.employeeId === employeeId && !r.clockOutTime && r.date !== today) {
+        const inTime = new Date(r.clockInTime);
+        r.clockOutTime = now.toISOString();
+        r.duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+        r.autoClockOut = true;
+        r.autoClockOutNote = 'Auto-closed on next shift clock-in';
+      }
+    });
+
     const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
     const activeRecord = todayRecords.find(r => !r.clockOutTime);
     if (activeRecord) {
@@ -228,7 +255,7 @@ const db = {
       employeeName: employee.name,
       role: employee.role,
       date: today,
-      clockInTime: new Date().toISOString(),
+      clockInTime: now.toISOString(),
       clockOutTime: null,
       clockInLocation: location || null,
       clockOutLocation: null,
@@ -242,7 +269,7 @@ const db = {
   },
 
   async clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) {
-    await this.autoCompleteOldAttendance().catch(() => {});
+    await this.autoCompleteOldAttendance(employeeId).catch(() => {});
 
     const employee = data.employees.find(e => e.id === employeeId);
     if (!employee) throw new Error('Employee not found');
@@ -253,10 +280,12 @@ const db = {
     const finalReceived = Number(receivedAmount) || 0;
     const finalExpense = Number(expenseAmount) || 0;
 
-    const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
-    let record = todayRecords.find(r => !r.clockOutTime);
+    // 1. Look for active unclosed record for this employee
+    let record = (data.attendance || []).slice().reverse().find(r => r.employeeId === employeeId && !r.clockOutTime);
+
     if (!record) {
-      record = todayRecords.find(r => r.clockOutTime);
+      // 2. Fall back to latest record today to update
+      record = (data.attendance || []).slice().reverse().find(r => r.employeeId === employeeId && r.date === today);
     }
 
     if (record) {
@@ -401,6 +430,7 @@ const db = {
     let records = data.formSubmissions || [];
     if (employeeId) records = records.filter(r => r.employeeId === employeeId);
     if (formType) records = records.filter(r => r.formType === formType);
+    else records = records.filter(r => r.formType !== 'manual_present_days');
     return records.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   },
 
@@ -479,6 +509,112 @@ const db = {
     data.formSubmissions = data.formSubmissions.filter(r => !(r.id === id && r.employeeId === employeeId));
     saveData();
     return true;
+  },
+
+  // --- Manual Present Days Override Methods ---
+  async getManualPresentDays(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const resultMap = {};
+    const subs = data.formSubmissions || [];
+    subs.forEach(s => {
+      if (s && s.formType === 'manual_present_days' && s.formData && s.formData.month === month) {
+        resultMap[s.employeeId] = {
+          id: s.id,
+          employeeId: s.employeeId,
+          employeeName: s.employeeName,
+          month: s.formData.month,
+          originalAutoPresentDays: Number(s.formData.originalAutoPresentDays) || 0,
+          manualPresentDays: Number(s.formData.manualPresentDays) || 0,
+          editedBy: s.formData.editedBy || 'Admin',
+          editedAt: s.formData.editedAt || s.submittedAt
+        };
+      }
+    });
+    return resultMap;
+  },
+
+  async setManualPresentDays(employeeId, month, manualPresentDays, editedBy = 'Admin') {
+    if (!employeeId) throw new Error('Employee ID is required');
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error('Valid month (YYYY-MM) is required');
+
+    const numDays = parseInt(manualPresentDays, 10);
+    if (isNaN(numDays) || numDays < 0 || numDays > 31) {
+      throw new Error('Present days must be a number between 0 and 31');
+    }
+
+    const employees = await this.getEmployees(true);
+    const emp = (employees || []).find(e => e.id === employeeId);
+    if (!emp) throw new Error(`Employee ${employeeId} not found`);
+
+    const allAttendance = await this.getAttendance();
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+    const empAtt = (allAttendance || []).filter(a => a.employeeId === employeeId && a.date && a.date.startsWith(month) && !isLeave(a));
+    const presentDates = new Set();
+    empAtt.forEach(a => presentDates.add(a.date));
+    const originalAutoPresentDays = presentDates.size;
+
+    const recordId = `mpd_${employeeId}_${month}`;
+    const nowIso = new Date().toISOString();
+
+    const record = {
+      id: recordId,
+      employeeId,
+      employeeName: emp.name,
+      formType: 'manual_present_days',
+      formData: {
+        month,
+        originalAutoPresentDays,
+        manualPresentDays: numDays,
+        editedBy: String(editedBy || 'Admin').trim(),
+        editedAt: nowIso
+      },
+      submittedAt: nowIso
+    };
+
+    data.formSubmissions = data.formSubmissions || [];
+    const localIdx = data.formSubmissions.findIndex(s => s.id === recordId || (s.employeeId === employeeId && s.formType === 'manual_present_days' && s.formData?.month === month));
+    if (localIdx >= 0) {
+      data.formSubmissions[localIdx] = record;
+    } else {
+      data.formSubmissions.push(record);
+    }
+    saveData();
+
+    await this.generateSalary(employeeId, month);
+
+    return {
+      success: true,
+      employeeId,
+      employeeName: emp.name,
+      month,
+      manualPresentDays: numDays,
+      originalAutoPresentDays,
+      editedBy: record.formData.editedBy,
+      editedAt: nowIso
+    };
+  },
+
+  async resetManualPresentDays(employeeId, month) {
+    if (!employeeId) throw new Error('Employee ID is required');
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error('Valid month (YYYY-MM) is required');
+
+    const recordId = `mpd_${employeeId}_${month}`;
+    if (data.formSubmissions) {
+      data.formSubmissions = data.formSubmissions.filter(s => !(s.id === recordId || (s.employeeId === employeeId && s.formType === 'manual_present_days' && s.formData?.month === month)));
+      saveData();
+    }
+
+    await this.generateSalary(employeeId, month);
+
+    return {
+      success: true,
+      employeeId,
+      month
+    };
   },
 
   async getMonthlySummary(monthStr) {
@@ -779,7 +915,24 @@ const db = {
       else regularPresentDays++;
     });
 
-    const totalPresentDays = regularPresentDays + sundayPresentDays;
+    const autoTotalDays = regularPresentDays + sundayPresentDays;
+
+    // Check for manual present days override
+    let manualOverrides = {};
+    try {
+      manualOverrides = await this.getManualPresentDays(month);
+    } catch (e) {}
+
+    const override = manualOverrides[employeeId];
+    const isManual = Boolean(override && typeof override.manualPresentDays === 'number');
+    const effectivePresentDays = isManual ? override.manualPresentDays : autoTotalDays;
+
+    let effectiveSundayDays = sundayPresentDays;
+    let effectiveRegularDays = regularPresentDays;
+    if (isManual) {
+      effectiveSundayDays = Math.min(sundayPresentDays, effectivePresentDays);
+      effectiveRegularDays = Math.max(0, effectivePresentDays - effectiveSundayDays);
+    }
 
     // Sum total expenses from clock-out records & work records for this month
     let totalExpenses = 0;
@@ -814,13 +967,13 @@ const db = {
     const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
 
     // Regular earned = per day × regular present days
-    const regularEarned = perDaySalary * regularPresentDays;
+    const regularEarned = perDaySalary * effectiveRegularDays;
 
     // Sunday bonus = per day × Sunday days worked
-    const sundayBonus = perDaySalary * sundayPresentDays;
+    const sundayBonus = perDaySalary * effectiveSundayDays;
 
     // Total earned = regular + sunday bonus = per day × total present days
-    const earnedSalary = perDaySalary * totalPresentDays;
+    const earnedSalary = perDaySalary * effectivePresentDays;
 
     // Net salary = earned - total clock-out expenses
     const netSalary = earnedSalary - Math.round(totalExpenses);
@@ -830,9 +983,14 @@ const db = {
       role: emp ? (emp.role || 'Staff') : salRec.role,
       totalDaysInMonth,
       workingDays: 30, // fixed 30-day divisor
-      regularPresentDays,
-      sundayPresentDays,
-      presentDays: totalPresentDays,
+      regularPresentDays: effectiveRegularDays,
+      sundayPresentDays: effectiveSundayDays,
+      presentDays: effectivePresentDays,
+      autoPresentDays: autoTotalDays,
+      isManualPresentDays: isManual,
+      manualPresentDays: isManual ? override.manualPresentDays : null,
+      editedBy: isManual ? override.editedBy : null,
+      editedAt: isManual ? override.editedAt : null,
       perDaySalary,
       regularEarned,
       sundayBonus,
@@ -1755,6 +1913,238 @@ const db = {
     saveData();
 
     return newRun;
+  },
+
+  async getFinalizedSalaryReport(month) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides] = await Promise.all([
+      this.getEmployees(false),
+      this.getAttendance().catch(() => []),
+      this.getWorkRecords(null, month).catch(() => []),
+      this.getAllSalaries(month).catch(() => []),
+      this.getAccountsPdf(month).catch(() => null),
+      this.getSalaryApprovals(month).catch(() => []),
+      this.getExpenseVerifications(month).catch(() => []),
+      this.getSettings().catch(() => ({})),
+      this.getManualPresentDays(month).catch(() => ({}))
+    ]);
+
+    const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+
+    const monthAttendance = (allAttendance || []).filter(a => a.date && a.date.startsWith(month) && !isLeave(a));
+
+    const salariesMap = {};
+    (rawSalaries || []).forEach(s => { salariesMap[s.employeeId] = s; });
+
+    const approvalsMap = {};
+    (approvals || []).forEach(a => { approvalsMap[a.employeeId] = a; });
+
+    const verificationsMap = {};
+    (verifications || []).forEach(v => { verificationsMap[v.employeeId] = v; });
+
+    const bankCreditsMap = {};
+    if (accountsPdf && Array.isArray(accountsPdf.verificationResults)) {
+      accountsPdf.verificationResults.forEach(vr => {
+        bankCreditsMap[vr.employeeId] = vr;
+      });
+    }
+
+    let totalBaseSalary = 0;
+    let totalEarnedSalary = 0;
+    let totalClaimedExpenses = 0;
+    let totalEffectiveExpenses = 0;
+    let totalNetSalary = 0;
+    let totalBankCredits = 0;
+    let totalVerifiedCount = 0;
+    let totalApprovedCount = 0;
+
+    const employeeReports = (employees || []).map(emp => {
+      const empId = emp.id;
+      const empName = emp.name;
+
+      const empAtt = monthAttendance.filter(a => a.employeeId === empId);
+      const presentDates = new Set();
+      empAtt.forEach(a => presentDates.add(a.date));
+
+      let regularPresentDays = 0;
+      let sundayPresentDays = 0;
+      presentDates.forEach(dateStr => {
+        const parts = dateStr.split('-');
+        const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        if (dt.getDay() === 0) sundayPresentDays++;
+        else regularPresentDays++;
+      });
+
+      const autoTotalDays = regularPresentDays + sundayPresentDays;
+      const override = manualOverrides[empId] || null;
+      const isManualPresentDays = Boolean(override && typeof override.manualPresentDays === 'number');
+      const effectivePresentDays = isManualPresentDays ? override.manualPresentDays : autoTotalDays;
+
+      let effectiveSundayDays = sundayPresentDays;
+      let effectiveRegularDays = regularPresentDays;
+      if (isManualPresentDays) {
+        effectiveSundayDays = Math.min(sundayPresentDays, effectivePresentDays);
+        effectiveRegularDays = Math.max(0, effectivePresentDays - effectiveSundayDays);
+      }
+
+      const salRec = salariesMap[empId] || {};
+      const basicSalary = Number(salRec.basicSalary) || Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
+      const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
+      const regularEarned = perDaySalary * effectiveRegularDays;
+      const sundayBonus = perDaySalary * effectiveSundayDays;
+      const earnedSalary = perDaySalary * effectivePresentDays;
+
+      const itemizedExpenses = [];
+      const processedExpenseKeys = new Set();
+
+      empAtt.forEach(a => {
+        const amt = Number(a.expenseAmount) || Number(a.moneySpent) || 0;
+        if (amt > 0) {
+          const key = `${a.date}_${amt}_${(a.performanceNotes || '').trim()}`;
+          if (!processedExpenseKeys.has(key)) {
+            processedExpenseKeys.add(key);
+            itemizedExpenses.push({
+              date: a.date,
+              amount: amt,
+              description: a.performanceNotes || 'Clock-Out Expense',
+              category: 'Daily Shift Expense',
+              source: 'Attendance Clock-Out'
+            });
+          }
+        }
+      });
+
+      (workRecords || []).forEach(wr => {
+        if (wr.employeeId === empId && wr.date && wr.date.startsWith(month)) {
+          const amt = Number(wr.expenseAmount) || 0;
+          if (amt > 0) {
+            const key = `${wr.date}_${amt}_${(wr.performedWork || '').trim()}`;
+            if (!processedExpenseKeys.has(key)) {
+              processedExpenseKeys.add(key);
+              itemizedExpenses.push({
+                date: wr.date,
+                amount: amt,
+                description: wr.performedWork || 'Work Record Expense',
+                category: 'Work Expense',
+                source: 'Work Record'
+              });
+            }
+          }
+        }
+      });
+
+      itemizedExpenses.sort((a, b) => a.date.localeCompare(b.date));
+      const totalExpenses = itemizedExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+      const expVer = verificationsMap[empId] || null;
+      const appr = approvalsMap[empId] || null;
+
+      const isExpVerified = Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
+      const verifiedAmount = isExpVerified ? Number(expVer.verifiedAmount) : null;
+      const verifiedBy = isExpVerified ? (expVer.verifiedBy || 'Admin 1') : null;
+      const verifiedAt = isExpVerified ? expVer.verifiedAt : null;
+
+      const isExpApproved = Boolean((expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined))) || (appr && appr.approvalStatus === 'APPROVED'));
+      const approvedAmount = (expVer && expVer.approvedAmount !== null && expVer.approvedAmount !== undefined) ? Number(expVer.approvedAmount) : (appr ? Number(appr.approvedAmount) : null);
+      const approvedBy = isExpApproved ? (expVer?.approvedBy || appr?.approvedBy || 'Senior Admin') : null;
+      const approvedAt = isExpApproved ? (expVer?.approvedAt || appr?.approvedAt) : null;
+
+      let effectiveExpense = totalExpenses;
+      if (isExpApproved && approvedAmount !== null) {
+        effectiveExpense = approvedAmount;
+      } else if (isExpVerified && verifiedAmount !== null) {
+        effectiveExpense = verifiedAmount;
+      }
+
+      const netSalary = earnedSalary - Math.round(effectiveExpense);
+
+      const pdfVr = bankCreditsMap[empId] || null;
+      const bankCredits = pdfVr ? (Number(pdfVr.bankCreditTotal) !== undefined ? Number(pdfVr.bankCreditTotal) : Number(pdfVr.pdfExpense || 0)) : 0;
+      const bankDifference = Math.round(Math.abs(bankCredits - netSalary) * 100) / 100;
+      
+      let bankStatus = 'NO_PDF';
+      if (accountsPdf) {
+        if (pdfVr && (pdfVr.isFoundInPdf || pdfVr.includedTransactionsCount > 0)) {
+          bankStatus = bankDifference < 1.0 ? 'MATCHED' : 'MISMATCH';
+        } else {
+          bankStatus = netSalary === 0 ? 'MATCHED_ZERO' : 'NOT_IN_PDF';
+        }
+      }
+
+      if (isExpVerified) totalVerifiedCount++;
+      if (isExpApproved) totalApprovedCount++;
+
+      totalBaseSalary += basicSalary;
+      totalEarnedSalary += earnedSalary;
+      totalClaimedExpenses += totalExpenses;
+      totalEffectiveExpenses += effectiveExpense;
+      totalNetSalary += netSalary;
+      totalBankCredits += bankCredits;
+
+      return {
+        id: empId,
+        name: empName,
+        role: emp.role || 'Staff',
+        basicSalary,
+        workingDays: 30,
+        regularPresentDays: effectiveRegularDays,
+        sundayPresentDays: effectiveSundayDays,
+        presentDays: effectivePresentDays,
+        autoPresentDays: autoTotalDays,
+        isManualPresentDays,
+        manualPresentDays: isManualPresentDays ? override.manualPresentDays : null,
+        editedBy: override ? override.editedBy : null,
+        editedAt: override ? override.editedAt : null,
+        perDaySalary,
+        regularEarned,
+        sundayBonus,
+        earnedSalary,
+        itemizedExpenses,
+        totalExpenses,
+        isExpVerified,
+        verifiedAmount,
+        verifiedBy,
+        verifiedAt,
+        isExpApproved,
+        approvedAmount,
+        approvedBy,
+        approvedAt,
+        effectiveExpense,
+        netSalary,
+        bankCredits,
+        bankDifference,
+        bankStatus,
+        salaryApprovalStatus: isExpApproved ? 'APPROVED' : 'NOT_APPROVED'
+      };
+    });
+
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const [yStr, mStr] = month.split('-');
+    const mIdx = parseInt(mStr, 10) - 1;
+    const formattedMonth = `${monthNames[mIdx] || month} ${yStr}`;
+
+    return {
+      month,
+      formattedMonth,
+      officeName: settings.officeName || 'Office',
+      generatedAt: new Date().toISOString(),
+      summary: {
+        totalEmployees: employeeReports.length,
+        totalBaseSalary,
+        totalEarnedSalary,
+        totalClaimedExpenses,
+        totalEffectiveExpenses,
+        totalNetSalary,
+        totalBankCredits,
+        totalVerifiedCount,
+        totalApprovedCount
+      },
+      employees: employeeReports
+    };
   }
 };
 
