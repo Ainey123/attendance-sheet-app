@@ -665,14 +665,13 @@ const db = {
 
       const now = new Date();
       const today = getLocalDateString(now);
-      const todayRecords = data.attendance.filter(r => r.employeeId === employeeId && r.date === today);
-      if (todayRecords.some(isLeaveAttendanceRecord)) {
-        throw new Error('Employee has a leave request for today');
-      }
+      const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
       const activeRecord = todayRecords.find(r => !r.clockOutTime);
-      if (activeRecord) throw new Error('Employee is already clocked in for today');
-      const completedRecord = todayRecords.find(r => r.clockOutTime);
-      if (completedRecord) throw new Error('Attendance already completed for today');
+      if (activeRecord) {
+        employee.status = 'IN';
+        saveLocalData(data);
+        return { record: activeRecord, employee, alreadyActive: true };
+      }
 
       const record = {
         id: generateId('att'),
@@ -707,18 +706,21 @@ const db = {
         .from('attendance')
         .select('*')
         .eq('employeeId', employeeId)
-        .eq('date', today);
+        .eq('date', today)
+        .order('clockInTime', { ascending: false });
 
       if (todayError) throw todayError;
-      if (todayRecords?.some(isLeaveAttendanceRecord)) {
-        throw new Error('Employee has a leave request for today');
-      }
 
       const activeRecord = todayRecords?.find(r => !r.clockOutTime);
-      if (activeRecord) throw new Error('Employee is already clocked in for today');
-
-      const completedRecord = todayRecords?.find(r => r.clockOutTime);
-      if (completedRecord) throw new Error('Attendance already completed for today');
+      if (activeRecord) {
+        const { data: updatedEmployee } = await supabase
+          .from('employees')
+          .update({ status: 'IN' })
+          .eq('id', employeeId)
+          .select()
+          .single();
+        return { record: activeRecord, employee: updatedEmployee || employee, alreadyActive: true };
+      }
 
       const record = {
         id: generateId('att'),
@@ -757,50 +759,78 @@ const db = {
 
   async clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) {
     await this.autoCompleteOldAttendance().catch(() => {});
+    const now = new Date();
+    const today = getLocalDateString(now);
+    const finalNotes = (performanceNotes && String(performanceNotes).trim()) || 'Shift Completed';
+    const finalReceived = Number(receivedAmount) || 0;
+    const finalExpense = Number(expenseAmount) || 0;
 
     if (useLocalFallback) {
       const data = loadLocalData();
       const employee = data.employees.find(e => e.id === employeeId);
       if (!employee) throw new Error('Employee not found');
 
-      const today = getLocalDateString();
-      const record = data.attendance.find(r => r.employeeId === employeeId && r.date === today && !r.clockOutTime);
+      const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
+      let record = todayRecords.find(r => !r.clockOutTime);
+
       if (!record) {
-        const completedRecord = data.attendance.find(r => r.employeeId === employeeId && r.date === today && r.clockOutTime);
-        if (completedRecord) throw new Error('Attendance already clocked out for today');
-        throw new Error('No active attendance session found for today.');
+        record = todayRecords.find(r => r.clockOutTime);
       }
 
-      const now = new Date();
-      const inTime = new Date(record.clockInTime);
-      const duration = Math.round((now - inTime) / (1000 * 60));
-
-      Object.assign(record, {
-        clockOutTime: now.toISOString(),
-        clockOutLocation: location || null,
-        duration,
-        performanceNotes,
-        receivedAmount: Number(receivedAmount) || 0,
-        expenseAmount: Number(expenseAmount) || 0,
-        moneySpent: Number(expenseAmount) || 0,
-        image: image || null
-      });
+      if (record) {
+        const inTime = new Date(record.clockInTime || now);
+        const duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+        Object.assign(record, {
+          clockOutTime: now.toISOString(),
+          clockOutLocation: location || record.clockOutLocation || null,
+          duration,
+          performanceNotes: finalNotes || record.performanceNotes || 'Shift Completed',
+          receivedAmount: finalReceived,
+          expenseAmount: finalExpense,
+          moneySpent: finalExpense,
+          image: image || record.image || null
+        });
+      } else {
+        record = {
+          id: generateId('att'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          role: employee.role,
+          date: today,
+          clockInTime: now.toISOString(),
+          clockOutTime: now.toISOString(),
+          clockInLocation: location || null,
+          clockOutLocation: location || null,
+          duration: 0,
+          performanceNotes: finalNotes,
+          receivedAmount: finalReceived,
+          expenseAmount: finalExpense,
+          moneySpent: finalExpense,
+          image: image || null
+        };
+        data.attendance.push(record);
+      }
 
       employee.status = 'OUT';
 
-      // Auto-create work record
       const monthStr = today.substring(0, 7);
-      if (!data.workRecords.find(w => w.employeeId === employeeId && w.date === today)) {
-        data.workRecords.push({
+      const existingWr = (data.workRecords || []).find(w => w.employeeId === employeeId && w.date === today);
+      if (existingWr) {
+        existingWr.performedWork = finalNotes;
+        existingWr.receivedAmount = finalReceived;
+        existingWr.expenseAmount = finalExpense;
+        existingWr.paymentIssuance = finalReceived;
+      } else {
+        (data.workRecords = data.workRecords || []).push({
           id: generateId('wr'),
           employeeId,
           employeeName: employee.name,
           month: monthStr,
           date: today,
-          performedWork: performanceNotes,
-          receivedAmount: Number(receivedAmount) || 0,
-          expenseAmount: Number(expenseAmount) || 0,
-          paymentIssuance: Number(receivedAmount) || 0,
+          performedWork: finalNotes,
+          receivedAmount: finalReceived,
+          expenseAmount: finalExpense,
+          paymentIssuance: finalReceived,
           createdAt: now.toISOString()
         });
       }
@@ -817,54 +847,83 @@ const db = {
 
       if (empError || !employee) throw new Error('Employee not found');
 
-      const today = getLocalDateString();
-      const { data: activeRecords, error: recordError } = await supabase
+      // 1. Check for active unclosed record today
+      const { data: activeRecords } = await supabase
         .from('attendance')
         .select('*')
         .eq('employeeId', employeeId)
         .eq('date', today)
-        .is('clockOutTime', null);
+        .is('clockOutTime', null)
+        .order('clockInTime', { ascending: false });
 
-      if (recordError) handleSupabaseError(recordError, 'fetch active attendance session');
-
-      const record = activeRecords && activeRecords.length > 0 ? activeRecords[0] : null;
+      let record = activeRecords && activeRecords.length > 0 ? activeRecords[0] : null;
 
       if (!record) {
+        // 2. Fall back to any completed record today to update
         const { data: completedRecords } = await supabase
           .from('attendance')
           .select('*')
           .eq('employeeId', employeeId)
           .eq('date', today)
-          .not('clockOutTime', 'is', null)
+          .order('clockInTime', { ascending: false })
           .limit(1);
 
         if (completedRecords && completedRecords.length > 0) {
-          throw new Error('Attendance already clocked out for today');
+          record = completedRecords[0];
         }
-        throw new Error('No active attendance session found for today.');
       }
 
-      const now = new Date();
-      const inTime = new Date(record.clockInTime);
-      const duration = Math.round((now - inTime) / (1000 * 60));
+      let updatedRecord;
+      if (record) {
+        const inTime = new Date(record.clockInTime || now);
+        const duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+        const { data: upd, error: updateError } = await supabase
+          .from('attendance')
+          .update({
+            clockOutTime: now.toISOString(),
+            clockOutLocation: location || record.clockOutLocation || null,
+            duration,
+            performanceNotes: finalNotes || record.performanceNotes || 'Shift Completed',
+            receivedAmount: finalReceived,
+            expenseAmount: finalExpense,
+            moneySpent: finalExpense,
+            image: image || record.image || null
+          })
+          .eq('id', record.id)
+          .select()
+          .single();
 
-      const { data: updatedRecord, error: updateError } = await supabase
-        .from('attendance')
-        .update({
+        if (updateError) handleSupabaseError(updateError, 'update attendance record on clock out');
+        updatedRecord = upd;
+      } else {
+        // 3. Create fresh completed record if none existed today
+        const newAttRecord = {
+          id: generateId('att'),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          role: employee.role,
+          date: today,
+          clockInTime: now.toISOString(),
           clockOutTime: now.toISOString(),
+          clockInLocation: location || null,
           clockOutLocation: location || null,
-          duration,
-          performanceNotes,
-          receivedAmount: Number(receivedAmount) || 0,
-          expenseAmount: Number(expenseAmount) || 0,
-          moneySpent: Number(expenseAmount) || 0,
+          duration: 0,
+          performanceNotes: finalNotes,
+          receivedAmount: finalReceived,
+          expenseAmount: finalExpense,
+          moneySpent: finalExpense,
           image: image || null
-        })
-        .eq('id', record.id)
-        .select()
-        .single();
+        };
 
-      if (updateError) handleSupabaseError(updateError, 'clock out');
+        const { data: ins, error: insertError } = await supabase
+          .from('attendance')
+          .insert([newAttRecord])
+          .select()
+          .single();
+
+        if (insertError) handleSupabaseError(insertError, 'insert attendance record on clock out');
+        updatedRecord = ins;
+      }
 
       const { data: updatedEmployee, error: empUpdateError } = await supabase
         .from('employees')
@@ -874,7 +933,45 @@ const db = {
         .single();
 
       if (empUpdateError) handleSupabaseError(empUpdateError, 'update employee status');
-      return { record: updatedRecord, employee: updatedEmployee };
+
+      // Auto-sync work record in background
+      const monthStr = today.substring(0, 7);
+      (async () => {
+        try {
+          const { data: wrs } = await supabase
+            .from('work_records')
+            .select('*')
+            .eq('employeeId', employeeId)
+            .eq('date', today)
+            .limit(1);
+
+          if (wrs && wrs.length > 0) {
+            await supabase.from('work_records').update({
+              performedWork: finalNotes,
+              receivedAmount: finalReceived,
+              expenseAmount: finalExpense,
+              paymentIssuance: finalReceived
+            }).eq('id', wrs[0].id);
+          } else {
+            await supabase.from('work_records').insert([{
+              id: generateId('wr'),
+              employeeId,
+              employeeName: employee.name,
+              month: monthStr,
+              date: today,
+              performedWork: finalNotes,
+              receivedAmount: finalReceived,
+              expenseAmount: finalExpense,
+              paymentIssuance: finalReceived,
+              createdAt: now.toISOString()
+            }]);
+          }
+        } catch (e) {
+          console.warn('[ClockOut] Auto work-record sync:', e.message);
+        }
+      })();
+
+      return { record: updatedRecord, employee: updatedEmployee || employee };
     } catch (error) {
       handleSupabaseError(error, 'clock out');
     }

@@ -313,9 +313,9 @@ module.exports = async (req, res) => {
     if (path === 'attendance/clock-out' && method === 'POST') {
       const body = await parseBody(req);
       const { employeeId, location, performanceNotes, receivedAmount, expenseAmount, image } = body;
-      if (performanceNotes === undefined) return res.status(400).json({ success: false, error: 'performanceNotes required' });
+      const notes = (performanceNotes && String(performanceNotes).trim()) || 'Shift Completed';
       try {
-        const result = await db.clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image);
+        const result = await db.clockOut(employeeId, location, notes, receivedAmount, expenseAmount, image);
         return res.json({ success: true, data: result });
       } catch (err) {
         return res.status(400).json({ success: false, error: err.message });

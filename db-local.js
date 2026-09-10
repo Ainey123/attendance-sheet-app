@@ -215,15 +215,12 @@ const db = {
 
     const today = getLocalDateString();
     const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
-    if (todayRecords.some(isLeaveAttendanceRecord)) {
-      throw new Error('Employee has a leave request for today');
-    }
-
     const activeRecord = todayRecords.find(r => !r.clockOutTime);
-    if (activeRecord) throw new Error('Employee is already clocked in for today');
-
-    const completedRecord = todayRecords.find(r => r.clockOutTime);
-    if (completedRecord) throw new Error('Attendance already completed for today');
+    if (activeRecord) {
+      employee.status = 'IN';
+      saveData();
+      return { record: activeRecord, employee, alreadyActive: true };
+    }
 
     const record = {
       id: generateId('att'),
@@ -250,45 +247,73 @@ const db = {
     const employee = data.employees.find(e => e.id === employeeId);
     if (!employee) throw new Error('Employee not found');
 
-    const today = getLocalDateString();
-    const record = (data.attendance || []).find(r => r.employeeId === employeeId && r.date === today && !r.clockOutTime);
+    const now = new Date();
+    const today = getLocalDateString(now);
+    const finalNotes = (performanceNotes && String(performanceNotes).trim()) || 'Shift Completed';
+    const finalReceived = Number(receivedAmount) || 0;
+    const finalExpense = Number(expenseAmount) || 0;
+
+    const todayRecords = (data.attendance || []).filter(r => r.employeeId === employeeId && r.date === today);
+    let record = todayRecords.find(r => !r.clockOutTime);
     if (!record) {
-      const completedRecord = (data.attendance || []).find(r => r.employeeId === employeeId && r.date === today && r.clockOutTime);
-      if (completedRecord) throw new Error('Attendance already clocked out for today');
-      throw new Error('No active attendance session found for today.');
+      record = todayRecords.find(r => r.clockOutTime);
     }
 
-    const now = new Date();
-    const inTime = new Date(record.clockInTime);
-    const duration = Math.round((now - inTime) / (1000 * 60));
-
-    Object.assign(record, {
-      clockOutTime: now.toISOString(),
-      clockOutLocation: location || null,
-      duration,
-      performanceNotes,
-      receivedAmount: Number(receivedAmount) || 0,
-      expenseAmount: Number(expenseAmount) || 0,
-      moneySpent: Number(expenseAmount) || 0,
-      image: image || null
-    });
+    if (record) {
+      const inTime = new Date(record.clockInTime || now);
+      const duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+      Object.assign(record, {
+        clockOutTime: now.toISOString(),
+        clockOutLocation: location || record.clockOutLocation || null,
+        duration,
+        performanceNotes: finalNotes || record.performanceNotes || 'Shift Completed',
+        receivedAmount: finalReceived,
+        expenseAmount: finalExpense,
+        moneySpent: finalExpense,
+        image: image || record.image || null
+      });
+    } else {
+      record = {
+        id: generateId('att'),
+        employeeId: employee.id,
+        employeeName: employee.name,
+        role: employee.role,
+        date: today,
+        clockInTime: now.toISOString(),
+        clockOutTime: now.toISOString(),
+        clockInLocation: location || null,
+        clockOutLocation: location || null,
+        duration: 0,
+        performanceNotes: finalNotes,
+        receivedAmount: finalReceived,
+        expenseAmount: finalExpense,
+        moneySpent: finalExpense,
+        image: image || null
+      };
+      data.attendance.push(record);
+    }
 
     employee.status = 'OUT';
 
-    // Auto-create work record
+    // Auto-create/sync work record
     const monthStr = today.substring(0, 7);
-    const existingWr = data.workRecords.find(w => w.employeeId === employeeId && w.date === today);
-    if (!existingWr) {
-      data.workRecords.push({
+    const existingWr = (data.workRecords || []).find(w => w.employeeId === employeeId && w.date === today);
+    if (existingWr) {
+      existingWr.performedWork = finalNotes;
+      existingWr.receivedAmount = finalReceived;
+      existingWr.expenseAmount = finalExpense;
+      existingWr.paymentIssuance = finalReceived;
+    } else {
+      (data.workRecords = data.workRecords || []).push({
         id: generateId('wr'),
         employeeId,
         employeeName: employee.name,
         month: monthStr,
         date: today,
-        performedWork: performanceNotes,
-        receivedAmount: Number(receivedAmount) || 0,
-        expenseAmount: Number(expenseAmount) || 0,
-        paymentIssuance: Number(receivedAmount) || 0,
+        performedWork: finalNotes,
+        receivedAmount: finalReceived,
+        expenseAmount: finalExpense,
+        paymentIssuance: finalReceived,
         createdAt: now.toISOString()
       });
     }

@@ -484,27 +484,18 @@ function updateClockButtonsDisabledState(disableAll = false) {
   // Location is required for clock-in (must have valid coordinates)
   const locationReady = !!(userLocation && typeof userLocation.latitude === 'number' && typeof userLocation.longitude === 'number');
 
-  if (selectedEmployee.isCompletedToday) {
-    btnIn.disabled = true;
-    btnOut.disabled = true;
-    btnIn.title = 'Attendance completed for today';
-    btnOut.title = 'Attendance completed for today';
-  } else if (selectedEmployee.status === 'IN') {
+  if (selectedEmployee.status === 'IN') {
     btnIn.disabled = true;
     btnOut.disabled = false;
-    btnIn.title = '';
-    btnOut.title = '';
-  } else if (selectedEmployee.status === 'LEAVE') {
-    btnIn.disabled = true;
-    btnOut.disabled = true;
-    btnIn.title = 'Employee is on leave today';
-    btnOut.title = 'Employee is on leave today';
+    btnIn.title = 'Shift currently active';
+    btnOut.title = 'Click to clock out';
   } else {
-    // Only enable clock-in when GPS location is available
-    btnIn.disabled = !locationReady;
-    btnOut.disabled = true;
-    btnIn.title = !locationReady ? 'Please turn on your location to clock in' : '';
-    btnOut.title = '';
+    // Both Clock In and Clock Out are ALLOWED at all times!
+    // Employees are never blocked from clocking in or out.
+    btnIn.disabled = false;
+    btnOut.disabled = false;
+    btnIn.title = !locationReady ? 'Location required to clock in' : 'Click to clock in';
+    btnOut.title = 'Click to clock out / record shift details';
   }
 }
 
@@ -1019,7 +1010,7 @@ function handleClockOut() {
 }
 
 async function submitClockOutDetails(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   if (!selectedEmployee) return;
 
   let performanceNotes = (document.getElementById('performance-notes').value || '').trim();
@@ -1028,6 +1019,13 @@ async function submitClockOutDetails(e) {
   }
   const receivedAmount = document.getElementById('clockout-received').value || 0;
   const expenseAmount = document.getElementById('clockout-expense').value || 0;
+
+  const submitBtn = document.querySelector('#form-clockout-details button[type="submit"]');
+  const originalBtnText = submitBtn ? submitBtn.innerText : 'Submit Clock Out';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Submitting...';
+  }
 
   updateClockButtonsDisabledState(true);
 
@@ -1055,6 +1053,11 @@ async function submitClockOutDetails(e) {
   } catch (err) {
     showToast('Error during clock out: ' + (err.message || 'Network error'), 'error');
     updateClockButtonsDisabledState(false);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = originalBtnText;
+    }
   }
 }
 
@@ -4405,13 +4408,20 @@ function checkAndShowLinkExpiryNotice(employee) {
       promptMsg.innerText = msg;
       modal.classList.remove('hidden');
 
+      const dismissModal = () => {
+        modal.classList.add('hidden');
+        sessionStorage.setItem('seenExpiryNotice_' + employee.id, 'true');
+      };
+
       const btnClose = document.getElementById('btn-close-link-expiry-modal');
       if (btnClose) {
-        btnClose.onclick = () => {
-          modal.classList.add('hidden');
-          sessionStorage.setItem('seenExpiryNotice_' + employee.id, 'true');
-        };
+        btnClose.onclick = dismissModal;
       }
+      modal.onclick = (e) => {
+        if (e.target === modal) dismissModal();
+      };
+      // Auto-dismiss after 6s so it never blocks clock actions
+      setTimeout(dismissModal, 6000);
     }
     const toastMsg = count === 1 
       ? "⚠️ Notice: -1 point deducted — please remember to clock out on time" 

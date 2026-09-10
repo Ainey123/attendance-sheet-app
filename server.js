@@ -323,8 +323,9 @@ app.post('/api/attendance/clock-out', async (req, res) => {
   if (!employeeId) {
     return res.status(400).json({ error: 'Employee ID is required.' });
   }
+  const notes = (performanceNotes && String(performanceNotes).trim()) || 'Shift Completed';
   try {
-    const result = await db.clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image);
+    const result = await db.clockOut(employeeId, location, notes, receivedAmount, expenseAmount, image);
     res.json({ success: true, message: 'Clocked out successfully!', data: result });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
