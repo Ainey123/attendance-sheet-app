@@ -678,12 +678,6 @@ function renderEmployeePortalList(list) {
       </div>
       <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
         ${statusDot}
-        <button type="button" class="btn-delete-portal-emp"
-          title="Delete ${escapeHtml(emp.name)}"
-          style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); border-radius:4px; padding:2px 6px; font-size:0.75rem; cursor:pointer; font-weight:600;"
-          onclick="event.stopPropagation(); handleDeleteEmployee('${emp.id}', '${escapeHtml(emp.name)}')">
-          🗑️
-        </button>
       </div>
     `;
     
@@ -3679,17 +3673,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switchView('employee');
   });
 
-  // Delete Employee buttons on Employee Details views
-  const btnDeleteDetails = document.getElementById('btn-delete-employee-details');
-  if (btnDeleteDetails) {
-    btnDeleteDetails.addEventListener('click', () => {
-      if (!selectedEmployee) {
-        showToast('No employee currently selected', 'warning');
-        return;
-      }
-      handleDeleteEmployee(selectedEmployee.id, selectedEmployee.name);
-    });
-  }
+  // Delete Employee button on Admin Individual Attendance view
   const btnDeleteIndiv = document.getElementById('btn-delete-individual-emp');
   if (btnDeleteIndiv) {
     btnDeleteIndiv.addEventListener('click', () => {
