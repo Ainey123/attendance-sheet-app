@@ -236,8 +236,12 @@ module.exports = async (req, res) => {
       if (!body.location || typeof body.location.latitude !== 'number' || typeof body.location.longitude !== 'number') {
         return res.status(400).json({ success: false, error: 'Please turn on location first' });
       }
-      const result = await db.clockIn(body.employeeId, body.location);
-      return res.json({ success: true, data: result });
+      try {
+        const result = await db.clockIn(body.employeeId, body.location);
+        return res.json({ success: true, data: result });
+      } catch (err) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
     }
 
     // ── POST /admin/create-link ────────────────────────────────────────
@@ -309,9 +313,13 @@ module.exports = async (req, res) => {
     if (path === 'attendance/clock-out' && method === 'POST') {
       const body = await parseBody(req);
       const { employeeId, location, performanceNotes, receivedAmount, expenseAmount, image } = body;
-      if (performanceNotes === undefined) return res.status(400).json({ error: 'performanceNotes required' });
-      const result = await db.clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image);
-      return res.json({ success: true, data: result });
+      if (performanceNotes === undefined) return res.status(400).json({ success: false, error: 'performanceNotes required' });
+      try {
+        const result = await db.clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image);
+        return res.json({ success: true, data: result });
+      } catch (err) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
     }
 
     // ── GET /api/forms ──────────────────────────────────────────────────────

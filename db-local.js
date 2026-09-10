@@ -37,10 +37,23 @@ function generateToken() {
   return token;
 }
 
-function getLocalDateString(date = new Date()) {
-  const offset = date.getTimezoneOffset();
-  const adjustedDate = new Date(date.getTime() - (offset * 60 * 1000));
-  return adjustedDate.toISOString().split('T')[0];
+function getLocalDateString(dateInput = new Date()) {
+  try {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(d);
+  } catch (err) {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    const offset = d.getTimezoneOffset();
+    const adjustedDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return adjustedDate.toISOString().split('T')[0];
+  }
 }
 
 function isLeaveAttendanceRecord(record) {
@@ -152,7 +165,31 @@ const db = {
     return records.sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
   },
 
+  async autoCompleteOldAttendance() {
+    const today = getLocalDateString();
+    let changed = false;
+    (data.attendance || []).forEach(r => {
+      if (!r.clockOutTime && r.date && r.date < today) {
+        const autoOut = new Date(r.date + 'T23:59:59');
+        const inTime = new Date(r.clockInTime);
+        const duration = isNaN(inTime.getTime()) ? 0 : Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
+        r.clockOutTime = autoOut.toISOString();
+        r.duration = duration;
+        r.autoClockOut = true;
+        r.autoClockOutNote = 'Auto clock-out by system — employee did not manually clock out';
+        changed = true;
+
+        const emp = (data.employees || []).find(e => e.id === r.employeeId);
+        if (emp && emp.status === 'IN') {
+          emp.status = 'OUT';
+        }
+      }
+    });
+    if (changed) saveData();
+  },
+
   async getTodayAttendanceForEmployee(employeeId) {
+    await this.autoCompleteOldAttendance().catch(() => {});
     const today = getLocalDateString();
     const records = (data.attendance || [])
       .filter(r => r.employeeId === employeeId && r.date === today)
@@ -161,6 +198,8 @@ const db = {
     if (records.length === 0) return null;
     const leaveRecord = records.find(isLeaveAttendanceRecord);
     if (leaveRecord) return leaveRecord;
+    const active = records.find(r => !r.clockOutTime);
+    if (active) return active;
     return records[0];
   },
 
@@ -168,6 +207,9 @@ const db = {
     if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
       throw new Error('Please turn on location first');
     }
+
+    await this.autoCompleteOldAttendance().catch(() => {});
+
     const employee = data.employees.find(e => e.id === employeeId);
     if (!employee) throw new Error('Employee not found');
 
@@ -177,8 +219,11 @@ const db = {
       throw new Error('Employee has a leave request for today');
     }
 
-    const activeRecord = (data.attendance || []).find(r => r.employeeId === employeeId && !r.clockOutTime);
-    if (activeRecord) throw new Error('Employee is already clocked in');
+    const activeRecord = todayRecords.find(r => !r.clockOutTime);
+    if (activeRecord) throw new Error('Employee is already clocked in for today');
+
+    const completedRecord = todayRecords.find(r => r.clockOutTime);
+    if (completedRecord) throw new Error('Attendance already completed for today');
 
     const record = {
       id: generateId('att'),
@@ -200,12 +245,18 @@ const db = {
   },
 
   async clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image) {
+    await this.autoCompleteOldAttendance().catch(() => {});
+
     const employee = data.employees.find(e => e.id === employeeId);
     if (!employee) throw new Error('Employee not found');
 
     const today = getLocalDateString();
     const record = (data.attendance || []).find(r => r.employeeId === employeeId && r.date === today && !r.clockOutTime);
-    if (!record) throw new Error('Employee is not clocked in');
+    if (!record) {
+      const completedRecord = (data.attendance || []).find(r => r.employeeId === employeeId && r.date === today && r.clockOutTime);
+      if (completedRecord) throw new Error('Attendance already clocked out for today');
+      throw new Error('No active attendance session found for today.');
+    }
 
     const now = new Date();
     const inTime = new Date(record.clockInTime);

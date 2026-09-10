@@ -332,11 +332,24 @@ function initClock() {
   setInterval(updateTime, 1000);
 }
 
-// Helper: YYYY-MM-DD local format
-function getLocalDateString(date = new Date()) {
-  const offset = date.getTimezoneOffset();
-  const adjustedDate = new Date(date.getTime() - (offset * 60 * 1000));
-  return adjustedDate.toISOString().split('T')[0];
+// Helper: YYYY-MM-DD local format (in Asia/Karachi PKT timezone)
+function getLocalDateString(dateInput = new Date()) {
+  try {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(d);
+  } catch (err) {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    const offset = d.getTimezoneOffset();
+    const adjustedDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return adjustedDate.toISOString().split('T')[0];
+  }
 }
 
 function getCurrentMonthString() {
@@ -471,23 +484,55 @@ function updateClockButtonsDisabledState(disableAll = false) {
   // Location is required for clock-in (must have valid coordinates)
   const locationReady = !!(userLocation && typeof userLocation.latitude === 'number' && typeof userLocation.longitude === 'number');
 
-  if (selectedEmployee.status === 'IN') {
+  if (selectedEmployee.isCompletedToday) {
+    btnIn.disabled = true;
+    btnOut.disabled = true;
+    btnIn.title = 'Attendance completed for today';
+    btnOut.title = 'Attendance completed for today';
+  } else if (selectedEmployee.status === 'IN') {
     btnIn.disabled = true;
     btnOut.disabled = false;
+    btnIn.title = '';
+    btnOut.title = '';
   } else if (selectedEmployee.status === 'LEAVE') {
     btnIn.disabled = true;
     btnOut.disabled = true;
+    btnIn.title = 'Employee is on leave today';
+    btnOut.title = 'Employee is on leave today';
   } else {
     // Only enable clock-in when GPS location is available
     btnIn.disabled = !locationReady;
     btnOut.disabled = true;
+    btnIn.title = !locationReady ? 'Please turn on your location to clock in' : '';
+    btnOut.title = '';
   }
+}
 
-  // Update clock-in button tooltip/title to guide the user
-  if (!locationReady && selectedEmployee.status !== 'IN' && selectedEmployee.status !== 'LEAVE') {
-    btnIn.title = 'Please turn on your location to clock in';
+// Helper status badges
+function updateEmployeeStatusBadge(status, isCompletedToday = false) {
+  const badge = document.getElementById('selected-employee-status');
+  const activeShiftCard = document.getElementById('active-shift-card');
+  if (!badge) return;
+  
+  if (status === 'IN') {
+    badge.innerText = 'Clocked In';
+    badge.className = 'status-indicator status-in';
+    if (activeShiftCard) activeShiftCard.classList.remove('hidden');
+  } else if (status === 'LEAVE') {
+    badge.innerText = 'On Leave';
+    badge.className = 'status-indicator status-out';
+    if (activeShiftCard) activeShiftCard.classList.add('hidden');
+    stopShiftTimer();
+  } else if (isCompletedToday || (selectedEmployee && selectedEmployee.isCompletedToday)) {
+    badge.innerText = 'Attendance Completed Today';
+    badge.className = 'status-indicator status-out';
+    if (activeShiftCard) activeShiftCard.classList.add('hidden');
+    stopShiftTimer();
   } else {
-    btnIn.title = '';
+    badge.innerText = 'Clocked Out';
+    badge.className = 'status-indicator status-out';
+    if (activeShiftCard) activeShiftCard.classList.add('hidden');
+    stopShiftTimer();
   }
 }
 
@@ -684,6 +729,7 @@ async function loadSelectedEmployeeLogs(employeeId) {
 
     if (isLeave) {
       selectedEmployee.status = 'LEAVE';
+      selectedEmployee.isCompletedToday = false;
       updateEmployeeStatusBadge('LEAVE');
       stopShiftTimer();
       document.getElementById('shift-start-time').innerText = '-';
@@ -708,6 +754,7 @@ async function loadSelectedEmployeeLogs(employeeId) {
       `;
     } else if (isActiveShift) {
       selectedEmployee.status = 'IN';
+      selectedEmployee.isCompletedToday = false;
       updateEmployeeStatusBadge('IN');
       document.getElementById('shift-start-time').innerText = formatDateTime(record.clockInTime);
       startShiftTimer(record.clockInTime);
@@ -732,7 +779,8 @@ async function loadSelectedEmployeeLogs(employeeId) {
       `;
     } else if (record && record.clockOutTime) {
       selectedEmployee.status = 'OUT';
-      updateEmployeeStatusBadge('OUT');
+      selectedEmployee.isCompletedToday = true;
+      updateEmployeeStatusBadge('OUT', true);
       stopShiftTimer();
       document.getElementById('shift-start-time').innerText = '-';
 
@@ -756,7 +804,8 @@ async function loadSelectedEmployeeLogs(employeeId) {
       `;
     } else {
       selectedEmployee.status = 'OUT';
-      updateEmployeeStatusBadge('OUT');
+      selectedEmployee.isCompletedToday = false;
+      updateEmployeeStatusBadge('OUT', false);
       stopShiftTimer();
       document.getElementById('shift-start-time').innerText = '-';
       timeline.innerHTML = '<div class="timeline-empty">No check-ins logged today. Ready to clock in!</div>';
@@ -922,16 +971,19 @@ async function handleClockIn() {
 }
 
 async function openClockOutModal() {
-  document.getElementById('clockout-modal').classList.remove('hidden');
+  const modal = document.getElementById('clockout-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
   document.getElementById('performance-notes').value = '';
   document.getElementById('clockout-starting-balance').value = '';
-  document.getElementById('clockout-received').value = '';
-  document.getElementById('clockout-expense').value = '';
+  document.getElementById('clockout-received').value = '0';
+  document.getElementById('clockout-expense').value = '0';
   document.getElementById('clockout-balance').value = '';
   resetClockOutPhoto();
-  document.getElementById('performance-notes').focus();
   
-  // Pre-fill with today's existing values to prevent overwriting
+  const notesElem = document.getElementById('performance-notes');
+  if (notesElem) notesElem.focus();
+
   if (selectedEmployee) {
     const todayStr = getLocalDateString();
     const currentMonthStr = getCurrentMonthString();
@@ -949,16 +1001,20 @@ async function openClockOutModal() {
     } catch (err) {}
   }
   
-  await updateAutoCalculatedBalance(getLocalDateString());
+  await updateAutoCalculatedBalance(getLocalDateString()).catch(() => {});
 }
 
 function closeClockOutModal() {
-  document.getElementById('clockout-modal').classList.add('hidden');
+  const modal = document.getElementById('clockout-modal');
+  if (modal) modal.classList.add('hidden');
   resetClockOutPhoto();
 }
 
 function handleClockOut() {
-  if (!selectedEmployee) return;
+  if (!selectedEmployee) {
+    showToast('Please select an employee profile first', 'error');
+    return;
+  }
   openClockOutModal();
 }
 
@@ -966,14 +1022,12 @@ async function submitClockOutDetails(e) {
   e.preventDefault();
   if (!selectedEmployee) return;
 
-  const performanceNotes = document.getElementById('performance-notes').value.trim();
-  const receivedAmount = document.getElementById('clockout-received').value;
-  const expenseAmount = document.getElementById('clockout-expense').value;
-
+  let performanceNotes = (document.getElementById('performance-notes').value || '').trim();
   if (!performanceNotes) {
-    showToast('Performance notes are required', 'error');
-    return;
+    performanceNotes = 'Shift Completed';
   }
+  const receivedAmount = document.getElementById('clockout-received').value || 0;
+  const expenseAmount = document.getElementById('clockout-expense').value || 0;
 
   updateClockButtonsDisabledState(true);
 
@@ -990,7 +1044,8 @@ async function submitClockOutDetails(e) {
       showToast(`Clock out successful for ${selectedEmployee.name}`, 'success');
       closeClockOutModal();
       selectedEmployee.status = 'OUT';
-      updateEmployeeStatusBadge('OUT');
+      selectedEmployee.isCompletedToday = true;
+      updateEmployeeStatusBadge('OUT', true);
       await loadEmployeesList(selectedEmployee.id);
       updateClockButtonsDisabledState(false);
     } else {
@@ -998,7 +1053,7 @@ async function submitClockOutDetails(e) {
       updateClockButtonsDisabledState(false);
     }
   } catch (err) {
-    showToast('Network error during clock out', 'error');
+    showToast('Error during clock out: ' + (err.message || 'Network error'), 'error');
     updateClockButtonsDisabledState(false);
   }
 }
