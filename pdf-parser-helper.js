@@ -461,16 +461,18 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
 
     for (const line of lines) {
       if (/debit|credit|balance|withdraw|deposit|cr\b|dr\b/i.test(line.text)) {
-        line.items.forEach(item => {
-          const str = item.str.toUpperCase().trim();
-          if (/^DEBIT|^DR\b|^WITHDRAW/i.test(str)) {
-            debitXRange = { min: item.x - 30, max: item.x + 50 };
-          } else if (/^CREDIT|^CR\b|^DEPOSIT/i.test(str)) {
-            creditXRange = { min: item.x - 30, max: item.x + 50 };
-          } else if (/^BALANCE|^BAL\b/i.test(str)) {
-            balanceXRange = { min: item.x - 30, max: item.x + 80 };
-          }
-        });
+        if (Array.isArray(line.items)) {
+          line.items.forEach(item => {
+            const str = (item.str || '').toUpperCase().trim();
+            if (/^DEBIT|^DR\b|^WITHDRAW/i.test(str)) {
+              debitXRange = { min: item.x - 30, max: item.x + 50 };
+            } else if (/^CREDIT|^CR\b|^DEPOSIT/i.test(str)) {
+              creditXRange = { min: item.x - 30, max: item.x + 50 };
+            } else if (/^BALANCE|^BAL\b/i.test(str)) {
+              balanceXRange = { min: item.x - 30, max: item.x + 80 };
+            }
+          });
+        }
       }
     }
 
@@ -619,24 +621,38 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
 function parseLineNumbers(line, currentTx, debitXRange, creditXRange, balanceXRange) {
   const numberItems = [];
 
-  line.items.forEach(item => {
-    const rawStr = (item.str || '').trim();
-    // Match valid numeric amounts (e.g. 17,000.00 or 7,309,834.63 or 500)
-    if (/^-?[\d,]+(?:\.\d+)?$/.test(rawStr) || /^-?[\d,]+$/.test(rawStr)) {
-      const val = parseAmount(rawStr);
-      if (val > 0) {
-        numberItems.push({ str: rawStr, val, x: item.x, width: item.width || 0 });
-      }
-    } else {
-      const pkrMatch = rawStr.match(/(?:PKR|RS\.?|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i);
-      if (pkrMatch) {
-        const val = parseAmount(pkrMatch[1]);
+  const items = Array.isArray(line.items) ? line.items : [];
+  if (items.length > 0) {
+    items.forEach(item => {
+      const rawStr = (item.str || '').trim();
+      // Match valid numeric amounts (e.g. 17,000.00 or 7,309,834.63 or 500)
+      if (/^-?[\d,]+(?:\.\d+)?$/.test(rawStr) || /^-?[\d,]+$/.test(rawStr)) {
+        const val = parseAmount(rawStr);
         if (val > 0) {
-          numberItems.push({ str: pkrMatch[1], val, x: item.x, width: item.width || 0 });
+          numberItems.push({ str: rawStr, val, x: item.x, width: item.width || 0 });
+        }
+      } else {
+        const pkrMatch = rawStr.match(/(?:PKR|RS\.?|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i);
+        if (pkrMatch) {
+          const val = parseAmount(pkrMatch[1]);
+          if (val > 0) {
+            numberItems.push({ str: pkrMatch[1], val, x: item.x, width: item.width || 0 });
+          }
         }
       }
-    }
-  });
+    });
+  } else if (line.text) {
+    const tokens = line.text.split(/\s+/);
+    tokens.forEach((tok, idx) => {
+      const clean = tok.replace(/^(?:PKR|RS\.?)/i, '').replace(/,/g, '');
+      if (/^\d+(?:\.\d+)?$/.test(clean)) {
+        const val = parseFloat(clean);
+        if (val > 0) {
+          numberItems.push({ str: tok, val, x: 200 + idx * 60, width: 30 });
+        }
+      }
+    });
+  }
 
   if (numberItems.length === 0) return;
 
