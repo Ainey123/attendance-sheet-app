@@ -513,7 +513,7 @@ async function parseAccountsPdf(pdfInput, sourceFileName = 'accounts.pdf', sourc
           sourceFileName,
           pageNumber: pageNo,
           rawText: text,
-          items: [...line.items]
+          items: Array.isArray(line.items) ? [...line.items] : []
         };
 
         // Extract numbers from date line using coordinate positioning or inline sequence
