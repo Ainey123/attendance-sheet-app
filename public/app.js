@@ -5349,10 +5349,19 @@ function initSalaryTab() {
   if (picker) {
     const now = new Date();
     picker.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    picker.addEventListener('change', () => {
+      unsavedSalaryEdits.clear();
+      loadSalarySheet(picker.value, true);
+    });
   }
 
   const btnLoad = document.getElementById('btn-load-salary-sheet');
-  if (btnLoad) btnLoad.addEventListener('click', () => loadSalarySheet());
+  if (btnLoad) {
+    btnLoad.addEventListener('click', () => {
+      unsavedSalaryEdits.clear();
+      loadSalarySheet(null, true);
+    });
+  }
 
   const btnGenerateAll = document.getElementById('btn-generate-all-salaries');
   if (btnGenerateAll) btnGenerateAll.addEventListener('click', handleGenerateAllSalaries);
@@ -5537,10 +5546,90 @@ function initSalaryTab() {
   }
 }
 
-async function loadSalarySheet(monthOverride) {
+// Local state tracking for unsaved salary sheet edits
+// Key: `${empId}_${field}` -> { empId, field, value, updatedAt }
+const unsavedSalaryEdits = new Map();
+
+function markSalaryFieldDirty(empId, field, value) {
+  unsavedSalaryEdits.set(`${empId}_${field}`, { empId, field, value, updatedAt: Date.now() });
+}
+
+function clearSalaryFieldDirty(empId, field) {
+  unsavedSalaryEdits.delete(`${empId}_${field}`);
+}
+
+function clearEmployeeSalaryDirty(empId) {
+  for (const key of unsavedSalaryEdits.keys()) {
+    if (key.startsWith(`${empId}_`)) {
+      unsavedSalaryEdits.delete(key);
+    }
+  }
+}
+
+function hasUnsavedSalaryEdits() {
+  return unsavedSalaryEdits.size > 0;
+}
+
+window.hasUnsavedSalaryEdits = hasUnsavedSalaryEdits;
+
+// Prevent accidental page unload while editing salary sheet
+window.addEventListener('beforeunload', (e) => {
+  if (hasUnsavedSalaryEdits()) {
+    e.preventDefault();
+    e.returnValue = 'You have unsaved changes in the Salary Sheet. Are you sure you want to leave?';
+    return e.returnValue;
+  }
+});
+
+// Real-time summary cards accumulator across current rows in DOM
+function updateSalarySummaryCards() {
+  const tbody = document.getElementById('salary-table-body');
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll('tr[id^="sal-row-"]');
+  let totalEmployees = rows.length;
+  let totalNet = 0;
+  let totalExp = 0;
+
+  rows.forEach(tr => {
+    const netCell = tr.querySelector('.cell-net');
+    if (netCell) {
+      const numStr = netCell.textContent.replace(/[^0-9.-]/g, '');
+      const val = parseFloat(numStr);
+      if (!isNaN(val)) totalNet += val;
+    }
+    const expCell = tr.querySelector('.cell-expenses');
+    if (expCell) {
+      const claimedStrong = expCell.querySelector('strong');
+      const text = claimedStrong ? claimedStrong.textContent : expCell.textContent;
+      const m = text.match(/PKR\s*([\d,]+(?:\.\d+)?)/);
+      if (m) {
+        const val = parseFloat(m[1].replace(/,/g, ''));
+        if (!isNaN(val)) totalExp += val;
+      }
+    }
+  });
+
+  const salTotalEl = document.getElementById('sal-stat-total');
+  const salPayEl = document.getElementById('sal-stat-payable');
+  const salExpEl = document.getElementById('sal-stat-expenses');
+  if (salTotalEl) salTotalEl.textContent = totalEmployees;
+  if (salPayEl) salPayEl.textContent = 'PKR ' + Math.round(totalNet).toLocaleString();
+  if (salExpEl) salExpEl.textContent = 'PKR ' + Math.round(totalExp).toLocaleString();
+}
+
+window.updateSalarySummaryCards = updateSalarySummaryCards;
+
+async function loadSalarySheet(monthOverride, force = false) {
   const picker = document.getElementById('salary-month-picker');
   const month = monthOverride || (picker ? picker.value : '') || getCurrentMonthString();
   if (!month) { showToast('Please select a month first.', 'warning'); return; }
+
+  // Prevent automatic reload while admin is actively editing values
+  if (!force && hasUnsavedSalaryEdits()) {
+    console.warn('loadSalarySheet reload blocked: admin has unsaved edits in salary sheet.');
+    return;
+  }
+  unsavedSalaryEdits.clear();
   currentSalaryMonth = month;
 
   const tbody = document.getElementById('salary-table-body');
@@ -5668,7 +5757,9 @@ async function loadSalarySheet(monthOverride) {
       let statusHtml = '<span class="verif-none">—</span>';
       let approvalHtml = '<span class="verif-none">—</span>';
 
+      let bankCreditsNum = '';
       if (emp.bankCredits !== undefined && emp.bankStatus) {
+        bankCreditsNum = emp.bankCredits;
         pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">PKR ${fmtNum(emp.bankCredits)}</span>`;
         const diffVal = emp.bankDifference !== undefined ? emp.bankDifference : Math.abs(emp.bankCredits - netSalary);
         const diffColor = Math.abs(diffVal) < 1.0 ? '#4ade80' : '#fbbf24';
@@ -5686,6 +5777,7 @@ async function loadSalarySheet(monthOverride) {
       } else if (currentAccountsPdf) {
         if (verif && (verif.isFoundInPdf || verif.includedTransactionsCount > 0)) {
           const bankCredits = verif.bankCreditTotal !== undefined ? verif.bankCreditTotal : (verif.pdfExpense || 0);
+          bankCreditsNum = bankCredits;
           pdfExpHtml = `<span style="font-family:monospace; color:#6ee7b7; font-weight:600;">PKR ${fmtNum(bankCredits)}</span>`;
           const diffVal = verif.difference !== undefined ? verif.difference : Math.abs(bankCredits - netSalary);
           const diffColor = Math.abs(diffVal) < 1.0 ? '#4ade80' : '#fbbf24';
@@ -5802,6 +5894,7 @@ async function loadSalarySheet(monthOverride) {
 
       const tr = document.createElement('tr');
       tr.id = `sal-row-${emp.id}`;
+      tr.dataset.empid = emp.id;
       tr.innerHTML = `
         <td style="text-align:center; color:var(--text-muted);">${idx + 1}</td>
         <td style="font-weight:600; white-space:nowrap;">
@@ -5821,7 +5914,7 @@ async function loadSalarySheet(monthOverride) {
             <input type="number" class="salary-basic-input" data-empid="${emp.id}" data-month="${month}"
               data-regular="${regularDays}" data-sunday="${sundayDays}" data-expenses="${effectiveExpense}" data-present="${currentPresentDays}"
               value="${basicSalary > 0 ? basicSalary : ''}" placeholder="Enter Basic" min="0" />
-            <button class="salary-save-btn" data-empid="${emp.id}" data-month="${month}"
+            <button type="button" class="salary-save-btn btn-save-basic" data-empid="${emp.id}" data-month="${month}"
               onclick="handleSetBasicSalary(this)">Save</button>
           </div>
         </td>
@@ -5885,12 +5978,12 @@ async function loadSalarySheet(monthOverride) {
         <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
         <!-- Verification & Approval Columns -->
         ${bankCreditsCellHtml}
-        <td style="text-align:right; background:rgba(99,102,241,0.04);">${diffHtml}</td>
-        <td style="text-align:center; background:rgba(99,102,241,0.04);">${statusHtml}</td>
-        <td style="text-align:center; background:rgba(16,185,129,0.04);">${approvalHtml}</td>
+        <td class="cell-bank-diff" data-bankcredits="${typeof bankCreditsNum === 'number' ? bankCreditsNum : ''}" style="text-align:right; background:rgba(99,102,241,0.04);">${diffHtml}</td>
+        <td class="cell-bank-status" style="text-align:center; background:rgba(99,102,241,0.04);">${statusHtml}</td>
+        <td class="cell-sal-approval" style="text-align:center; background:rgba(16,185,129,0.04);">${approvalHtml}</td>
         <td class="no-print" style="white-space:nowrap; text-align:center;">
           <div style="display:flex; gap:4px; justify-content:center; align-items:center;">
-            <button class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
+            <button type="button" class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
               title="Recalculate from attendance">⚡ Recalc</button>
             <button type="button" class="btn btn-sm btn-delete-emp-action"
               style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); font-size:0.75rem; font-weight:600; padding:0.25rem 0.55rem; border-radius:4px; cursor:pointer;"
@@ -5901,23 +5994,52 @@ async function loadSalarySheet(monthOverride) {
       `;
       tbody.appendChild(tr);
 
-      // Real-time live input listener for basic salary typing
+      // Real-time live input listener for basic salary typing (NO auto-save or table reload on change/blur)
       const basicInput = tr.querySelector('.salary-basic-input');
+      const basicSaveBtn = tr.querySelector('.btn-save-basic');
       if (basicInput) {
-        basicInput.addEventListener('input', (e) => updateRowSalaryLive(tr, e.target.value));
-        basicInput.addEventListener('change', (e) => saveBasicSalaryFromInput(e.target));
+        basicInput.addEventListener('input', (e) => {
+          markSalaryFieldDirty(emp.id, 'basic', e.target.value);
+          updateRowSalaryLive(tr, e.target.value);
+        });
+        basicInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (basicSaveBtn) basicSaveBtn.click();
+          }
+        });
       }
 
       // Real-time live input listener for present days typing
       const presentInput = tr.querySelector('.salary-present-input');
+      const presentSaveBtn = tr.querySelector('.btn-save-present');
       if (presentInput) {
-        presentInput.addEventListener('input', () => updateRowSalaryLive(tr));
+        presentInput.addEventListener('input', (e) => {
+          markSalaryFieldDirty(emp.id, 'present', e.target.value);
+          updateRowSalaryLive(tr);
+        });
+        presentInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (presentSaveBtn) presentSaveBtn.click();
+          }
+        });
       }
 
       // Real-time live input listener for sunday bonus typing
       const sundayInput = tr.querySelector('.salary-sunday-input');
+      const sundaySaveBtn = tr.querySelector('.btn-save-sunday');
       if (sundayInput) {
-        sundayInput.addEventListener('input', () => updateRowSalaryLive(tr));
+        sundayInput.addEventListener('input', (e) => {
+          markSalaryFieldDirty(emp.id, 'sunday', e.target.value);
+          updateRowSalaryLive(tr);
+        });
+        sundayInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (sundaySaveBtn) sundaySaveBtn.click();
+          }
+        });
       }
     });
 
@@ -6841,7 +6963,21 @@ async function handleConfirmSalaryApproval() {
       showToast(`✅ Salary approved for ${emp ? emp.name : 'employee'}: PKR ${amt.toLocaleString()}`, 'success');
       const modal = document.getElementById('modal-salary-approval');
       if (modal) modal.classList.add('hidden');
-      await loadSalarySheet(currentSalaryMonth);
+      window.currentFinalizedSalaryReport = null;
+      const tr = document.getElementById(`sal-row-${currentApprovingEmployeeId}`);
+      if (tr) {
+        const apprTd = tr.querySelector('.cell-sal-approval');
+        if (apprTd) {
+          apprTd.innerHTML = `
+            <button type="button" class="btn btn-sm" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.4); font-size:0.75rem; font-weight:700; padding:0.25rem 0.55rem; border-radius:4px; cursor:pointer;"
+              onclick="openSalaryApprovalModal('${currentApprovingEmployeeId}')" title="Approved PKR ${amt.toLocaleString()}">
+              ✅ PKR ${amt.toLocaleString()}
+            </button>
+          `;
+        }
+      } else {
+        await loadSalarySheet(currentSalaryMonth, true);
+      }
     } else {
       showToast((res && res.error) || 'Failed to approve salary', 'error');
     }
@@ -6873,7 +7009,21 @@ async function handleRevokeSalaryApproval() {
       showToast(`Approval revoked for ${empName}.`, 'info');
       const modal = document.getElementById('modal-salary-approval');
       if (modal) modal.classList.add('hidden');
-      await loadSalarySheet(currentSalaryMonth);
+      window.currentFinalizedSalaryReport = null;
+      const tr = document.getElementById(`sal-row-${currentApprovingEmployeeId}`);
+      if (tr) {
+        const apprTd = tr.querySelector('.cell-sal-approval');
+        if (apprTd) {
+          apprTd.innerHTML = `
+            <button type="button" class="btn btn-sm" style="background:#10b981; color:#fff; font-size:0.75rem; font-weight:600; padding:0.25rem 0.55rem; border-radius:4px; border:none; cursor:pointer;"
+              onclick="openSalaryApprovalModal('${currentApprovingEmployeeId}')" title="Review & Approve Salary for ${escapeHtml(empName)}">
+              🛡️ Approve
+            </button>
+          `;
+        }
+      } else {
+        await loadSalarySheet(currentSalaryMonth, true);
+      }
     } else {
       showToast((res && res.error) || 'Failed to revoke approval', 'error');
     }
@@ -6884,6 +7034,7 @@ async function handleRevokeSalaryApproval() {
 
 // Live recalculation as admin types basic salary, present days, or Sunday bonus
 function updateRowSalaryLive(tr, basicVal) {
+  if (!tr) return;
   const basicInput = tr.querySelector('.salary-basic-input');
   if (!basicInput) return;
   const basic = (basicVal !== undefined ? parseFloat(basicVal) : parseFloat(basicInput.value)) || 0;
@@ -6921,6 +7072,19 @@ function updateRowSalaryLive(tr, basicVal) {
     cellNet.textContent = netSalary.toLocaleString();
     cellNet.className = 'cell-net ' + (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative');
   }
+
+  // Update bank difference cell if present
+  const cellBankDiff = tr.querySelector('.cell-bank-diff');
+  if (cellBankDiff && cellBankDiff.dataset.bankcredits !== undefined && cellBankDiff.dataset.bankcredits !== '') {
+    const bankCredits = parseFloat(cellBankDiff.dataset.bankcredits) || 0;
+    const diffVal = Math.abs(bankCredits - netSalary);
+    const diffColor = diffVal < 1.0 ? '#4ade80' : '#fbbf24';
+    const diffDir = bankCredits > netSalary ? '+B ' : (netSalary > bankCredits ? '+A ' : '');
+    cellBankDiff.innerHTML = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;">${diffDir}PKR ${diffVal.toLocaleString()}</span>`;
+  }
+
+  // Update summary cards live
+  updateSalarySummaryCards();
 }
 
 async function handleSaveSundayBonus(empId, month, btn) {
@@ -6942,7 +7106,23 @@ async function handleSaveSundayBonus(empId, month, btn) {
     const res = await API.setManualSundayBonus(empId, month, val);
     if (res && res.success) {
       showToast(`✅ Sunday bonus saved (PKR ${val.toLocaleString()})! Salary recalculated.`, 'success');
-      await loadSalarySheet(month);
+      clearSalaryFieldDirty(empId, 'sunday');
+      window.currentFinalizedSalaryReport = null;
+
+      if (tr) {
+        const badgeContainer = tr.querySelector('.sunday-badge-container');
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="badge-manual" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); border-radius:4px; padding:1px 5px; font-weight:600;" title="Edited by Admin">✏️ Manual</span>
+            <button type="button" class="btn-reset-sunday" 
+              onclick="handleResetSundayBonus('${empId}', '${month}', this)"
+              style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; cursor:pointer; text-decoration:underline; padding:0;"
+              title="Reset to auto-calculated Sunday bonus">↺ Reset</button>
+          `;
+        }
+        input.value = val;
+        updateRowSalaryLive(tr);
+      }
     } else {
       showToast((res && res.error) || 'Failed to save Sunday bonus', 'error');
     }
@@ -6958,6 +7138,10 @@ async function handleSaveSundayBonus(empId, month, btn) {
 
 async function handleResetSundayBonus(empId, month, btn) {
   if (!confirm('Reset Sunday Bonus to auto-calculated value? This will remove the manual override.')) return;
+  const tr = document.getElementById(`sal-row-${empId}`);
+  const input = tr ? tr.querySelector('.salary-sunday-input') : document.querySelector(`.salary-sunday-input[data-empid="${empId}"]`);
+  if (!input) return;
+
   if (btn) {
     btn.disabled = true;
     btn.textContent = '...';
@@ -6966,7 +7150,20 @@ async function handleResetSundayBonus(empId, month, btn) {
     const res = await API.resetManualSundayBonus(empId, month);
     if (res && res.success) {
       showToast('↺ Reset to auto-calculated Sunday bonus!', 'success');
-      await loadSalarySheet(month);
+      clearSalaryFieldDirty(empId, 'sunday');
+      window.currentFinalizedSalaryReport = null;
+
+      const autoVal = parseFloat(input.dataset.auto) || 0;
+      input.value = autoVal;
+      if (tr) {
+        const badgeContainer = tr.querySelector('.sunday-badge-container');
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="badge-auto" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 5px; font-weight:500;">🤖 Auto</span>
+          `;
+        }
+        updateRowSalaryLive(tr);
+      }
     } else {
       showToast((res && res.error) || 'Failed to reset Sunday bonus', 'error');
     }
@@ -6999,7 +7196,23 @@ async function handleSavePresentDays(empId, month, btn) {
     const res = await API.setManualPresentDays(empId, month, val);
     if (res && res.success) {
       showToast(`✅ Present days saved (${val} days)! Salary recalculated.`, 'success');
-      await loadSalarySheet(month);
+      clearSalaryFieldDirty(empId, 'present');
+      window.currentFinalizedSalaryReport = null;
+
+      if (tr) {
+        const badgeContainer = tr.querySelector('.present-badge-container');
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="badge-manual" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); border-radius:4px; padding:1px 5px; font-weight:600;" title="Edited by Admin">✏️ Manual</span>
+            <button type="button" class="btn-reset-present" 
+              onclick="handleResetPresentDays('${empId}', '${month}', this)"
+              style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; cursor:pointer; text-decoration:underline; padding:0;"
+              title="Reset to auto-calculated attendance">↺ Reset</button>
+          `;
+        }
+        input.value = val;
+        updateRowSalaryLive(tr);
+      }
     } else {
       showToast((res && res.error) || 'Failed to save present days', 'error');
     }
@@ -7015,6 +7228,10 @@ async function handleSavePresentDays(empId, month, btn) {
 
 async function handleResetPresentDays(empId, month, btn) {
   if (!confirm('Reset Present Days to auto-calculated attendance? This will remove the manual override.')) return;
+  const tr = document.getElementById(`sal-row-${empId}`);
+  const input = tr ? tr.querySelector('.salary-present-input') : document.querySelector(`.salary-present-input[data-empid="${empId}"]`);
+  if (!input) return;
+
   if (btn) {
     btn.disabled = true;
     btn.textContent = '...';
@@ -7023,7 +7240,20 @@ async function handleResetPresentDays(empId, month, btn) {
     const res = await API.resetManualPresentDays(empId, month);
     if (res && res.success) {
       showToast('↺ Reset to auto-calculated attendance!', 'success');
-      await loadSalarySheet(month);
+      clearSalaryFieldDirty(empId, 'present');
+      window.currentFinalizedSalaryReport = null;
+
+      const autoDays = parseFloat(input.dataset.auto) || 0;
+      input.value = autoDays;
+      if (tr) {
+        const badgeContainer = tr.querySelector('.present-badge-container');
+        if (badgeContainer) {
+          badgeContainer.innerHTML = `
+            <span class="badge-auto" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 5px; font-weight:500;">🤖 Auto</span>
+          `;
+        }
+        updateRowSalaryLive(tr);
+      }
     } else {
       showToast((res && res.error) || 'Failed to reset present days', 'error');
     }
@@ -7048,7 +7278,7 @@ async function handleArchiveSalaryEmployee(empId, empName, month) {
     const res = await API.archiveSalaryEmployee(empId);
     if (res && res.success) {
       showToast(`🗑 Employee "${empName}" removed from Salary Sheet.`, 'success');
-      await loadSalarySheet(month);
+      await loadSalarySheet(month, true);
     } else {
       showToast((res && res.error) || 'Failed to archive employee', 'error');
     }
@@ -7057,31 +7287,28 @@ async function handleArchiveSalaryEmployee(empId, empName, month) {
   }
 }
 
-async function saveBasicSalaryFromInput(input) {
-  const empId = input.dataset.empid;
-  const month = input.dataset.month;
-  const value = parseFloat(input.value) || 0;
-  if (!empId || !month) return;
-  try {
-    await API.setSalaryBasic(empId, month, value);
-  } catch (err) {
-    console.error('Auto-save basic salary error:', err);
-  }
-}
-
 async function handleSetBasicSalary(btn) {
   const empId = btn.dataset.empid;
   const month = btn.dataset.month;
-  const input = btn.parentElement.querySelector('.salary-basic-input');
-  const value = parseFloat(input.value) || 0;
+  const tr = document.getElementById(`sal-row-${empId}`) || btn.closest('tr');
+  const input = tr ? tr.querySelector('.salary-basic-input') : btn.parentElement.querySelector('.salary-basic-input');
+  const value = parseFloat(input ? input.value : 0) || 0;
   if (!empId || !month) return;
 
   btn.disabled = true;
   btn.textContent = '...';
   try {
-    await API.setSalaryBasic(empId, month, value);
-    showToast('Basic salary saved & auto-calculated!', 'success');
-    await loadSalarySheet(month);
+    const res = await API.setSalaryBasic(empId, month, value);
+    if (res && res.success !== false) {
+      showToast(`✅ Basic salary saved (PKR ${value.toLocaleString()})!`, 'success');
+      clearSalaryFieldDirty(empId, 'basic');
+      window.currentFinalizedSalaryReport = null;
+      if (tr) {
+        updateRowSalaryLive(tr, value);
+      }
+    } else {
+      showToast((res && res.error) || 'Failed to save basic salary', 'error');
+    }
   } catch (err) {
     showToast('Failed to save basic salary: ' + err.message, 'error');
   } finally {
@@ -7091,13 +7318,70 @@ async function handleSetBasicSalary(btn) {
 }
 
 async function handleGenerateSingleSalary(empId, month) {
+  const tr = document.getElementById(`sal-row-${empId}`);
   try {
-    showToast('Generating salary...', 'info');
-    await API.generateSalary(empId, month);
-    await loadSalarySheet(month);
-    showToast('Salary generated!', 'success');
+    showToast('Recalculating employee salary...', 'info');
+    const res = await API.generateSalary(empId, month);
+    if (res && res.success && res.salary) {
+      const sal = res.salary;
+      if (tr) {
+        const basicInput = tr.querySelector('.salary-basic-input');
+        if (basicInput) {
+          basicInput.value = sal.basicSalary || '';
+          basicInput.dataset.regular = sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0);
+          basicInput.dataset.sunday = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
+          basicInput.dataset.expenses = sal.totalExpenses || 0;
+        }
+        const presentInput = tr.querySelector('.salary-present-input');
+        if (presentInput) {
+          const autoDays = sal.autoPresentDays !== undefined ? sal.autoPresentDays : (sal.presentDays || 0);
+          presentInput.dataset.auto = autoDays;
+          presentInput.value = sal.presentDays !== undefined ? sal.presentDays : autoDays;
+          const presentBadge = tr.querySelector('.present-badge-container');
+          if (presentBadge) {
+            if (sal.isManualPresentDays) {
+              presentBadge.innerHTML = `
+                <span class="badge-manual" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); border-radius:4px; padding:1px 5px; font-weight:600;">✏️ Manual</span>
+                <button type="button" class="btn-reset-present" 
+                  onclick="handleResetPresentDays('${empId}', '${month}', this)"
+                  style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; cursor:pointer; text-decoration:underline; padding:0;"
+                  title="Reset to auto-calculated attendance">↺ Reset</button>
+              `;
+            } else {
+              presentBadge.innerHTML = `<span class="badge-auto" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 5px; font-weight:500;">🤖 Auto</span>`;
+            }
+          }
+        }
+        const sundayInput = tr.querySelector('.salary-sunday-input');
+        if (sundayInput) {
+          const autoBonus = sal.autoSundayBonus !== undefined ? sal.autoSundayBonus : 0;
+          sundayInput.dataset.auto = autoBonus;
+          sundayInput.value = sal.sundayBonus !== undefined ? sal.sundayBonus : autoBonus;
+          const sundayBadge = tr.querySelector('.sunday-badge-container');
+          if (sundayBadge) {
+            if (sal.isManualSundayBonus) {
+              sundayBadge.innerHTML = `
+                <span class="badge-manual" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); border-radius:4px; padding:1px 5px; font-weight:600;">✏️ Manual</span>
+                <button type="button" class="btn-reset-sunday" 
+                  onclick="handleResetSundayBonus('${empId}', '${month}', this)"
+                  style="background:none; border:none; color:#a5b4fc; font-size:0.72rem; cursor:pointer; text-decoration:underline; padding:0;"
+                  title="Reset to auto-calculated Sunday bonus">↺ Reset</button>
+              `;
+            } else {
+              sundayBadge.innerHTML = `<span class="badge-auto" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 5px; font-weight:500;">🤖 Auto</span>`;
+            }
+          }
+        }
+        clearEmployeeSalaryDirty(empId);
+        window.currentFinalizedSalaryReport = null;
+        updateRowSalaryLive(tr);
+      }
+      showToast('⚡ Salary recalculated!', 'success');
+    } else {
+      await loadSalarySheet(month, true);
+    }
   } catch (err) {
-    showToast('Failed to generate salary: ' + err.message, 'error');
+    showToast('Failed to recalculate salary: ' + err.message, 'error');
   }
 }
 
@@ -7643,8 +7927,25 @@ async function submitExpenseVerification() {
 
     if (res && res.success) {
       showToast(`✓ Expense verified by ${adminName}: PKR ${amt.toLocaleString()}`, 'success');
+      const verifiedId = currentExpVerifyEmpId;
       closeExpenseVerifyModal();
-      await loadSalarySheet(currentSalaryMonth);
+      window.currentFinalizedSalaryReport = null;
+      const tr = document.getElementById(`sal-row-${verifiedId}`);
+      if (tr) {
+        const basicInput = tr.querySelector('.salary-basic-input');
+        if (basicInput) basicInput.dataset.expenses = amt;
+        const verifyBtn = tr.querySelector('.cell-expenses button[onclick*="openExpenseVerifyModal"]');
+        if (verifyBtn) {
+          verifyBtn.style.background = 'rgba(59,130,246,0.18)';
+          verifyBtn.style.color = '#60a5fa';
+          verifyBtn.style.border = '1px solid rgba(59,130,246,0.5)';
+          verifyBtn.style.fontWeight = '700';
+          verifyBtn.textContent = `✓ Ver: ${amt.toLocaleString()}`;
+        }
+        updateRowSalaryLive(tr);
+      } else {
+        await loadSalarySheet(currentSalaryMonth, true);
+      }
     } else {
       showToast((res && res.error) || 'Failed to verify expense', 'error');
     }
@@ -7790,8 +8091,25 @@ async function submitExpenseApproval() {
 
     if (res && res.success) {
       showToast(`🛡️ Expense approved by ${seniorName}: PKR ${amt.toLocaleString()}`, 'success');
+      const approvedId = currentExpApproveEmpId;
       closeExpenseApproveModal();
-      await loadSalarySheet(currentSalaryMonth);
+      window.currentFinalizedSalaryReport = null;
+      const tr = document.getElementById(`sal-row-${approvedId}`);
+      if (tr) {
+        const basicInput = tr.querySelector('.salary-basic-input');
+        if (basicInput) basicInput.dataset.expenses = amt;
+        const approveBtn = tr.querySelector('.cell-expenses button[onclick*="openExpenseApproveModal"]');
+        if (approveBtn) {
+          approveBtn.style.background = 'rgba(16,185,129,0.18)';
+          approveBtn.style.color = '#34d399';
+          approveBtn.style.border = '1px solid rgba(16,185,129,0.5)';
+          approveBtn.style.fontWeight = '700';
+          approveBtn.textContent = `✅ Appr: ${amt.toLocaleString()}`;
+        }
+        updateRowSalaryLive(tr);
+      } else {
+        await loadSalarySheet(currentSalaryMonth, true);
+      }
     } else {
       showToast((res && res.error) || 'Failed to approve expense', 'error');
     }
@@ -8639,4 +8957,7 @@ window.confirmDeleteEmployeeModal = confirmDeleteEmployeeModal;
 window.handleArchiveSalaryEmployee = handleArchiveSalaryEmployee;
 window.exportSalarySheetCSV = exportSalarySheetCSV;
 window.updateRowSalaryLive = updateRowSalaryLive;
+window.handleSetBasicSalary = handleSetBasicSalary;
+window.updateSalarySummaryCards = updateSalarySummaryCards;
+window.hasUnsavedSalaryEdits = hasUnsavedSalaryEdits;
 
