@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>August 2026 - Employee Bank Statement Transfers & Claims Summary</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 8mm 10mm;
+    }
+    @media print {
+      body { background: #fff !important; color: #000 !important; font-size: 9pt; }
+      .no-print { display: none !important; }
+      .emp-card { break-inside: avoid; border: 1px solid #cbd5e1 !important; background: #fff !important; color: #000 !important; margin-bottom: 12px !important; }
+      .emp-head { background: #1e293b !important; color: #fff !important; -webkit-print-color-adjust: exact; }
+      .summary-box { background: #f8fafc !important; border-color: #cbd5e1 !important; color: #000 !important; }
+      th { background: #e2e8f0 !important; color: #000 !important; }
+      td { border-color: #cbd5e1 !important; color: #000 !important; }
+    }
+    * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; margin: 0; padding: 15px; font-size: 12px; line-height: 1.35; }
+    .container { max-width: 1000px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    
+    .print-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #0f172a; padding: 10px 15px; border-radius: 8px; border: 1px solid #334155; }
+    .btn-print { background: #4f46e5; color: #fff; border: none; padding: 8px 16px; font-weight: 700; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-print:hover { background: #4338ca; }
+
+    .header-box { text-align: center; border-bottom: 2px solid #334155; padding-bottom: 12px; margin-bottom: 15px; }
+    .header-box h1 { margin: 0; color: #818cf8; font-size: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .header-box h2 { margin: 4px 0 2px 0; color: #f8fafc; font-size: 15px; font-weight: 600; }
+    .header-box p { margin: 0; color: #94a3b8; font-size: 11.5px; }
+
+    .grand-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+    .g-item { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 10px; text-align: center; }
+    .g-item .val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+    .g-item .lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .emp-card { border: 1px solid #334155; border-radius: 8px; margin-bottom: 14px; overflow: hidden; background: #1e293b; }
+    .emp-head { background: linear-gradient(135deg, #1e1b4b, #312e81); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4338ca; }
+    .emp-name { font-size: 15px; font-weight: 700; color: #fff; }
+    
+    .summary-box { background: #0f172a; padding: 8px 14px; display: flex; justify-content: space-around; border-bottom: 1px solid #334155; font-size: 11.5px; }
+    .s-box-item strong { display: block; font-size: 13px; margin-top: 1px; }
+
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { background: #0f172a; color: #94a3b8; padding: 7px 10px; font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #334155; }
+    td { padding: 7px 10px; border-bottom: 1px solid #334155; font-size: 11.5px; vertical-align: middle; }
+    tr:nth-child(even) { background: rgba(15, 23, 42, 0.3); }
+
+    .badge-debit { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 11px; }
+    .tag-bank { background: #334155; color: #cbd5e1; padding: 2px 5px; border-radius: 3px; font-size: 9.5px; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="print-bar no-print">
+      <span style="font-weight: 600; color: #a5b4fc;">📄 August 2026 Bank Statements & Claim Summary Report</span>
+      <button onclick="window.print()" class="btn-print">
+        🖨️ Print / Save Small PDF
+      </button>
+    </div>
+
+    <div class="header-box">
+      <h1>Fast Engineering Solutions</h1>
+      <h2>AUGUST 2026 — EMPLOYEE BANK STATEMENT TRANSFERS & CLAIMS SUMMARY</h2>
+      <p>Source: UBL Account #2121-317846744 & Bank Alfalah Account #00761007345220 PDF Statements</p>
+    </div>
+
+    <div class="grand-summary">
+      <div class="g-item">
+        <div class="lbl">Total Bank Paid (PDFs)</div>
+        <div class="val" style="color: #f87171;">PKR 876,997</div>
+      </div>
+      <div class="g-item">
+        <div class="lbl">Total App Claims</div>
+        <div class="val" style="color: #38bdf8;">PKR 248,798</div>
+      </div>
+      <div class="g-item">
+        <div class="lbl">Net Surplus Difference</div>
+        <div class="val" style="color: #34d399;">
+          +PKR 628,199
+        </div>
+      </div>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">1. Ali Shehzad (Bank Account: Ali Shahzad)</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">5 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 89,500</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 0</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 89,500 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>04-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 40,000</span></td>
+            <td>RAAST P2P FT TO ALI SHAHZAD JAZZCASH (MSGID: UBL040826105127346-541407)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>14-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO ALI SHAHZAD JAZZCASH (MSGID: UBL140826123658155-928004)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>24-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD TAUSEEF JAZZCASH (MSGID: UBL240826122345944936804)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>29-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,500</span></td>
+            <td>RAAST P2P FT TO ALI SHAHZAD JAZZCASH (MSGID: UBL290826033026518-593897)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>31-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 40,000</span></td>
+            <td>RAAST P2P FT TO ALI SHAHZAD JAZZCASH (MSGID: UBL310826064838545-296214)</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">2. Asif Rashid (Bank Account: Asif Rasheed / Sharafat Ali)</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">12 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 137,128</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 46,730</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 90,398 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>01-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 8,040</span></td>
+            <td>RAAST P2P FT TO SHARAFAT ALI JAZZCASH (MSGID: UBL010826073551790-085586)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>03-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL030826110425182-733824)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>04-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 30,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL040826105214938-761134)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>09-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL090826103443775-050087)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 27,088</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL120826021050194-033002)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>13-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 20,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL130826051611913439163)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>16-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL160826080605276-486443)</td>
+          </tr>
+
+          <tr>
+            <td><strong>8</strong></td>
+            <td><strong>19-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 15,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL190826090011313-902731)</td>
+          </tr>
+
+          <tr>
+            <td><strong>9</strong></td>
+            <td><strong>21-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL210826065943230-128093)</td>
+          </tr>
+
+          <tr>
+            <td><strong>10</strong></td>
+            <td><strong>28-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL280826100610224-567457)</td>
+          </tr>
+
+          <tr>
+            <td><strong>11</strong></td>
+            <td><strong>28-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO ASIF RASHEED JAZZCASH (MSGID: UBL280826074254338-911003)</td>
+          </tr>
+
+          <tr>
+            <td><strong>12</strong></td>
+            <td><strong>05-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To SHARAFAT ALI - JazzCash/Mobilink</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">3. Muhammad Ali</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">11 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 46,000</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 55,200</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #f87171;">
+            PKR -9,200 (Pending Claim)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>03-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 1,500</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI HASSAN JAZZCASH (MSGID: UBL030826031927494313763)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>05-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 500</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI HASSAN JAZZCASH (MSGID: UBL050826014604510786974)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>13-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL130826041239644-789000)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>13-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL130826042616386-487449)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>20-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI HASSAN JAZZCASH (MSGID: UBL200826115444903236507)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>20-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL200826090340976-936443)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>22-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL220826063743159-612702)</td>
+          </tr>
+
+          <tr>
+            <td><strong>8</strong></td>
+            <td><strong>25-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL250826085452735-044151)</td>
+          </tr>
+
+          <tr>
+            <td><strong>9</strong></td>
+            <td><strong>27-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL270826040913145-853971)</td>
+          </tr>
+
+          <tr>
+            <td><strong>10</strong></td>
+            <td><strong>29-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ALI JAZZCASH (MSGID: UBL290826035547435-042469)</td>
+          </tr>
+
+          <tr>
+            <td><strong>11</strong></td>
+            <td><strong>07-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To MUHAMMAD ALI - JazzCash/Mobilink</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">4. Muhammad Asif</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">16 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 98,372</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 36,750</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 61,622 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>01-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL010826055816817-031424)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>01-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF JAZZCASH (MSGID: UBL010826084709708-280648)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>04-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF JAZZCASH (MSGID: UBL040826110857945-722788)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>06-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL060826010715612-280476)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>06-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL060826020924005-016629)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>10-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL100826032714287-225279)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 25,872</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL120826021210019-890855)</td>
+          </tr>
+
+          <tr>
+            <td><strong>8</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 15,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF JAZZCASH (MSGID: UBL120826025419735-452905)</td>
+          </tr>
+
+          <tr>
+            <td><strong>9</strong></td>
+            <td><strong>13-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL130826011612622-764288)</td>
+          </tr>
+
+          <tr>
+            <td><strong>10</strong></td>
+            <td><strong>16-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL160826033324253-613339)</td>
+          </tr>
+
+          <tr>
+            <td><strong>11</strong></td>
+            <td><strong>18-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL180826093611934-157476)</td>
+          </tr>
+
+          <tr>
+            <td><strong>12</strong></td>
+            <td><strong>20-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL200826041802606-161652)</td>
+          </tr>
+
+          <tr>
+            <td><strong>13</strong></td>
+            <td><strong>20-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,500</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF JAZZCASH (MSGID: UBL200826042652583-533898)</td>
+          </tr>
+
+          <tr>
+            <td><strong>14</strong></td>
+            <td><strong>24-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL240826040800940-052746)</td>
+          </tr>
+
+          <tr>
+            <td><strong>15</strong></td>
+            <td><strong>28-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA (MSGID: UBL280826050451716-239439)</td>
+          </tr>
+
+          <tr>
+            <td><strong>16</strong></td>
+            <td><strong>07-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To MUHAMMAD ASIF - Easypaisa/Telenor</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">5. Muhammad Danish</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">7 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 85,000</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 3,080</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 81,920 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>01-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL010826125823312120455)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>03-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL030826031751878650261)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>03-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL030826072853341196048)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>06-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL060826101633519723960)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>11-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL110826113119794460731)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 41,650</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL120826020922959297043)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>24-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 13,350</span></td>
+            <td>RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA (MSGID: UBL240826070052617428925)</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">6. Muhammad Faisal (Bank Account: FES Faisal Elec Veha)</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">11 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 110,984</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 70,670</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 40,314 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>06-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL060826101726444-939774)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>08-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL080826095305870726228)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 27,984</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL120826020809454932092)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>17-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL170826071112998-271350)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>20-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL200826043453817-781735)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>22-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL220826050743518-826135)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>23-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 30,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL230826063156106-961425)</td>
+          </tr>
+
+          <tr>
+            <td><strong>8</strong></td>
+            <td><strong>24-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL240826070245755-430002)</td>
+          </tr>
+
+          <tr>
+            <td><strong>9</strong></td>
+            <td><strong>28-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL280826084837383-506281)</td>
+          </tr>
+
+          <tr>
+            <td><strong>10</strong></td>
+            <td><strong>29-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL290826040159266767074)</td>
+          </tr>
+
+          <tr>
+            <td><strong>11</strong></td>
+            <td><strong>31-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH (MSGID: UBL310826020810514-370808)</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">7. Muhammad Ibrahim</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">1 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 48,273</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 0</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 48,273 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>27-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 48,273</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To MUHAMMAD IBRAHIM - Meezan Bank Limited</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">8. Muhammad Imran</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">1 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 3,000</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 0</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 3,000 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>24-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To MUHAMMAD IMRAN - Easypaisa/Telenor</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">9. Muhammad Rafeeq</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">1 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 2,100</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 0</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 2,100 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>25-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 2,100</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To MUHAMMAD RAFEEQ - JazzCash/Mobilink</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">10. Rehman Ali</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">9 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 158,000</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 18,780</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 139,220 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>02-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>03-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 50,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>09-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 15,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>09-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 50,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>14-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>21-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>8</strong></td>
+            <td><strong>29-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 20,000</span></td>
+            <td>UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374)</td>
+          </tr>
+
+          <tr>
+            <td><strong>9</strong></td>
+            <td><strong>07-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To REHMAN ALI - United Bank Limited</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">11. Sajid Ali</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">1 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 1,640</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 0</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 1,640 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>05-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 1,640</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To SAJID ALI - JazzCash/Mobilink</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">12. Sarmad Islam (Bank Account: Hafiz Muhammad Islam)</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">11 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 66,200</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 17,588</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 48,612 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>01-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL010826051523940084539)</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>12-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 25,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL120826081430886950062)</td>
+          </tr>
+
+          <tr>
+            <td><strong>3</strong></td>
+            <td><strong>14-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL140826123835002090513)</td>
+          </tr>
+
+          <tr>
+            <td><strong>4</strong></td>
+            <td><strong>17-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 3,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL170826071521764421139)</td>
+          </tr>
+
+          <tr>
+            <td><strong>5</strong></td>
+            <td><strong>20-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL200826052506470579138)</td>
+          </tr>
+
+          <tr>
+            <td><strong>6</strong></td>
+            <td><strong>21-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 1,500</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL210826115518370053889)</td>
+          </tr>
+
+          <tr>
+            <td><strong>7</strong></td>
+            <td><strong>21-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL210826125439074648741)</td>
+          </tr>
+
+          <tr>
+            <td><strong>8</strong></td>
+            <td><strong>21-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 11,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL210826032431224143064)</td>
+          </tr>
+
+          <tr>
+            <td><strong>9</strong></td>
+            <td><strong>22-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 2,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL220826122618287928993)</td>
+          </tr>
+
+          <tr>
+            <td><strong>10</strong></td>
+            <td><strong>22-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 5,000</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL220826033309188577826)</td>
+          </tr>
+
+          <tr>
+            <td><strong>11</strong></td>
+            <td><strong>25-Aug-2026</strong></td>
+            <td><span class="tag-bank">UBL</span></td>
+            <td><span class="badge-debit">PKR 1,700</span></td>
+            <td>RAAST P2P FT TO HAFIZ MUHAMMAD ISLAM EASYPAISA (MSGID: UBL250826124845402591421)</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-head">
+        <span class="emp-name">13. Shahzaib (Bank Account: Shah Zaib Nawaz)</span>
+        <span style="font-size: 12px; color: #a5b4fc; font-weight:600;">2 Bank Transactions</span>
+      </div>
+
+      <!-- CLAIM & BANK SUMMARY BOX -->
+      <div class="summary-box">
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total Bank Transfers Paid:</span>
+          <strong style="color:#f87171;">PKR 30,800</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Total App Claims Mentioned:</span>
+          <strong style="color:#38bdf8;">PKR 0</strong>
+        </div>
+        <div class="s-box-item">
+          <span style="color:#94a3b8;">Difference (Bank - Claims):</span>
+          <strong style="color: #34d399;">
+            +PKR 30,800 (Surplus / Advance)
+          </strong>
+        </div>
+      </div>
+
+      <!-- BANK STATEMENT DEBIT TRANSACTIONS TABLE -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 14%;">Bank Date</th>
+            <th style="width: 14%;">Bank Source</th>
+            <th style="width: 18%;">Debit Amount</th>
+            <th style="width: 49%;">Transaction Details & Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>1</strong></td>
+            <td><strong>13-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 10,000</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To SHAH ZAIB NAWAZ - Easypaisa/Telenor</td>
+          </tr>
+
+          <tr>
+            <td><strong>2</strong></td>
+            <td><strong>19-Aug-2026</strong></td>
+            <td><span class="tag-bank">Bank Alfalah</span></td>
+            <td><span class="badge-debit">PKR 20,800</span></td>
+            <td>IBFT From FAST ENGINEERING SOLUTIONS To SHAH ZAIB NAWAZ - Easypaisa/Telenor</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</body>
+</html>
