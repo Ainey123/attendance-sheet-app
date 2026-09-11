@@ -739,10 +739,10 @@ function matchAndVerifyExpenses(allParsedPdfsEntries, employees, appExpensesMap 
     const basicSalary = sal.basicSalary || 0;
     const regularDays = sal.regularPresentDays !== undefined ? sal.regularPresentDays : (sal.presentDays || 0);
     const sundayDays = sal.sundayPresentDays !== undefined ? sal.sundayPresentDays : 0;
-    const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
-    const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : (perDay * regularDays);
-    const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : (perDay * sundayDays);
-    const totalEarned = sal.earnedSalary !== undefined ? sal.earnedSalary : (regularEarned + sundayBonus);
+    const perDay = sal.perDaySalary !== undefined ? sal.perDaySalary : (basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0);
+    const regularEarned = sal.regularEarned !== undefined ? sal.regularEarned : Math.round(regularDays * perDay * 100) / 100;
+    const sundayBonus = sal.sundayBonus !== undefined ? sal.sundayBonus : Math.round(sundayDays * perDay * 100) / 100;
+    const totalEarned = sal.earnedSalary !== undefined ? sal.earnedSalary : Math.round((regularEarned + sundayBonus) * 100) / 100;
     
     let applicationTotal = 0;
     if (sal.netSalary !== undefined && typeof sal.netSalary === 'number') {

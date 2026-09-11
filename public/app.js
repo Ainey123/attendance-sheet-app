@@ -1570,10 +1570,13 @@ async function handleDeleteEmployee(id, name) {
         if (opt) opt.remove();
       }
 
-      // 5. If salary sheet is loaded, refresh it
-      if (currentSalaryMonth) {
-        loadSalarySheet(currentSalaryMonth).catch(() => {});
+      // 5. If salary sheet row exists, remove row in-place immediately and update summary
+      const salRow = document.getElementById(`sal-row-${id}`);
+      if (salRow) {
+        salRow.remove();
+        updateSalarySummaryCards();
       }
+      clearEmployeeSalaryDirty(id);
     } else {
       const msg = (res && res.error) ? res.error : 'Failed to delete employee';
       showToast(`Error: ${msg}`, 'error');
@@ -5596,9 +5599,11 @@ function updateSalarySummaryCards() {
   const salTotalEl = document.getElementById('sal-stat-total');
   const salPayEl = document.getElementById('sal-stat-payable');
   const salExpEl = document.getElementById('sal-stat-expenses');
+  totalNet = Math.round(totalNet * 100) / 100;
+  totalExp = Math.round(totalExp * 100) / 100;
   if (salTotalEl) salTotalEl.textContent = totalEmployees;
-  if (salPayEl) salPayEl.textContent = 'PKR ' + Math.round(totalNet).toLocaleString();
-  if (salExpEl) salExpEl.textContent = 'PKR ' + Math.round(totalExp).toLocaleString();
+  if (salPayEl) salPayEl.textContent = 'PKR ' + (totalNet % 1 !== 0 ? totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : totalNet.toLocaleString());
+  if (salExpEl) salExpEl.textContent = 'PKR ' + (totalExp % 1 !== 0 ? totalExp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : totalExp.toLocaleString());
 }
 
 window.updateSalarySummaryCards = updateSalarySummaryCards;
@@ -5696,16 +5701,17 @@ async function loadSalarySheet(monthOverride, force = false) {
       const editedAt = emp.editedAt || '';
       const totalPresentDays = currentPresentDays;
 
-      // Per day = Math.round(basic / 30)
-      const perDay = emp.perDaySalary !== undefined ? emp.perDaySalary : (basicSalary > 0 ? Math.round(basicSalary / 30) : 0);
-      const regularEarned = emp.regularEarned !== undefined ? emp.regularEarned : (perDay * regularDays);
+      // REQUIRED PAYROLL FORMULA:
+      // Per day = Math.round((basic / 30) * 100) / 100
+      const perDay = emp.perDaySalary !== undefined ? emp.perDaySalary : (basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0);
+      const regularEarned = emp.regularEarned !== undefined ? emp.regularEarned : Math.round(totalPresentDays * perDay * 100) / 100;
       const isManualSunday = Boolean(emp.isManualSundayBonus);
-      const autoSundayBonus = emp.autoSundayBonus !== undefined ? emp.autoSundayBonus : (perDay * sundayDays);
+      const autoSundayBonus = emp.autoSundayBonus !== undefined ? emp.autoSundayBonus : Math.round(sundayDays * perDay * 100) / 100;
       const currentSundayBonus = emp.sundayBonus !== undefined ? emp.sundayBonus : autoSundayBonus;
       const sundayEditedBy = emp.sundayBonusEditedBy || (emp.sundayBonusAudit && emp.sundayBonusAudit.editedBy) || 'Admin';
       const sundayEditedAt = emp.sundayBonusEditedAt || (emp.sundayBonusAudit && emp.sundayBonusAudit.editedAt) || '';
       const sundayBonus = currentSundayBonus;
-      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : (regularEarned + sundayBonus);
+      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : Math.round((regularEarned + sundayBonus) * 100) / 100;
       const expenses = emp.totalExpenses !== undefined ? emp.totalExpenses : (sal.totalExpenses !== undefined ? sal.totalExpenses : 0);
       const itemizedExpenses = emp.itemizedExpenses || [];
 
@@ -5723,13 +5729,13 @@ async function loadSalarySheet(monthOverride, force = false) {
         effectiveExpense = expVer.verifiedAmount;
       }
 
-      const netSalary = emp.netSalary !== undefined ? emp.netSalary : (earnedSalary - effectiveExpense);
+      const netSalary = emp.netSalary !== undefined ? emp.netSalary : Math.round((earnedSalary - effectiveExpense) * 100) / 100;
 
       if (typeof netSalary === 'number') totalPayable += netSalary;
       if (typeof effectiveExpense === 'number') totalExpenses += effectiveExpense;
 
       const netClass = typeof netSalary === 'number' ? (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative') : '';
-      const fmtNum = (v) => typeof v === 'number' ? v.toLocaleString() : (v !== null && v !== undefined ? v : '—');
+      const fmtNum = (v) => typeof v === 'number' ? (v % 1 !== 0 ? v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v.toLocaleString()) : (v !== null && v !== undefined ? v : '—');
 
       // Accounts PDF Verification & Admin Approval columns
       const verif = verifMap[emp.id];
@@ -7027,33 +7033,41 @@ function updateRowSalaryLive(tr, basicVal) {
   const sundayDays = parseFloat(basicInput.dataset.sunday) || 0;
   const expenses = parseFloat(basicInput.dataset.expenses) || 0;
 
-  const perDay = basic > 0 ? Math.round(basic / 30) : 0;
-  const effSunday = Math.min(sundayDays, totalPresentDays);
-  const effRegular = Math.max(0, totalPresentDays - effSunday);
-  const regularEarned = perDay * effRegular;
+  // REQUIRED PAYROLL FORMULA:
+  // PerDaySalary = MonthlySalary / 30
+  const perDay = basic > 0 ? Math.round((basic / 30) * 100) / 100 : 0;
 
+  // RegularSalary = PerDaySalary × PresentDays
+  const regularEarned = Math.round(totalPresentDays * perDay * 100) / 100;
+
+  // SundayBonus = PerDaySalary × SundayWorked
   const sundayInput = tr.querySelector('.salary-sunday-input');
   let sundayBonus = 0;
   if (sundayInput) {
     const inputVal = parseFloat(sundayInput.value);
-    sundayBonus = !isNaN(inputVal) && inputVal >= 0 ? inputVal : (perDay * effSunday);
+    sundayBonus = !isNaN(inputVal) && inputVal >= 0 ? inputVal : Math.round(sundayDays * perDay * 100) / 100;
   } else {
-    sundayBonus = perDay * effSunday;
+    sundayBonus = Math.round(sundayDays * perDay * 100) / 100;
   }
 
-  const earnedSalary = regularEarned + sundayBonus;
-  const netSalary = earnedSalary - expenses;
+  // GrossEarnedSalary = RegularSalary + SundayBonus
+  const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
+
+  // NetSalary = GrossEarnedSalary - Expenses - Deductions + Allowances
+  const netSalary = Math.round((earnedSalary - expenses) * 100) / 100;
+
+  const fmt = (v) => typeof v === 'number' ? (v % 1 !== 0 ? v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v.toLocaleString()) : '0';
 
   const cellPerDay = tr.querySelector('.cell-perday');
   const cellRegularEarned = tr.querySelector('.cell-regular-earned');
   const cellEarned = tr.querySelector('.cell-earned');
   const cellNet = tr.querySelector('.cell-net');
 
-  if (cellPerDay) cellPerDay.textContent = perDay > 0 ? perDay.toLocaleString() : '0';
-  if (cellRegularEarned) cellRegularEarned.textContent = regularEarned > 0 ? regularEarned.toLocaleString() : '0';
-  if (cellEarned) cellEarned.textContent = earnedSalary > 0 ? earnedSalary.toLocaleString() : '0';
+  if (cellPerDay) cellPerDay.textContent = fmt(perDay);
+  if (cellRegularEarned) cellRegularEarned.textContent = fmt(regularEarned);
+  if (cellEarned) cellEarned.textContent = fmt(earnedSalary);
   if (cellNet) {
-    cellNet.textContent = netSalary.toLocaleString();
+    cellNet.textContent = fmt(netSalary);
     cellNet.className = 'cell-net ' + (netSalary >= 0 ? 'net-salary-positive' : 'net-salary-negative');
   }
 
@@ -7061,10 +7075,10 @@ function updateRowSalaryLive(tr, basicVal) {
   const cellBankDiff = tr.querySelector('.cell-bank-diff');
   if (cellBankDiff && cellBankDiff.dataset.bankcredits !== undefined && cellBankDiff.dataset.bankcredits !== '') {
     const bankCredits = parseFloat(cellBankDiff.dataset.bankcredits) || 0;
-    const diffVal = Math.abs(bankCredits - netSalary);
+    const diffVal = Math.round(Math.abs(bankCredits - netSalary) * 100) / 100;
     const diffColor = diffVal < 1.0 ? '#4ade80' : '#fbbf24';
     const diffDir = bankCredits > netSalary ? '+B ' : (netSalary > bankCredits ? '+A ' : '');
-    cellBankDiff.innerHTML = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;">${diffDir}PKR ${diffVal.toLocaleString()}</span>`;
+    cellBankDiff.innerHTML = `<span style="font-family:monospace; color:${diffColor}; font-weight:700;">${diffDir}PKR ${fmt(diffVal)}</span>`;
   }
 
   // Update summary cards live

@@ -7,7 +7,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "qF3qaQwS",
-      "dateCreated": "2026-07-06T06:46:03.028+00:00"
+      "dateCreated": "2026-07-06T06:46:03.028+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T06:46:03.028Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe598_kexu1",
@@ -16,7 +22,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "EZ0VXWfo",
-      "dateCreated": "2026-07-06T07:55:49.916+00:00"
+      "dateCreated": "2026-07-06T07:55:49.916+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.916Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_wv6cc",
@@ -25,7 +37,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "LZEuSqvH",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_u3jmd",
@@ -34,7 +52,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "2ZT1NFhQ",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_wwt9c",
@@ -43,7 +67,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "qYIb6fGX",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_05phw",
@@ -52,7 +82,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "YEajgUFu",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_k8a6j",
@@ -61,7 +97,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "63iw7aYc",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_rtefg",
@@ -70,7 +112,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "TGxkBwqR",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_3btb8",
@@ -79,7 +127,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "UUkn5oym",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_jj2mr",
@@ -88,7 +142,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "AQ1HCPSZ",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_lg3sx",
@@ -97,7 +157,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "JlXla2BE",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_09g8f",
@@ -106,7 +172,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "eZq8z0Pe",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mr8xe59q_t73jb",
@@ -115,7 +187,13 @@
       "status": "OUT",
       "pin": "1234",
       "token": "Ag4nhbA0",
-      "dateCreated": "2026-07-06T07:55:49.934+00:00"
+      "dateCreated": "2026-07-06T07:55:49.934+00:00",
+      "linkExpireCount": 66,
+      "minusScore": -66,
+      "tokenCreatedAt": "2026-09-10T07:55:49.934Z",
+      "justExpired": false,
+      "expireCount": 66,
+      "expireMessage": "Notice: -66 points deducted for late clock-out (66 times)"
     },
     {
       "id": "emp_mtud50ek_s30bj",
@@ -124,7 +202,39 @@
       "status": "OUT",
       "pin": "1234",
       "token": "YUok1U2S",
-      "dateCreated": "2026-09-09T17:19:11.948Z"
+      "dateCreated": "2026-09-09T17:19:11.948Z",
+      "linkExpireCount": 1,
+      "minusScore": -1,
+      "tokenCreatedAt": "2026-09-10T17:19:11.948Z",
+      "justExpired": false,
+      "expireCount": 1,
+      "expireMessage": "Notice: -1 point deducted for late clock-out"
+    },
+    {
+      "id": "emp_mtwh9q8z_32tzq",
+      "name": "Test Deletion Target",
+      "role": "Temporary QA",
+      "status": "DELETED",
+      "pin": "1234",
+      "token": "Npkie44p",
+      "dateCreated": "2026-09-11T04:50:22.883Z",
+      "tokenCreatedAt": "2026-09-11T04:50:22.883Z",
+      "linkExpireCount": 0,
+      "minusScore": 0,
+      "isArchived": true
+    },
+    {
+      "id": "emp_mtwhtr57_wm15c",
+      "name": "Test Deletion Target",
+      "role": "Temporary QA",
+      "status": "DELETED",
+      "pin": "1234",
+      "token": "EXPIRED_1789103157221",
+      "dateCreated": "2026-09-11T05:05:57.163Z",
+      "tokenCreatedAt": "2026-09-11T05:05:57.163Z",
+      "linkExpireCount": 0,
+      "minusScore": 0,
+      "isArchived": true
     }
   ],
   "attendance": [
@@ -144,6 +254,36 @@
       "expenseAmount": 0,
       "moneySpent": 0,
       "image": null
+    },
+    {
+      "id": "att_mtwh9qdv_na2bp",
+      "employeeId": "emp_mtwh9q8z_32tzq",
+      "employeeName": "Test Deletion Target",
+      "role": "Temporary QA",
+      "date": "2026-09-11",
+      "clockInTime": "2026-09-11T04:50:22.901Z",
+      "clockOutTime": null,
+      "clockInLocation": {
+        "latitude": 31.5204,
+        "longitude": 74.3587
+      },
+      "clockOutLocation": null,
+      "duration": null
+    },
+    {
+      "id": "att_mtwhtr6e_tzy4p",
+      "employeeId": "emp_mtwhtr57_wm15c",
+      "employeeName": "Test Deletion Target",
+      "role": "Temporary QA",
+      "date": "2026-09-11",
+      "clockInTime": "2026-09-11T05:05:57.179Z",
+      "clockOutTime": null,
+      "clockInLocation": {
+        "latitude": 31.5204,
+        "longitude": 74.3587
+      },
+      "clockOutLocation": null,
+      "duration": null
     }
   ],
   "workRecords": [],
@@ -599,7 +739,7 @@
       "role": "complaint supervisor",
       "month": "2026-08",
       "basicSalary": 40000,
-      "generatedAt": "2026-09-10T10:26:00.459Z",
+      "generatedAt": "2026-09-10T10:42:45.473Z",
       "totalDaysInMonth": 31,
       "workingDays": 30,
       "regularPresentDays": 0,
@@ -699,18 +839,28 @@
       "role": "Ai engineer",
       "month": "2026-08",
       "basicSalary": 35000,
-      "generatedAt": "2026-09-10T05:37:16.632Z",
+      "generatedAt": "2026-09-10T11:11:33.451Z",
       "totalDaysInMonth": 31,
       "workingDays": 30,
-      "regularPresentDays": 0,
+      "regularPresentDays": 31,
       "sundayPresentDays": 0,
-      "presentDays": 0,
+      "presentDays": 31,
       "perDaySalary": 1167,
-      "regularEarned": 0,
+      "regularEarned": 36177,
       "sundayBonus": 0,
-      "earnedSalary": 0,
+      "earnedSalary": 36177,
       "totalExpenses": 0,
-      "netSalary": 0
+      "netSalary": 36177,
+      "autoPresentDays": 0,
+      "isManualPresentDays": true,
+      "manualPresentDays": 31,
+      "editedBy": "Admin",
+      "editedAt": "2026-09-10T11:01:47.988Z",
+      "isManualSundayBonus": false,
+      "manualSundayBonus": null,
+      "autoSundayBonus": 0,
+      "sundayBonusEditedBy": null,
+      "sundayBonusEditedAt": null
     },
     {
       "id": "sal_mtub3e5h_r1w2y",
@@ -979,18 +1129,28 @@
       "role": "operator",
       "month": "2026-08",
       "basicSalary": 35000,
-      "generatedAt": "2026-09-09T18:26:11.856Z",
+      "generatedAt": "2026-09-11T05:05:57.104Z",
       "totalDaysInMonth": 31,
       "workingDays": 30,
       "regularPresentDays": 0,
       "sundayPresentDays": 0,
       "presentDays": 0,
-      "perDaySalary": 1167,
+      "perDaySalary": 1166.67,
       "regularEarned": 0,
       "sundayBonus": 0,
       "earnedSalary": 0,
       "totalExpenses": 0,
-      "netSalary": 0
+      "netSalary": 0,
+      "autoPresentDays": 0,
+      "isManualPresentDays": false,
+      "manualPresentDays": null,
+      "editedBy": null,
+      "editedAt": null,
+      "isManualSundayBonus": false,
+      "manualSundayBonus": null,
+      "autoSundayBonus": 0,
+      "sundayBonusEditedBy": null,
+      "sundayBonusEditedAt": null
     },
     {
       "id": "sal_mtuc6y00_onq43",

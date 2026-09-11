@@ -669,8 +669,8 @@ const db = {
     });
 
     const basicSalary = Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
-    const perDay = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
-    const originalAutoSundayBonus = perDay * sundayDays;
+    const perDay = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
+    const originalAutoSundayBonus = Math.round(perDay * sundayDays * 100) / 100;
 
     const recordId = `msb_${employeeId}_${month}`;
     const nowIso = new Date().toISOString();
@@ -1084,23 +1084,24 @@ const db = {
 
     const basicSalary = salRec.basicSalary || 0;
 
-    // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day divisor per office policy)
-    const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
+    // REQUIRED PAYROLL FORMULA:
+    // PerDaySalary = MonthlySalary / 30
+    const perDaySalary = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
 
-    // Regular earned = per day × regular present days
-    const regularEarned = perDaySalary * effectiveRegularDays;
+    // RegularSalary = PerDaySalary × PresentDays
+    const regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
 
-    // Sunday bonus = manual override or auto-calculate
+    // SundayBonus = PerDaySalary × SundayWorked
     const sunOverride = manualSundayOverrides[employeeId];
     const isManualSunday = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
-    const autoSundayBonus = perDaySalary * effectiveSundayDays;
+    const autoSundayBonus = Math.round(effectiveSundayDays * perDaySalary * 100) / 100;
     const sundayBonus = isManualSunday ? sunOverride.manualSundayBonus : autoSundayBonus;
 
-    // Total earned = regular + sunday bonus
-    const earnedSalary = regularEarned + sundayBonus;
+    // GrossEarnedSalary = RegularSalary + SundayBonus
+    const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
 
-    // Net salary = earned - total clock-out expenses
-    const netSalary = earnedSalary - Math.round(totalExpenses);
+    // NetSalary = GrossEarnedSalary - Expenses - Deductions + Allowances
+    const netSalary = Math.round((earnedSalary - totalExpenses) * 100) / 100;
 
     Object.assign(salRec, {
       employeeName: emp ? emp.name : salRec.employeeName,
@@ -2123,14 +2124,22 @@ const db = {
 
       const salRec = salariesMap[empId] || {};
       const basicSalary = Number(salRec.basicSalary) || Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
-      const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
-      const regularEarned = perDaySalary * effectiveRegularDays;
 
+      // REQUIRED PAYROLL FORMULA:
+      // PerDaySalary = MonthlySalary / 30
+      const perDaySalary = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
+
+      // RegularSalary = PerDaySalary × PresentDays
+      const regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
+
+      // SundayBonus = PerDaySalary × SundayWorked
       const sunOverride = manualSundayOverrides[empId] || null;
       const isManualSundayBonus = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
-      const autoSundayBonus = perDaySalary * effectiveSundayDays;
+      const autoSundayBonus = Math.round(effectiveSundayDays * perDaySalary * 100) / 100;
       const sundayBonus = isManualSundayBonus ? sunOverride.manualSundayBonus : autoSundayBonus;
-      const earnedSalary = regularEarned + sundayBonus;
+
+      // GrossEarnedSalary = RegularSalary + SundayBonus
+      const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
 
       const itemizedExpenses = [];
       const processedExpenseKeys = new Set();
@@ -2194,7 +2203,7 @@ const db = {
         effectiveExpense = verifiedAmount;
       }
 
-      const netSalary = earnedSalary - Math.round(effectiveExpense);
+      const netSalary = Math.round((earnedSalary - effectiveExpense) * 100) / 100;
 
       const pdfVr = bankCreditsMap[empId] || null;
       const bankCredits = pdfVr ? (Number(pdfVr.bankCreditTotal) !== undefined ? Number(pdfVr.bankCreditTotal) : Number(pdfVr.pdfExpense || 0)) : 0;

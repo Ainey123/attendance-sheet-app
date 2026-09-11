@@ -22,12 +22,34 @@ if (supabaseUrl && supabaseKey) {
   // and add isArchived column if missing. Uses raw SQL via rpc if available.
   (async () => {
     try {
-      // Use supabase.rpc if the project has the exec_sql function,
-      // otherwise fall back to individual update probing.
-      // We run a benign update first — if it fails with constraint error we know
-      // the fix is needed and we apply via the REST alter approach.
-      // Note: Supabase anon key cannot run DDL directly; we run it via rpc 'exec_sql'
-      // which must exist. If not available, the fallback in deleteEmployee handles it.
+      const { data, error: pingError } = await supabase.from('employees').select('id').limit(1);
+      if (pingError) {
+        console.warn('Supabase initial ping notice:', pingError.message);
+        if (
+          pingError.message?.includes('exceed_egress_quota') ||
+          pingError.message?.includes('restricted') ||
+          pingError.message?.includes('quota') ||
+          pingError.message?.includes('Failed to fetch') ||
+          pingError.status === 402 ||
+          pingError.status === 403
+        ) {
+          console.warn('⚠️ Supabase egress quota exceeded or project restricted.');
+          if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
+            console.warn('Activating local JSON database fallback for local dev/testing.');
+            useLocalFallback = true;
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase initial connection failed:', e.message);
+      if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
+        useLocalFallback = true;
+      }
+      return;
+    }
+
+    try {
       const { error: rpcError } = await supabase.rpc('exec_sql', {
         sql: `
           ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_status_check;
@@ -70,6 +92,13 @@ if (supabaseUrl && supabaseKey) {
       });
       if (rpcError) {
         console.log('Auto-migration via rpc not available (safe to ignore):', rpcError.message);
+        if (
+          rpcError.message?.includes('exceed_egress_quota') ||
+          rpcError.message?.includes('restricted') ||
+          rpcError.message?.includes('quota')
+        ) {
+          useLocalFallback = true;
+        }
       } else {
         console.log('Auto-migration: status constraint removed, isArchived column ensured, tables ready.');
       }
@@ -150,10 +179,31 @@ function isLeaveAttendanceRecord(record) {
   return Boolean(record && String(record.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
 }
 
+function isQuotaOrNetworkError(error) {
+  if (!error) return false;
+  const msg = (error.message || String(error)).toLowerCase();
+  return (
+    msg.includes('exceed_egress_quota') ||
+    msg.includes('restricted') ||
+    msg.includes('quota') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('fetch_error') ||
+    msg.includes('service unavailable') ||
+    error.status === 402 ||
+    error.status === 403
+  );
+}
+
 // Helper function to handle Supabase errors
 function handleSupabaseError(error, operation) {
-  console.error(`Database error during ${operation}:`, error.message);
-  throw new Error(`Failed to ${operation}: ${error.message}`);
+  console.error(`Database error during ${operation}:`, error ? (error.message || error) : 'Unknown error');
+  if (isQuotaOrNetworkError(error)) {
+    if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
+      console.warn(`Supabase service error during ${operation}. Enabling local JSON database fallback for dev.`);
+      useLocalFallback = true;
+    }
+  }
+  throw new Error(`Failed to ${operation}: ${error ? (error.message || error) : 'Unknown error'}`);
 }
 
 const db = {
@@ -259,6 +309,11 @@ const db = {
       }
       return list;
     } catch (error) {
+      if (isQuotaOrNetworkError(error)) {
+        console.warn('Supabase getEmployees failed, automatically using local storage:', error.message || error);
+        useLocalFallback = true;
+        return this.getEmployees(includeArchived);
+      }
       handleSupabaseError(error, 'fetch employees');
     }
   },
@@ -597,6 +652,11 @@ const db = {
       if (error) handleSupabaseError(error, 'fetch attendance');
       return data || [];
     } catch (error) {
+      if (isQuotaOrNetworkError(error)) {
+        console.warn('Supabase getAttendance failed, automatically using local storage:', error.message || error);
+        useLocalFallback = true;
+        return this.getAttendance(filterDate);
+      }
       handleSupabaseError(error, 'fetch attendance');
     }
   },
@@ -639,6 +699,11 @@ const db = {
         .order('clockInTime', { ascending: false })
         .limit(1);
 
+      if (activeErr && isQuotaOrNetworkError(activeErr)) {
+        useLocalFallback = true;
+        return this.getTodayAttendanceForEmployee(employeeId);
+      }
+
       if (!activeErr && activeRecords && activeRecords.length > 0) {
         try {
           await supabase.from('employees').update({ status: 'IN' }).eq('id', employeeId).neq('status', 'IN');
@@ -656,6 +721,10 @@ const db = {
 
       if (error) {
         console.error('[getTodayAttendanceForEmployee] Supabase query error:', error.message);
+        if (isQuotaOrNetworkError(error)) {
+          useLocalFallback = true;
+          return this.getTodayAttendanceForEmployee(employeeId);
+        }
         return null;
       }
       if (!data || data.length === 0) {
@@ -667,6 +736,10 @@ const db = {
       return data[0];
     } catch (error) {
       console.error('[getTodayAttendanceForEmployee] Exception:', error.message);
+      if (isQuotaOrNetworkError(error)) {
+        useLocalFallback = true;
+        return this.getTodayAttendanceForEmployee(employeeId);
+      }
       return null;
     }
   },
@@ -804,6 +877,11 @@ const db = {
       if (updateError) handleSupabaseError(updateError, 'update employee status');
       return { record: newRecord, employee: updatedEmployee };
     } catch (error) {
+      if (isQuotaOrNetworkError(error)) {
+        console.warn('Supabase clockIn failed, automatically using local storage:', error.message || error);
+        useLocalFallback = true;
+        return this.clockIn(employeeId, location);
+      }
       handleSupabaseError(error, 'clock in');
     }
   },
@@ -899,7 +977,7 @@ const db = {
 
       if (empError || !employee) throw new Error('Employee not found');
 
-      // 1. Check for active unclosed record for this employee (regardless of whether it started today or yesterday)
+      // 1. Check for active unclosed record for this employee
       const { data: activeRecords } = await supabase
         .from('attendance')
         .select('*')
@@ -908,47 +986,47 @@ const db = {
         .order('clockInTime', { ascending: false })
         .limit(1);
 
-      let record = activeRecords && activeRecords.length > 0 ? activeRecords[0] : null;
+      let targetRecord = (activeRecords && activeRecords.length > 0) ? activeRecords[0] : null;
 
-      if (!record) {
-        // 2. Fall back to any completed record today to update
-        const { data: completedRecords } = await supabase
+      if (!targetRecord) {
+        // 2. Fall back to latest record today
+        const { data: todayRecords } = await supabase
           .from('attendance')
           .select('*')
           .eq('employeeId', employeeId)
           .eq('date', today)
           .order('clockInTime', { ascending: false })
           .limit(1);
-
-        if (completedRecords && completedRecords.length > 0) {
-          record = completedRecords[0];
+        if (todayRecords && todayRecords.length > 0) {
+          targetRecord = todayRecords[0];
         }
       }
 
-      let updatedRecord;
-      if (record) {
-        const inTime = new Date(record.clockInTime || now);
+      let updatedRecord = null;
+      if (targetRecord) {
+        const inTime = new Date(targetRecord.clockInTime || now);
         const duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+        const updatePayload = {
+          clockOutTime: now.toISOString(),
+          clockOutLocation: location || targetRecord.clockOutLocation || null,
+          duration,
+          performanceNotes: finalNotes || targetRecord.performanceNotes || 'Shift Completed',
+          receivedAmount: finalReceived,
+          expenseAmount: finalExpense,
+          moneySpent: finalExpense,
+          image: image || targetRecord.image || null
+        };
+
         const { data: upd, error: updateError } = await supabase
           .from('attendance')
-          .update({
-            clockOutTime: now.toISOString(),
-            clockOutLocation: location || record.clockOutLocation || null,
-            duration,
-            performanceNotes: finalNotes || record.performanceNotes || 'Shift Completed',
-            receivedAmount: finalReceived,
-            expenseAmount: finalExpense,
-            moneySpent: finalExpense,
-            image: image || record.image || null
-          })
-          .eq('id', record.id)
+          .update(updatePayload)
+          .eq('id', targetRecord.id)
           .select()
           .single();
 
         if (updateError) handleSupabaseError(updateError, 'update attendance record on clock out');
         updatedRecord = upd;
       } else {
-        // 3. Create fresh completed record if none existed today
         const newAttRecord = {
           id: generateId('att'),
           employeeId: employee.id,
@@ -994,16 +1072,18 @@ const db = {
             .from('work_records')
             .select('*')
             .eq('employeeId', employeeId)
-            .eq('date', today)
-            .limit(1);
+            .eq('date', today);
 
           if (wrs && wrs.length > 0) {
-            await supabase.from('work_records').update({
-              performedWork: finalNotes,
-              receivedAmount: finalReceived,
-              expenseAmount: finalExpense,
-              paymentIssuance: finalReceived
-            }).eq('id', wrs[0].id);
+            await supabase
+              .from('work_records')
+              .update({
+                performedWork: finalNotes,
+                receivedAmount: finalReceived,
+                expenseAmount: finalExpense,
+                paymentIssuance: finalReceived
+              })
+              .eq('id', wrs[0].id);
           } else {
             await supabase.from('work_records').insert([{
               id: generateId('wr'),
@@ -1025,6 +1105,11 @@ const db = {
 
       return { record: updatedRecord, employee: updatedEmployee || employee };
     } catch (error) {
+      if (isQuotaOrNetworkError(error)) {
+        console.warn('Supabase clockOut failed, automatically using local storage:', error.message || error);
+        useLocalFallback = true;
+        return this.clockOut(employeeId, location, performanceNotes, receivedAmount, expenseAmount, image);
+      }
       handleSupabaseError(error, 'clock out');
     }
   },
@@ -1122,10 +1207,10 @@ const db = {
         return;
       }
 
-      // Supabase: find unclosed records
+      // Supabase: find unclosed records efficiently (selecting only essential columns)
       let query = supabase
         .from('attendance')
-        .select('*')
+        .select('id, employeeId, clockInTime, date')
         .is('clockOutTime', null);
       if (targetEmployeeId) {
         query = query.eq('employeeId', targetEmployeeId);
@@ -1190,7 +1275,7 @@ const db = {
       officeName = data.settings?.officeName || 'My Office';
     } else {
       try {
-        const { data: attendance } = await supabase.from('attendance').select('*').eq('date', today);
+        const { data: attendance } = await supabase.from('attendance').select('id, employeeId, clockInTime, clockOutTime, performanceNotes').eq('date', today);
         if (attendance) {
           attendanceLogs = attendance.filter(a => activeEmpIds.has(a.employeeId) && !isLeave(a));
         }
@@ -1659,23 +1744,25 @@ const db = {
 
     const resultMap = {};
 
-    if (useLocalFallback) {
-      const data = loadLocalData();
-      const subs = data.formSubmissions || [];
-      subs.forEach(s => {
-        if (s && s.formType === 'manual_present_days' && s.formData && s.formData.month === month) {
-          resultMap[s.employeeId] = {
-            id: s.id,
-            employeeId: s.employeeId,
-            employeeName: s.employeeName,
-            month: s.formData.month,
-            originalAutoPresentDays: Number(s.formData.originalAutoPresentDays) || 0,
-            manualPresentDays: Number(s.formData.manualPresentDays) || 0,
-            editedBy: s.formData.editedBy || 'Admin',
-            editedAt: s.formData.editedAt || s.submittedAt
-          };
-        }
-      });
+    // 1. First load from local storage cache
+    const localData = loadLocalData();
+    const subs = localData.formSubmissions || [];
+    subs.forEach(s => {
+      if (s && s.formType === 'manual_present_days' && s.formData && s.formData.month === month) {
+        resultMap[s.employeeId] = {
+          id: s.id,
+          employeeId: s.employeeId,
+          employeeName: s.employeeName,
+          month: s.formData.month,
+          originalAutoPresentDays: Number(s.formData.originalAutoPresentDays) || 0,
+          manualPresentDays: Number(s.formData.manualPresentDays) || 0,
+          editedBy: s.formData.editedBy || 'Admin',
+          editedAt: s.formData.editedAt || s.submittedAt
+        };
+      }
+    });
+
+    if (useLocalFallback || !supabase) {
       return resultMap;
     }
 
@@ -1835,23 +1922,25 @@ const db = {
 
     const resultMap = {};
 
-    if (useLocalFallback) {
-      const data = loadLocalData();
-      const subs = data.formSubmissions || [];
-      subs.forEach(s => {
-        if (s && s.formType === 'manual_sunday_bonus' && s.formData && s.formData.month === month) {
-          resultMap[s.employeeId] = {
-            id: s.id,
-            employeeId: s.employeeId,
-            employeeName: s.employeeName,
-            month: s.formData.month,
-            originalAutoSundayBonus: Number(s.formData.originalAutoSundayBonus) || 0,
-            manualSundayBonus: Number(s.formData.manualSundayBonus) || 0,
-            editedBy: s.formData.editedBy || 'Admin',
-            editedAt: s.formData.editedAt || s.submittedAt
-          };
-        }
-      });
+    // 1. First load from local storage cache
+    const localData = loadLocalData();
+    const subs = localData.formSubmissions || [];
+    subs.forEach(s => {
+      if (s && s.formType === 'manual_sunday_bonus' && s.formData && s.formData.month === month) {
+        resultMap[s.employeeId] = {
+          id: s.id,
+          employeeId: s.employeeId,
+          employeeName: s.employeeName,
+          month: s.formData.month,
+          originalAutoSundayBonus: Number(s.formData.originalAutoSundayBonus) || 0,
+          manualSundayBonus: Number(s.formData.manualSundayBonus) || 0,
+          editedBy: s.formData.editedBy || 'Admin',
+          editedAt: s.formData.editedAt || s.submittedAt
+        };
+      }
+    });
+
+    if (useLocalFallback || !supabase) {
       return resultMap;
     }
 
@@ -1916,8 +2005,8 @@ const db = {
     });
 
     const basicSalary = Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
-    const perDay = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
-    const originalAutoSundayBonus = perDay * sundayDays;
+    const perDay = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
+    const originalAutoSundayBonus = Math.round(perDay * sundayDays * 100) / 100;
 
     const recordId = `msb_${employeeId}_${month}`;
     const nowIso = new Date().toISOString();
@@ -2629,23 +2718,24 @@ const db = {
 
     const basicSalary = salRec.basicSalary || (emp ? (Number(emp.baseSalary) || Number(emp.basicSalary) || 0) : 0);
 
-    // FORMULA: Per Day = Basic ÷ 30 (fixed 30-day divisor per office policy)
-    const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
+    // REQUIRED PAYROLL FORMULA:
+    // PerDaySalary = MonthlySalary / 30
+    const perDaySalary = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
 
-    // Regular earned = per day × regular weekday present days
-    const regularEarned = perDaySalary * effectiveRegularDays;
+    // RegularSalary = PerDaySalary × PresentDays
+    const regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
 
-    // Sunday bonus: check manual override or auto-calculate
+    // SundayBonus = PerDaySalary × SundayWorked
     const sunOverride = manualSundayOverrides[employeeId];
     const isManualSunday = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
-    const autoSundayBonus = perDaySalary * effectiveSundayDays;
+    const autoSundayBonus = Math.round(effectiveSundayDays * perDaySalary * 100) / 100;
     const sundayBonus = isManualSunday ? sunOverride.manualSundayBonus : autoSundayBonus;
 
-    // Total earned salary = regular earned + Sunday bonus
-    const earnedSalary = regularEarned + sundayBonus;
+    // GrossEarnedSalary = RegularSalary + SundayBonus
+    const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
 
-    // Net salary = earned − expenses (expenses recorded at clock-out are deducted)
-    const netSalary = earnedSalary - Math.round(totalExpenses);
+    // NetSalary = GrossEarnedSalary - Expenses - Deductions + Allowances
+    const netSalary = Math.round((earnedSalary - totalExpenses) * 100) / 100;
 
     Object.assign(salRec, {
       employeeName: emp ? emp.name : salRec.employeeName,
@@ -4102,14 +4192,22 @@ const db = {
       // Salary definition: sal record basicSalary or emp.baseSalary or emp.basicSalary
       const salRec = salariesMap[empId] || {};
       const basicSalary = Number(salRec.basicSalary) || Number(emp.baseSalary) || Number(emp.basicSalary) || 0;
-      const perDaySalary = basicSalary > 0 ? Math.round(basicSalary / 30) : 0;
-      const regularEarned = perDaySalary * effectiveRegularDays;
 
+      // REQUIRED PAYROLL FORMULA:
+      // PerDaySalary = MonthlySalary / 30
+      const perDaySalary = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
+
+      // RegularSalary = PerDaySalary × PresentDays
+      const regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
+
+      // SundayBonus = PerDaySalary × SundayWorked
       const sunOverride = manualSundayOverrides[empId] || null;
       const isManualSundayBonus = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
-      const autoSundayBonus = perDaySalary * effectiveSundayDays;
+      const autoSundayBonus = Math.round(effectiveSundayDays * perDaySalary * 100) / 100;
       const sundayBonus = isManualSundayBonus ? sunOverride.manualSundayBonus : autoSundayBonus;
-      const earnedSalary = regularEarned + sundayBonus;
+
+      // GrossEarnedSalary = RegularSalary + SundayBonus
+      const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
 
       // Itemized expenses strictly for this month
       const itemizedExpenses = [];
@@ -4177,7 +4275,7 @@ const db = {
         effectiveExpense = verifiedAmount;
       }
 
-      const netSalary = earnedSalary - Math.round(effectiveExpense);
+      const netSalary = Math.round((earnedSalary - effectiveExpense) * 100) / 100;
 
       // Bank statement credits from Accounts PDF
       const pdfVr = bankCreditsMap[empId] || null;
@@ -4262,12 +4360,12 @@ const db = {
       generatedAt: new Date().toISOString(),
       summary: {
         totalEmployees: employeeReports.length,
-        totalBaseSalary,
-        totalEarnedSalary,
-        totalClaimedExpenses,
-        totalEffectiveExpenses,
-        totalNetSalary,
-        totalBankCredits,
+        totalBaseSalary: Math.round(totalBaseSalary * 100) / 100,
+        totalEarnedSalary: Math.round(totalEarnedSalary * 100) / 100,
+        totalClaimedExpenses: Math.round(totalClaimedExpenses * 100) / 100,
+        totalEffectiveExpenses: Math.round(totalEffectiveExpenses * 100) / 100,
+        totalNetSalary: Math.round(totalNetSalary * 100) / 100,
+        totalBankCredits: Math.round(totalBankCredits * 100) / 100,
         totalVerifiedCount,
         totalApprovedCount
       },
