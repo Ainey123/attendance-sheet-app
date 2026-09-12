@@ -2771,12 +2771,22 @@ const db = {
     const presentDates = new Set();
     attendanceLogs.forEach(a => presentDates.add(a.date));
 
-    // Separate regular days vs Sunday days worked
+    // Separate regular days, Sunday days worked, and 14 August worked
     let regularPresentDays = 0;
     let sundayPresentDays = 0;
+    let worked14Aug = false;
     presentDates.forEach(dateStr => {
       const parts = dateStr.split('-');
-      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const yearStr = parts[0];
+      const monthStr = parts[1];
+      const dayStr = parts[2];
+      const dt = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, parseInt(dayStr, 10));
+      
+      // Check 14 August
+      if (monthStr === '08' && dayStr === '14') {
+        worked14Aug = true;
+      }
+      
       if (dt.getDay() === 0) sundayPresentDays++;
       else regularPresentDays++;
     });
@@ -2840,19 +2850,29 @@ const db = {
     // PerDaySalary = MonthlySalary / 30
     const perDaySalary = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
 
-    // RegularSalary = PerDaySalary × PresentDays
-    const regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
+    // Salary Calculation Rules:
+    // If presentDays >= 26: Regular salary = Basic Salary (full monthly salary)
+    // If presentDays < 26: Regular salary = PerDaySalary × PresentDays
+    let regularEarned = 0;
+    if (effectivePresentDays >= 26) {
+      regularEarned = basicSalary;
+    } else {
+      regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
+    }
 
-    // SundayBonus = PerDaySalary × SundayWorked
+    // Sunday Bonus: PerDaySalary × SundayWorked
     const sunOverride = manualSundayOverrides[employeeId];
     const isManualSunday = Boolean(sunOverride && typeof sunOverride.manualSundayBonus === 'number');
     const autoSundayBonus = Math.round(effectiveSundayDays * perDaySalary * 100) / 100;
     const sundayBonus = isManualSunday ? sunOverride.manualSundayBonus : autoSundayBonus;
 
-    // GrossEarnedSalary = RegularSalary + SundayBonus
-    const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
+    // 14 August Independence Day Bonus: 1 day salary if worked on 14th Aug
+    const aug14Bonus = (month.endsWith('-08') && worked14Aug) ? perDaySalary : 0;
 
-    // NetSalary = GrossEarnedSalary - Expenses - Deductions + Allowances
+    // GrossEarnedSalary = RegularSalary + SundayBonus + 14AugBonus
+    const earnedSalary = Math.round((regularEarned + sundayBonus + aug14Bonus) * 100) / 100;
+
+    // NetSalary = GrossEarnedSalary - Expenses
     const netSalary = Math.round((earnedSalary - totalExpenses) * 100) / 100;
 
     Object.assign(salRec, {
@@ -2862,6 +2882,8 @@ const db = {
       workingDays: 30,           // fixed 30-day divisor
       regularPresentDays: effectiveRegularDays,
       sundayPresentDays: effectiveSundayDays,
+      worked14Aug,
+      aug14Bonus,
       presentDays: effectivePresentDays,
       autoPresentDays: autoTotalDays,
       isManualPresentDays: isManual,
@@ -4288,9 +4310,16 @@ const db = {
 
       let regularPresentDays = 0;
       let sundayPresentDays = 0;
+      let worked14Aug = false;
       presentDates.forEach(dateStr => {
         const parts = dateStr.split('-');
-        const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const yearStr = parts[0];
+        const monthStr = parts[1];
+        const dayStr = parts[2];
+        const dt = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, parseInt(dayStr, 10));
+
+        if (monthStr === '08' && dayStr === '14') worked14Aug = true;
+
         if (dt.getDay() === 0) sundayPresentDays++;
         else regularPresentDays++;
       });
@@ -4315,8 +4344,13 @@ const db = {
       // PerDaySalary = MonthlySalary / 30
       const perDaySalary = basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0;
 
-      // RegularSalary = PerDaySalary × PresentDays
-      const regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
+      // RegularSalary: Full Basic Salary if presentDays >= 26, else perDaySalary * presentDays
+      let regularEarned = 0;
+      if (effectivePresentDays >= 26) {
+        regularEarned = basicSalary;
+      } else {
+        regularEarned = Math.round(effectivePresentDays * perDaySalary * 100) / 100;
+      }
 
       // SundayBonus = PerDaySalary × SundayWorked
       const sunOverride = manualSundayOverrides[empId] || null;
@@ -4324,8 +4358,11 @@ const db = {
       const autoSundayBonus = Math.round(effectiveSundayDays * perDaySalary * 100) / 100;
       const sundayBonus = isManualSundayBonus ? sunOverride.manualSundayBonus : autoSundayBonus;
 
-      // GrossEarnedSalary = RegularSalary + SundayBonus
-      const earnedSalary = Math.round((regularEarned + sundayBonus) * 100) / 100;
+      // 14 Aug Independence Day Bonus
+      const aug14Bonus = (month.endsWith('-08') && worked14Aug) ? perDaySalary : 0;
+
+      // GrossEarnedSalary = RegularSalary + SundayBonus + 14AugBonus
+      const earnedSalary = Math.round((regularEarned + sundayBonus + aug14Bonus) * 100) / 100;
 
       // Itemized expenses strictly for this month
       const itemizedExpenses = [];
@@ -4427,6 +4464,8 @@ const db = {
         workingDays: 30,
         regularPresentDays: effectiveRegularDays,
         sundayPresentDays: effectiveSundayDays,
+        worked14Aug,
+        aug14Bonus,
         presentDays: effectivePresentDays,
         autoPresentDays: autoTotalDays,
         isManualPresentDays,
