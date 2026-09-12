@@ -358,6 +358,24 @@ module.exports = async (req, res) => {
       return res.json({ success: true, submission });
     }
 
+    // ── POST /api/forms/:id/approve ──────────────────────────────────────────
+    if (path.match(/^forms\/[^/]+\/approve$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const id = path.replace('forms/', '').replace('/approve', '');
+      const result = await db.approveLeaveApplication(id);
+      return res.json({ success: true, submission: result });
+    }
+
+    // ── POST /api/forms/:id/reject ───────────────────────────────────────────
+    if (path.match(/^forms\/[^/]+\/reject$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      const id = path.replace('forms/', '').replace('/reject', '');
+      const result = await db.rejectLeaveApplication(id);
+      return res.json({ success: true, submission: result });
+    }
+
     // ── DELETE /api/forms/:id ─────────────────────────────────────────────────
     if (path.startsWith('forms/') && method === 'DELETE') {
       const id = path.replace('forms/', '');

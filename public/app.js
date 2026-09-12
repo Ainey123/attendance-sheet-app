@@ -327,7 +327,9 @@ const API = {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ employeeId })
-    })
+    }),
+  approveFormSubmission: (id) => fetchJson(`/api/forms/${id}/approve`, { method: 'POST' }),
+  rejectFormSubmission: (id) => fetchJson(`/api/forms/${id}/reject`, { method: 'POST' })
 };
 
 // ==========================================================================
@@ -2749,7 +2751,7 @@ async function loadAdminForms() {
     tbody.innerHTML = '';
 
     if (submissions.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No form submissions found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No form submissions found.</td></tr>';
       return;
     }
 
@@ -2771,6 +2773,24 @@ async function loadAdminForms() {
         ? `<button class="btn btn-secondary btn-view-doc" data-img="${sub.formData.documentImage}">View</button>`
         : '<span class="text-muted" style="font-size:0.85rem;">No file</span>';
 
+      const status = sub.formData?.status || 'SUBMITTED';
+      let statusBadge = '<span class="badge" style="background:#6c757d;color:#fff;">Submitted</span>';
+      if (status === 'PENDING') {
+        statusBadge = '<span class="badge" style="background:#ffc107;color:#212529;">Pending</span>';
+      } else if (status === 'APPROVED') {
+        statusBadge = '<span class="badge" style="background:#28a745;color:#fff;">Approved</span>';
+      } else if (status === 'REJECTED') {
+        statusBadge = '<span class="badge" style="background:#dc3545;color:#fff;">Rejected</span>';
+      }
+
+      let actionsHtml = '-';
+      if (sub.formType === 'Leave' && status === 'PENDING') {
+        actionsHtml = `
+          <button class="btn btn-sm btn-success btn-approve-leave" data-id="${sub.id}" style="padding:0.2rem 0.5rem;font-size:0.75rem;margin-right:0.25rem;">Approve</button>
+          <button class="btn btn-sm btn-danger btn-reject-leave" data-id="${sub.id}" style="padding:0.2rem 0.5rem;font-size:0.75rem;">Reject</button>
+        `;
+      }
+
       tr.innerHTML = `
         <td class="col-sn">${idx + 1}</td>
         <td><strong>${sub.employeeName}</strong></td>
@@ -2778,12 +2798,53 @@ async function loadAdminForms() {
         <td><span class="badge-role">${typeLabel}</span></td>
         <td>${sub.formData?.documentNumber || '-'}</td>
         <td>${sub.formData?.notes || '-'}</td>
+        <td>${statusBadge}</td>
         <td>${filePreviewButton}</td>
+        <td>${actionsHtml}</td>
       `;
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll('.btn-view-doc').forEach(btn => {
       btn.addEventListener('click', () => openPhotoModal(btn.getAttribute('data-img')));
+    });
+    tbody.querySelectorAll('.btn-approve-leave').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        try {
+          btn.disabled = true;
+          const res = await API.approveFormSubmission(id);
+          if (res.success) {
+            showToast('Leave application approved & attendance updated!', 'success');
+            await loadAdminForms();
+            if (typeof loadAttendanceData === 'function') loadAttendanceData();
+          } else {
+            showToast(res.error || 'Failed to approve', 'error');
+            btn.disabled = false;
+          }
+        } catch (err) {
+          showToast(err.message, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+    tbody.querySelectorAll('.btn-reject-leave').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        try {
+          btn.disabled = true;
+          const res = await API.rejectFormSubmission(id);
+          if (res.success) {
+            showToast('Leave application rejected', 'info');
+            await loadAdminForms();
+          } else {
+            showToast(res.error || 'Failed to reject', 'error');
+            btn.disabled = false;
+          }
+        } catch (err) {
+          showToast(err.message, 'error');
+          btn.disabled = false;
+        }
+      });
     });
   } catch (err) {
     showToast('Failed to load form submissions', 'error');

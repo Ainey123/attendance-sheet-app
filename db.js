@@ -1692,6 +1692,124 @@ const db = {
     }
   },
 
+  async approveLeaveApplication(formId) {
+    const submission = await this.getFormSubmission(formId);
+    if (!submission) throw new Error('Form submission not found.');
+
+    const formData = submission.formData || {};
+    formData.status = 'APPROVED';
+    formData.approvedAt = new Date().toISOString();
+
+    const employeeId = submission.employeeId;
+    const employeeName = submission.employeeName;
+    const leaveDate = formData.leaveDate;
+    const leaveType = formData.leaveType || 'Leave';
+    const leaveReason = formData.reason || 'Approved Application';
+    const leaveNotes = formData.notes || '';
+    const leaveText = `LEAVE: ${leaveType} - ${leaveReason}${leaveNotes ? ` | ${leaveNotes}` : ''}`;
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const sub = (data.formSubmissions || []).find(r => r.id === formId);
+      if (sub) { sub.formData = formData; }
+
+      if (leaveDate) {
+        const emp = (data.employees || []).find(e => e.id === employeeId);
+        const role = emp ? (emp.role || 'Staff') : 'Staff';
+        const existing = (data.attendance || []).find(r => r.employeeId === employeeId && r.date === leaveDate);
+        const leavePayload = {
+          id: existing?.id || generateId('att'),
+          employeeId,
+          employeeName,
+          role,
+          date: leaveDate,
+          clockInTime: new Date(`${leaveDate}T00:00:00.000Z`).toISOString(),
+          clockOutTime: new Date(`${leaveDate}T00:00:00.000Z`).toISOString(),
+          clockInLocation: null,
+          clockOutLocation: null,
+          duration: 0,
+          performanceNotes: leaveText,
+          receivedAmount: 0,
+          expenseAmount: 0,
+          moneySpent: 0,
+          image: null
+        };
+        if (existing) Object.assign(existing, leavePayload);
+        else data.attendance.push(leavePayload);
+      }
+      saveLocalData(data);
+      return sub || submission;
+    } else {
+      await supabase.from('form_submissions').update({ formData }).eq('id', formId);
+
+      if (leaveDate) {
+        const { data: empData } = await supabase.from('employees').select('role').eq('id', employeeId).maybeSingle();
+        const role = empData?.role || 'Staff';
+
+        const { data: existingAtt } = await supabase
+          .from('attendance')
+          .select('id')
+          .eq('employeeId', employeeId)
+          .eq('date', leaveDate)
+          .maybeSingle();
+
+        const attPayload = {
+          id: existingAtt?.id || generateId('att'),
+          employeeId,
+          employeeName,
+          role,
+          date: leaveDate,
+          clockInTime: new Date(`${leaveDate}T00:00:00.000Z`).toISOString(),
+          clockOutTime: new Date(`${leaveDate}T00:00:00.000Z`).toISOString(),
+          clockInLocation: null,
+          clockOutLocation: null,
+          duration: 0,
+          performanceNotes: leaveText,
+          receivedAmount: 0,
+          expenseAmount: 0,
+          moneySpent: 0,
+          image: null
+        };
+
+        if (existingAtt) {
+          await supabase.from('attendance').update(attPayload).eq('id', existingAtt.id);
+        } else {
+          await supabase.from('attendance').insert([attPayload]);
+        }
+      }
+      return { ...submission, formData };
+    }
+  },
+
+  async rejectLeaveApplication(formId) {
+    const submission = await this.getFormSubmission(formId);
+    if (!submission) throw new Error('Form submission not found.');
+
+    const formData = submission.formData || {};
+    formData.status = 'REJECTED';
+    formData.rejectedAt = new Date().toISOString();
+
+    const employeeId = submission.employeeId;
+    const leaveDate = formData.leaveDate;
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const sub = (data.formSubmissions || []).find(r => r.id === formId);
+      if (sub) { sub.formData = formData; }
+      if (leaveDate) {
+        data.attendance = (data.attendance || []).filter(r => !(r.employeeId === employeeId && r.date === leaveDate && String(r.performanceNotes || '').startsWith('LEAVE')));
+      }
+      saveLocalData(data);
+      return sub || submission;
+    } else {
+      await supabase.from('form_submissions').update({ formData }).eq('id', formId);
+      if (leaveDate) {
+        await supabase.from('attendance').delete().eq('employeeId', employeeId).eq('date', leaveDate).like('performanceNotes', 'LEAVE%');
+      }
+      return { ...submission, formData };
+    }
+  },
+
   async updateFormSubmission(id, employeeId, updates) {
     if (useLocalFallback) {
       const data = loadLocalData();

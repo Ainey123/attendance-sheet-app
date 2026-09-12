@@ -475,6 +475,28 @@ app.put('/api/forms/:id', async (req, res) => {
   }
 });
 
+// Approve form submission (admin only)
+app.post('/api/forms/:id/approve', checkAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const submission = await db.approveLeaveApplication(id);
+    res.json({ success: true, submission });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reject form submission (admin only)
+app.post('/api/forms/:id/reject', checkAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const submission = await db.rejectLeaveApplication(id);
+    res.json({ success: true, submission });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete form submission (employee can delete their own)
 app.delete('/api/forms/:id', async (req, res) => {
   const { id } = req.params;

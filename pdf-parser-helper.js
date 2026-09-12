@@ -293,6 +293,27 @@ function testNameMatch(empName, pdfPayee, rawText = '', customAliases = {}) {
     }
   }
 
+  // 1.5 Built-in Employee Bank Statement Alias Mappings
+  const builtinAliases = {
+    'sarmad': ['hafiz muhammad islam', 'hafiz islam', 'muhammad islam', 'sarmad islam'],
+    'shahzaib': ['shah zaib', 'shah zaib nawaz', 'shahzaib nawaz'],
+    'shehzad': ['ali shahzad', 'ali shezad', 'ali shehzad', 'muhammad tauseef', 'tauseef'],
+    'shezad': ['ali shahzad', 'ali shezad', 'ali shehzad', 'muhammad tauseef', 'tauseef'],
+    'asif rashid': ['asif rasheed', 'sharafat ali', 'asif rashid'],
+    'asif rasheed': ['asif rasheed', 'sharafat ali', 'asif rashid'],
+    'faisal': ['fes faisal elec veha', 'fes faisal', 'faisal elec', 'faisal veha']
+  };
+
+  for (const [key, aliases] of Object.entries(builtinAliases)) {
+    if (empLower.includes(key)) {
+      for (const alias of aliases) {
+        if (rawLower.includes(alias) || pdfNorm.includes(normalizeName(alias))) {
+          return { isMatch: true, isAmbiguous: false, matchType: 'BUILTIN_ALIAS_MATCH' };
+        }
+      }
+    }
+  }
+
   // 2. Exact normalized match (case-insensitive)
   if (empNorm && pdfNorm && empNorm === pdfNorm) {
     return { isMatch: true, isAmbiguous: false, matchType: 'EXACT_MATCH' };
