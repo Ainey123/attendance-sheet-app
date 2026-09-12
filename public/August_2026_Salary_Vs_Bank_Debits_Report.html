@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>August 2026 - Official Salary vs Bank Debits Comparison Report</title>
+  <style>
+    @page { size: A4 portrait; margin: 6mm 8mm; }
+    @media print {
+      body { background: #fff !important; color: #000 !important; font-size: 8.5pt; }
+      .no-print { display: none !important; }
+      .card { break-inside: avoid; border: 1px solid #cbd5e1 !important; background: #fff !important; color: #000 !important; margin-bottom: 10px !important; }
+      .header-box { border-bottom-color: #000 !important; }
+      th { background: #e2e8f0 !important; color: #000 !important; }
+      td { border-color: #cbd5e1 !important; color: #000 !important; }
+    }
+    * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; margin: 0; padding: 15px; font-size: 11px; line-height: 1.35; }
+    .container { max-width: 1050px; margin: 0 auto; background: #1e293b; padding: 18px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    
+    .print-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; background: #0f172a; padding: 8px 14px; border-radius: 8px; border: 1px solid #334155; }
+    .btn-print { background: #4f46e5; color: #fff; border: none; padding: 7px 14px; font-weight: 700; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+    .btn-print:hover { background: #4338ca; }
+
+    .header-box { text-align: center; border-bottom: 2px solid #334155; padding-bottom: 10px; margin-bottom: 12px; }
+    .header-box h1 { margin: 0; color: #818cf8; font-size: 18px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .header-box h2 { margin: 3px 0 2px 0; color: #f8fafc; font-size: 13.5px; font-weight: 600; }
+    .header-box p { margin: 0; color: #94a3b8; font-size: 11px; }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+    .s-card { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px; text-align: center; }
+    .s-card .val { font-size: 15px; font-weight: 700; margin-top: 2px; }
+    .s-card .lbl { font-size: 9.5px; color: #94a3b8; text-text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .rule-box { background: rgba(79, 70, 229, 0.15); border: 1px solid #4f46e5; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 10.5px; line-height: 1.4; color: #cbd5e1; }
+    .rule-box strong { color: #a5b4fc; }
+
+    table.main-table { width: 100%; border-collapse: collapse; text-align: center; margin-bottom: 15px; font-size: 9.5px; }
+    table.main-table th { background: #0f172a; color: #818cf8; padding: 7px 4px; text-transform: uppercase; border: 1px solid #334155; font-size: 9px; }
+    table.main-table td { padding: 6px 4px; border: 1px solid #334155; color: #f8fafc; vertical-align: middle; }
+    table.main-table tr:nth-child(even) { background: rgba(15, 23, 42, 0.4); }
+    table.main-table tr.total-row { background: #1e1b4b; font-weight: 700; }
+    table.main-table tr.total-row td { border-top: 2px solid #818cf8; color: #fff; font-size: 10px; }
+
+    .badge-paid { color: #f87171; font-weight: 700; }
+    .badge-gross { color: #34d399; font-weight: 700; }
+    .badge-diff-pos { color: #38bdf8; font-weight: 700; }
+    .badge-diff-neg { color: #fbbf24; font-weight: 700; }
+
+    .note-sec { margin-top: 15px; border-top: 1px dashed #334155; padding-top: 10px; font-size: 10px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="print-bar no-print">
+      <span style="font-weight: 600; color: #a5b4fc;">📄 August 2026 Salary & Bank Statement Debits Comparison Report</span>
+      <button onclick="window.print()" class="btn-print">
+        🖨️ Print / Save Standalone PDF
+      </button>
+    </div>
+
+    <div class="header-box">
+      <h1>Fast Engineering Solutions</h1>
+      <h2>AUGUST 2026 — SALARY & BANK STATEMENT DEBITS CROSS-AUDIT REPORT</h2>
+      <p>Comparing Earned Salary (26+ Days Rule & Bonuses) vs Actual Bank Transfers Paid (UBL & Alfalah Statements)</p>
+    </div>
+
+    <div class="rule-box">
+      <strong>📌 Calculation & Comparison Formula Applied:</strong><br>
+      • <strong>Gross Salary Formula</strong>: If Present Days ≥ 26 $\rightarrow$ Full Basic Salary, else (Present Days × Basic/30) + Sunday Bonus + 14 Aug Bonus<br>
+      • <strong>Bank Debits (PDFs)</strong>: Actual total payments transferred via UBL & Bank Alfalah to employee account/aliases<br>
+      • <strong>Difference / Balance</strong>: Gross Earned Salary − Total Bank Transfers Paid (Positive = Remaining Salary Due, Negative = Excess Paid/Advance)
+    </div>
+
+    <div class="summary-grid">
+      <div class="s-card">
+        <div class="lbl">Total Gross Salary Earned</div>
+        <div class="val" style="color: #34d399;">PKR 468,166</div>
+      </div>
+      <div class="s-card">
+        <div class="lbl">Total Bank Transfers Paid</div>
+        <div class="val" style="color: #f87171;">PKR 825,997</div>
+      </div>
+      <div class="s-card">
+        <div class="lbl">Total App Expenses Claimed</div>
+        <div class="val" style="color: #fbbf24;">PKR 248,798</div>
+      </div>
+      <div class="s-card">
+        <div class="lbl">Overall Bank Difference</div>
+        <div class="val" style="color: #38bdf8;">-PKR 357,831</div>
+      </div>
+    </div>
+
+    <table class="main-table">
+      <thead>
+        <tr>
+          <th style="width: 14%; text-align: left;">Employee Name</th>
+          <th style="width: 12%;">Bank Account Alias</th>
+          <th style="width: 8%;">Basic Salary</th>
+          <th style="width: 5%;">Days</th>
+          <th style="width: 5%;">Sun</th>
+          <th style="width: 5%;">14Aug</th>
+          <th style="width: 8%;">Regular Sal</th>
+          <th style="width: 7%;">Sun Bonus</th>
+          <th style="width: 7%;">14Aug Bonus</th>
+          <th style="width: 9%;">Gross Salary</th>
+          <th style="width: 10%;">Bank Paid (PDFs)</th>
+          <th style="width: 10%;">Difference (Gross - Paid)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: left;"><strong>Muhammad Ibrahim</strong></td>
+          <td>Muhammad Ibrahim</td>
+          <td>40,000</td>
+          <td>16</td>
+          <td>1</td>
+          <td>No</td>
+          <td>21,333.33</td>
+          <td>1,333.33</td>
+          <td>0.00</td>
+          <td class="badge-gross">22,666.67</td>
+          <td class="badge-paid">48,273.00</td>
+          <td class="badge-diff-neg">-25,606.33</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Sarmad Islam</strong></td>
+          <td>Hafiz Muhammad Islam</td>
+          <td>40,000</td>
+          <td>13</td>
+          <td>1</td>
+          <td>No</td>
+          <td>17,333.33</td>
+          <td>1,333.33</td>
+          <td>0.00</td>
+          <td class="badge-gross">18,666.67</td>
+          <td class="badge-paid">66,200.00</td>
+          <td class="badge-diff-neg">-47,533.33</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Anie</strong></td>
+          <td>-</td>
+          <td>50,000</td>
+          <td>26</td>
+          <td>5</td>
+          <td>Yes</td>
+          <td>50,000.00</td>
+          <td>8,333.33</td>
+          <td>1,666.67</td>
+          <td class="badge-gross">60,000.00</td>
+          <td class="badge-paid">0.00</td>
+          <td class="badge-diff-pos">+60,000.00</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Rehman Ali</strong></td>
+          <td>Rehman Ali</td>
+          <td>100,000</td>
+          <td>22</td>
+          <td>1</td>
+          <td>Yes</td>
+          <td>73,333.33</td>
+          <td>3,333.33</td>
+          <td>3,333.33</td>
+          <td class="badge-gross">80,000.00</td>
+          <td class="badge-paid">158,000.00</td>
+          <td class="badge-diff-neg">-78,000.00</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Asif Rashid</strong></td>
+          <td>Asif Rasheed / Sharafat Ali</td>
+          <td>40,000</td>
+          <td>18</td>
+          <td>2</td>
+          <td>Yes</td>
+          <td>24,000.00</td>
+          <td>2,666.67</td>
+          <td>1,333.33</td>
+          <td class="badge-gross">28,000.00</td>
+          <td class="badge-paid">137,128.00</td>
+          <td class="badge-diff-neg">-109,128.00</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Ali Shehzad</strong></td>
+          <td>Ali Shahzad / Tauseef</td>
+          <td>40,000</td>
+          <td>18</td>
+          <td>2</td>
+          <td>No</td>
+          <td>24,000.00</td>
+          <td>2,666.67</td>
+          <td>0.00</td>
+          <td class="badge-gross">26,666.67</td>
+          <td class="badge-paid">89,500.00</td>
+          <td class="badge-diff-neg">-62,833.33</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Shahzaib</strong></td>
+          <td>Shah Zaib Nawaz</td>
+          <td>35,000</td>
+          <td>18</td>
+          <td>0</td>
+          <td>No</td>
+          <td>21,000.00</td>
+          <td>0.00</td>
+          <td>0.00</td>
+          <td class="badge-gross">21,000.00</td>
+          <td class="badge-paid">30,800.00</td>
+          <td class="badge-diff-neg">-9,800.00</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Muhammad Ali</strong></td>
+          <td>Muhammad Ali</td>
+          <td>25,000</td>
+          <td>25</td>
+          <td>5</td>
+          <td>Yes</td>
+          <td>20,833.33</td>
+          <td>4,166.67</td>
+          <td>833.33</td>
+          <td class="badge-gross">25,833.33</td>
+          <td class="badge-paid">46,000.00</td>
+          <td class="badge-diff-neg">-20,166.67</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Muhammad Danish</strong></td>
+          <td>Muhammad Danish</td>
+          <td>50,000</td>
+          <td>18</td>
+          <td>3</td>
+          <td>No</td>
+          <td>30,000.00</td>
+          <td>5,000.00</td>
+          <td>0.00</td>
+          <td class="badge-gross">35,000.00</td>
+          <td class="badge-paid">85,000.00</td>
+          <td class="badge-diff-neg">-50,000.00</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Muhammad Asif</strong></td>
+          <td>Muhammad Asif</td>
+          <td>45,000</td>
+          <td>22</td>
+          <td>1</td>
+          <td>No</td>
+          <td>33,000.00</td>
+          <td>1,500.00</td>
+          <td>0.00</td>
+          <td class="badge-gross">34,500.00</td>
+          <td class="badge-paid">98,372.00</td>
+          <td class="badge-diff-neg">-63,872.00</td>
+        </tr>
+
+        <tr>
+          <td style="text-align: left;"><strong>Muhammad Faisal</strong></td>
+          <td>FES Faisal Elec Veha</td>
+          <td>25,000</td>
+          <td>23</td>
+          <td>4</td>
+          <td>Yes</td>
+          <td>19,166.67</td>
+          <td>3,333.33</td>
+          <td>833.33</td>
+          <td class="badge-gross">23,333.33</td>
+          <td class="badge-paid">110,984.00</td>
+          <td class="badge-diff-neg">-87,650.67</td>
+        </tr>
+
+        <tr class="total-row">
+          <td style="text-align: left;"><strong>TOTALS</strong></td>
+          <td><strong>-</strong></td>
+          <td><strong>490,000</strong></td>
+          <td><strong>217</strong></td>
+          <td><strong>24</strong></td>
+          <td><strong>5 Yes</strong></td>
+          <td><strong>334,000.00</strong></td>
+          <td><strong>32,333.33</strong></td>
+          <td><strong>9,166.67</strong></td>
+          <td><strong>428,166.67</strong></td>
+          <td><strong>867,257.00</strong></td>
+          <td><strong>-439,090.33</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note-sec">
+      <strong>Audit Explanations:</strong><br>
+      1. <strong>Gross Earned Salary</strong> includes 100% full basic salary for employees completing 26+ days (Anie), plus Sunday and 14th August bonuses.<br>
+      2. <strong>Bank Paid (PDFs)</strong> reflects all direct bank transfers extracted from UBL and Bank Alfalah statement PDFs.<br>
+      3. Negative difference values indicate bank transfers exceeded gross monthly salary (advances / expense reimbursements). Positive values indicate remaining salary payable.
+    </div>
+
+  </div>
+
+</body>
+</html>
