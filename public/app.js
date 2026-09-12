@@ -5765,14 +5765,28 @@ async function loadSalarySheet(monthOverride, force = false) {
       // REQUIRED PAYROLL FORMULA:
       // Per day = Math.round((basic / 30) * 100) / 100
       const perDay = emp.perDaySalary !== undefined ? emp.perDaySalary : (basicSalary > 0 ? Math.round((basicSalary / 30) * 100) / 100 : 0);
-      const regularEarned = emp.regularEarned !== undefined ? emp.regularEarned : Math.round(totalPresentDays * perDay * 100) / 100;
+      
+      let regularEarned = 0;
+      let extraDaysBonus = emp.extraDaysBonus || 0;
+      if (emp.regularEarned !== undefined) {
+        regularEarned = emp.regularEarned;
+      } else if (totalPresentDays >= 26) {
+        regularEarned = basicSalary;
+        if (totalPresentDays > 26) {
+          extraDaysBonus = Math.round((totalPresentDays - 26) * perDay * 100) / 100;
+        }
+      } else {
+        regularEarned = Math.round(totalPresentDays * perDay * 100) / 100;
+      }
+
       const isManualSunday = Boolean(emp.isManualSundayBonus);
       const autoSundayBonus = emp.autoSundayBonus !== undefined ? emp.autoSundayBonus : Math.round(sundayDays * perDay * 100) / 100;
       const currentSundayBonus = emp.sundayBonus !== undefined ? emp.sundayBonus : autoSundayBonus;
       const sundayEditedBy = emp.sundayBonusEditedBy || (emp.sundayBonusAudit && emp.sundayBonusAudit.editedBy) || 'Admin';
       const sundayEditedAt = emp.sundayBonusEditedAt || (emp.sundayBonusAudit && emp.sundayBonusAudit.editedAt) || '';
       const sundayBonus = currentSundayBonus;
-      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : Math.round((regularEarned + sundayBonus) * 100) / 100;
+      const aug14Bonus = emp.aug14Bonus || 0;
+      const earnedSalary = emp.earnedSalary !== undefined ? emp.earnedSalary : Math.round((regularEarned + extraDaysBonus + sundayBonus + aug14Bonus) * 100) / 100;
       const expenses = emp.totalExpenses !== undefined ? emp.totalExpenses : (sal.totalExpenses !== undefined ? sal.totalExpenses : 0);
       const itemizedExpenses = emp.itemizedExpenses || [];
 
@@ -5998,6 +6012,7 @@ async function loadSalarySheet(monthOverride, force = false) {
         </td>
         <td class="cell-perday" style="text-align:right; font-family:monospace;">${fmtNum(perDay)}</td>
         <td class="cell-regular-earned" style="text-align:right; font-family:monospace; color:#a5b4fc;">${fmtNum(regularEarned)}</td>
+        <td class="cell-extra-bonus" style="text-align:right; font-family:monospace; color:#38bdf8;">${extraDaysBonus > 0 ? fmtNum(extraDaysBonus) : '—'}</td>
         <td class="cell-sunday-bonus" style="text-align:center; min-width:145px; padding:6px 4px; vertical-align:middle;">
           <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
             <div style="display:flex; align-items:center; gap:4px;">
@@ -6024,6 +6039,7 @@ async function loadSalarySheet(monthOverride, force = false) {
             </div>
           </div>
         </td>
+        <td class="cell-aug14-bonus" style="text-align:right; font-family:monospace; color:#4ade80;">${aug14Bonus > 0 ? fmtNum(aug14Bonus) : '—'}</td>
         <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
         ${expenseCellHtml}
         <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
