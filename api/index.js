@@ -879,6 +879,85 @@ module.exports = async (req, res) => {
       return res.json({ success: true, salary: record });
     }
 
+    
+    // ── MATERIAL MANAGEMENT ROUTES ──────────────────────────────────────────────
+    if (path === 'materials' && method === 'GET') {
+      const employeeId = query.employeeId;
+      try {
+        const txs = await db.getMaterialTransactions(employeeId);
+        return res.json({ success: true, transactions: txs });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === 'materials' && method === 'POST') {
+      const body = await parseBody(req);
+      try {
+        const newTx = await db.addMaterialTransaction(body);
+        return res.json({ success: true, transaction: newTx });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.code || 'BAD_REQUEST', message: err.message });
+      }
+    }
+
+    if (path.match(/^materials\/[^\/]+\/verify$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      const id = path.split('/')[1];
+      const body = await parseBody(req);
+      try {
+        const result = await db.verifyMaterialTransaction({
+          transactionId: id,
+          verifiedBy: body.verifiedBy || 'Admin 1',
+          verificationComment: body.verificationComment,
+          attachments: body.attachments
+        });
+        return res.json({ success: true, result });
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^materials\/[^\/]+\/approve$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      const body = await parseBody(req);
+      const seniorPasscode = body.passcode || body.seniorPasscode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode;
+      const validSeniorPasscode = settings.seniorAdminPasscode || '9999';
+      if (seniorPasscode !== validSeniorPasscode) {
+        return res.status(403).json({ error: 'Forbidden: Only Senior Admin can approve. Passcode is invalid.' });
+      }
+      const id = path.split('/')[1];
+      try {
+        const result = await db.approveMaterialTransaction({
+          transactionId: id,
+          approvedBy: body.approvedBy || 'Senior Admin',
+          approvalComment: body.approvalComment,
+          attachments: body.attachments
+        });
+        return res.json({ success: true, result });
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+    
+    if (path.match(/^materials\/[^\/]+\/reject$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      const id = path.split('/')[1];
+      const body = await parseBody(req);
+      try {
+        const result = await db.rejectMaterialTransaction({
+          transactionId: id,
+          rejectedBy: body.rejectedBy || 'Admin',
+          rejectionComment: body.rejectionComment
+        });
+        return res.json({ success: true, result });
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
 

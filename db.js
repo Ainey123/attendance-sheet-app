@@ -88,6 +88,67 @@ if (supabaseUrl && supabaseKey) {
             "createdAt"          TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             "updatedAt"          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
           );
+
+          CREATE TABLE IF NOT EXISTS materials (
+            "id" TEXT PRIMARY KEY,
+            "name" TEXT UNIQUE NOT NULL,
+            "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS material_transactions (
+            "id" TEXT PRIMARY KEY,
+            "employeeId" TEXT NOT NULL,
+            "employeeName" TEXT NOT NULL,
+            "materialId" TEXT NOT NULL,
+            "materialName" TEXT NOT NULL,
+            "previousApprovedRemaining" NUMERIC DEFAULT 0,
+            "inwardQuantity" NUMERIC DEFAULT 0,
+            "inwardDate" TEXT,
+            "inwardComment" TEXT,
+            "outwardQuantity" NUMERIC DEFAULT 0,
+            "outwardDate" TEXT,
+            "outwardComment" TEXT,
+            "availableQuantity" NUMERIC DEFAULT 0,
+            "remainingQuantity" NUMERIC DEFAULT 0,
+            "remainingComment" TEXT,
+            "status" TEXT DEFAULT 'PENDING_VERIFICATION',
+            "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS material_attachments (
+            "id" TEXT PRIMARY KEY,
+            "transactionId" TEXT NOT NULL,
+            "step" TEXT NOT NULL,
+            "fileType" TEXT,
+            "fileData" TEXT,
+            "uploadedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS material_verifications (
+            "id" TEXT PRIMARY KEY,
+            "transactionId" TEXT NOT NULL,
+            "verifiedBy" TEXT NOT NULL,
+            "verificationComment" TEXT,
+            "verifiedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS material_verification_attachments (
+            "id" TEXT PRIMARY KEY,
+            "verificationId" TEXT NOT NULL,
+            "fileType" TEXT,
+            "fileData" TEXT
+          );
+          CREATE TABLE IF NOT EXISTS material_approvals (
+            "id" TEXT PRIMARY KEY,
+            "transactionId" TEXT NOT NULL,
+            "approvedBy" TEXT NOT NULL,
+            "approvalComment" TEXT,
+            "approvedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS material_approval_attachments (
+            "id" TEXT PRIMARY KEY,
+            "approvalId" TEXT NOT NULL,
+            "fileType" TEXT,
+            "fileData" TEXT
+          );
+
         `
       });
       if (rpcError) {
@@ -130,11 +191,11 @@ function loadLocalData() {
         salaries: file.salaries || [],
         accountsPdfs: file.accountsPdfs || [],
         salaryApprovals: file.salaryApprovals || [],
-        expenseVerifications: file.expenseVerifications || []
+        expenseVerifications: file.expenseVerifications || [], materials: file.materials || [], materialTransactions: file.materialTransactions || [], materialAttachments: file.materialAttachments || [], materialVerifications: file.materialVerifications || [], materialVerificationAttachments: file.materialVerificationAttachments || [], materialApprovals: file.materialApprovals || [], materialApprovalAttachments: file.materialApprovalAttachments || []
       };
     }
   } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [] };
+  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [], materials: [], materialTransactions: [], materialAttachments: [], materialVerifications: [], materialVerificationAttachments: [], materialApprovals: [], materialApprovalAttachments: [] };
 }
 
 function saveLocalData(data) {
@@ -189,6 +250,9 @@ function isQuotaOrNetworkError(error) {
     msg.includes('failed to fetch') ||
     msg.includes('fetch_error') ||
     msg.includes('service unavailable') ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table') ||
+    msg.includes('pgrst204') ||
     error.status === 402 ||
     error.status === 403
   );
@@ -4541,6 +4605,385 @@ const db = {
       employees: employeeReports
     };
   }
+
+  , // ─── Material Management System Methods ────────────────────────────────────────
+
+  async getMaterialTransactions(employeeId = null) {
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      let transactions = data.materialTransactions || [];
+      if (employeeId) {
+        transactions = transactions.filter(t => t.employeeId === employeeId);
+      }
+      
+      return transactions.map(t => {
+        const atts = (data.materialAttachments || []).filter(a => a.transactionId === t.id);
+        const verif = (data.materialVerifications || []).find(v => v.transactionId === t.id);
+        const appr = (data.materialApprovals || []).find(a => a.transactionId === t.id);
+        
+        let vAtts = [];
+        if (verif) {
+          vAtts = (data.materialVerificationAttachments || []).filter(a => a.verificationId === verif.id);
+        }
+        
+        let aAtts = [];
+        if (appr) {
+          aAtts = (data.materialApprovalAttachments || []).filter(a => a.approvalId === appr.id);
+        }
+
+        return {
+          ...t,
+          attachments: atts,
+          verification: verif ? { ...verif, attachments: vAtts } : null,
+          approval: appr ? { ...appr, attachments: aAtts } : null
+        };
+      }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+    
+    try {
+      let query = supabase.from('material_transactions').select('*').order('createdAt', { ascending: false });
+      if (employeeId) query = query.eq('employeeId', employeeId);
+      const { data: transactions, error } = await query;
+      if (error) throw error;
+      
+      if (!transactions || transactions.length === 0) return [];
+      
+      const transactionIds = transactions.map(t => t.id);
+      
+      const { data: atts } = await supabase.from('material_attachments').select('*').in('transactionId', transactionIds);
+      const { data: verifs } = await supabase.from('material_verifications').select('*').in('transactionId', transactionIds);
+      const { data: apprs } = await supabase.from('material_approvals').select('*').in('transactionId', transactionIds);
+      
+      const verifIds = (verifs || []).map(v => v.id);
+      const apprIds = (apprs || []).map(a => a.id);
+      
+      const { data: vAtts } = verifIds.length > 0 ? await supabase.from('material_verification_attachments').select('*').in('verificationId', verifIds) : { data: [] };
+      const { data: aAtts } = apprIds.length > 0 ? await supabase.from('material_approval_attachments').select('*').in('approvalId', apprIds) : { data: [] };
+      
+      return transactions.map(t => {
+        const tAtts = (atts || []).filter(a => a.transactionId === t.id);
+        const verif = (verifs || []).find(v => v.transactionId === t.id);
+        const appr = (apprs || []).find(a => a.transactionId === t.id);
+        
+        return {
+          ...t,
+          attachments: tAtts,
+          verification: verif ? { ...verif, attachments: (vAtts || []).filter(a => a.verificationId === verif.id) } : null,
+          approval: appr ? { ...appr, attachments: (aAtts || []).filter(a => a.approvalId === appr.id) } : null
+        };
+      });
+    } catch (error) {
+      if (isQuotaOrNetworkError(error)) {
+        useLocalFallback = true;
+        return this.getMaterialTransactions(employeeId);
+      }
+      handleSupabaseError(error, 'fetch material transactions');
+      return [];
+    }
+  },
+
+  async addMaterialTransaction({ employeeId, employeeName, materialName, inwardQuantity, inwardDate, inwardComment, outwardQuantity, outwardDate, outwardComment, remainingComment, attachments }) {
+    const normalizedName = materialName.trim().toUpperCase();
+    let materialId = null;
+    let newMaterial = null;
+    
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      data.materials = data.materials || [];
+      const existingMat = data.materials.find(m => m.name === normalizedName);
+      if (existingMat) {
+        materialId = existingMat.id;
+      } else {
+        materialId = generateId('mat');
+        newMaterial = { id: materialId, name: normalizedName, createdAt: new Date().toISOString() };
+        data.materials.push(newMaterial);
+        saveLocalData(data);
+      }
+    } else {
+      try {
+        const { data: existingMat, error: fetchErr } = await supabase.from('materials').select('id').eq('name', normalizedName).single();
+        if (existingMat) {
+          materialId = existingMat.id;
+        } else {
+          materialId = generateId('mat');
+          newMaterial = { id: materialId, name: normalizedName };
+          const { error: insErr } = await supabase.from('materials').insert([newMaterial]);
+          if (insErr) {
+             const { data: retryMat } = await supabase.from('materials').select('id').eq('name', normalizedName).single();
+             if (retryMat) materialId = retryMat.id;
+             else throw insErr;
+          }
+        }
+      } catch (err) {
+        if (isQuotaOrNetworkError(err)) {
+          useLocalFallback = true;
+          return this.addMaterialTransaction({ employeeId, employeeName, materialName, inwardQuantity, inwardDate, inwardComment, outwardQuantity, outwardDate, outwardComment, remainingComment, attachments });
+        }
+        throw err;
+      }
+    }
+    
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const existingUnapproved = (data.materialTransactions || []).find(
+        t => t.employeeId === employeeId && t.materialId === materialId && (t.status === 'PENDING_VERIFICATION' || t.status === 'VERIFIED')
+      );
+      if (existingUnapproved) {
+        const err = new Error('MATERIAL_TRANSACTION_PENDING');
+        err.status = 409;
+        err.code = 'MATERIAL_TRANSACTION_PENDING';
+        throw err;
+      }
+    } else {
+      const { data: existingUnapproved, error: checkErr } = await supabase
+        .from('material_transactions')
+        .select('id')
+        .eq('employeeId', employeeId)
+        .eq('materialId', materialId)
+        .in('status', ['PENDING_VERIFICATION', 'VERIFIED'])
+        .limit(1);
+        
+      if (!checkErr && existingUnapproved && existingUnapproved.length > 0) {
+        const err = new Error('MATERIAL_TRANSACTION_PENDING');
+        err.status = 409;
+        err.code = 'MATERIAL_TRANSACTION_PENDING';
+        throw err;
+      }
+    }
+    
+    let previousApprovedRemaining = 0;
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const approvedForMat = (data.materialTransactions || [])
+        .filter(t => t.employeeId === employeeId && t.materialId === materialId && t.status === 'APPROVED')
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      if (approvedForMat.length > 0) {
+        previousApprovedRemaining = Number(approvedForMat[0].remainingQuantity || 0);
+      }
+    } else {
+      const { data: lastApproved } = await supabase
+        .from('material_transactions')
+        .select('remainingQuantity')
+        .eq('employeeId', employeeId)
+        .eq('materialId', materialId)
+        .eq('status', 'APPROVED')
+        .order('createdAt', { ascending: false })
+        .limit(1);
+      if (lastApproved && lastApproved.length > 0) {
+        previousApprovedRemaining = Number(lastApproved[0].remainingQuantity || 0);
+      }
+    }
+    
+    const inQty = Number(inwardQuantity || 0);
+    const outQty = Number(outwardQuantity || 0);
+    const availableQuantity = previousApprovedRemaining + inQty;
+    
+    if (outQty > availableQuantity) {
+      throw new Error(`Outward quantity (${outQty}) cannot exceed available quantity (${availableQuantity}).`);
+    }
+    
+    const remainingQuantity = availableQuantity - outQty;
+    const transactionId = generateId('mtrx');
+    const nowIso = new Date().toISOString();
+    
+    const newTx = {
+      id: transactionId,
+      employeeId,
+      employeeName,
+      materialId,
+      materialName: normalizedName,
+      previousApprovedRemaining,
+      inwardQuantity: inQty,
+      inwardDate,
+      inwardComment,
+      outwardQuantity: outQty,
+      outwardDate,
+      outwardComment,
+      availableQuantity,
+      remainingQuantity,
+      remainingComment,
+      status: 'PENDING_VERIFICATION',
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+    
+    const attRecords = (attachments || []).map(a => ({
+      id: generateId('matt'),
+      transactionId,
+      step: a.step,
+      fileType: a.fileType,
+      fileData: a.fileData,
+      uploadedAt: nowIso
+    }));
+    
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      data.materialTransactions = data.materialTransactions || [];
+      data.materialAttachments = data.materialAttachments || [];
+      data.materialTransactions.push(newTx);
+      data.materialAttachments.push(...attRecords);
+      saveLocalData(data);
+      return newTx;
+    }
+    
+    try {
+      const { error: txErr } = await supabase.from('material_transactions').insert([newTx]);
+      if (txErr) throw txErr;
+      
+      if (attRecords.length > 0) {
+        const { error: attErr } = await supabase.from('material_attachments').insert(attRecords);
+        if (attErr) console.error('Failed to insert material attachments:', attErr.message);
+      }
+      return newTx;
+    } catch (err) {
+      handleSupabaseError(err, 'insert material transaction');
+      throw err;
+    }
+  },
+  
+  async verifyMaterialTransaction({ transactionId, verifiedBy, verificationComment, attachments }) {
+    const nowIso = new Date().toISOString();
+    const verifId = generateId('mver');
+    
+    const verifRecord = {
+      id: verifId,
+      transactionId,
+      verifiedBy,
+      verificationComment,
+      verifiedAt: nowIso
+    };
+    
+    const attRecords = (attachments || []).map(a => ({
+      id: generateId('mva'),
+      verificationId: verifId,
+      fileType: a.fileType,
+      fileData: a.fileData
+    }));
+    
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const tx = (data.materialTransactions || []).find(t => t.id === transactionId);
+      if (!tx) throw new Error('Transaction not found');
+      if (tx.status !== 'PENDING_VERIFICATION') throw new Error('Transaction is not in PENDING_VERIFICATION state');
+      
+      tx.status = 'VERIFIED';
+      tx.updatedAt = nowIso;
+      
+      data.materialVerifications = data.materialVerifications || [];
+      data.materialVerificationAttachments = data.materialVerificationAttachments || [];
+      
+      data.materialVerifications.push(verifRecord);
+      data.materialVerificationAttachments.push(...attRecords);
+      saveLocalData(data);
+      return tx;
+    }
+    
+    try {
+      const { data: tx } = await supabase.from('material_transactions').select('status').eq('id', transactionId).single();
+      if (!tx || tx.status !== 'PENDING_VERIFICATION') throw new Error('Transaction is not in PENDING_VERIFICATION state');
+      
+      await supabase.from('material_transactions').update({ status: 'VERIFIED', updatedAt: nowIso }).eq('id', transactionId);
+      await supabase.from('material_verifications').insert([verifRecord]);
+      if (attRecords.length > 0) {
+        await supabase.from('material_verification_attachments').insert(attRecords);
+      }
+      return { success: true };
+    } catch (err) {
+      handleSupabaseError(err, 'verify material transaction');
+      throw err;
+    }
+  },
+  
+  async approveMaterialTransaction({ transactionId, approvedBy, approvalComment, attachments }) {
+    const nowIso = new Date().toISOString();
+    const apprId = generateId('mapr');
+    
+    const apprRecord = {
+      id: apprId,
+      transactionId,
+      approvedBy,
+      approvalComment,
+      approvedAt: nowIso
+    };
+    
+    const attRecords = (attachments || []).map(a => ({
+      id: generateId('maa'),
+      approvalId: apprId,
+      fileType: a.fileType,
+      fileData: a.fileData
+    }));
+    
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const tx = (data.materialTransactions || []).find(t => t.id === transactionId);
+      if (!tx) throw new Error('Transaction not found');
+      if (tx.status !== 'VERIFIED') throw new Error('Transaction must be VERIFIED before approval');
+      
+      tx.status = 'APPROVED';
+      tx.updatedAt = nowIso;
+      
+      data.materialApprovals = data.materialApprovals || [];
+      data.materialApprovalAttachments = data.materialApprovalAttachments || [];
+      
+      data.materialApprovals.push(apprRecord);
+      data.materialApprovalAttachments.push(...attRecords);
+      saveLocalData(data);
+      return tx;
+    }
+    
+    try {
+      const { data: tx } = await supabase.from('material_transactions').select('status').eq('id', transactionId).single();
+      if (!tx || tx.status !== 'VERIFIED') throw new Error('Transaction must be VERIFIED before approval');
+      
+      await supabase.from('material_transactions').update({ status: 'APPROVED', updatedAt: nowIso }).eq('id', transactionId);
+      await supabase.from('material_approvals').insert([apprRecord]);
+      if (attRecords.length > 0) {
+        await supabase.from('material_approval_attachments').insert(attRecords);
+      }
+      return { success: true };
+    } catch (err) {
+      handleSupabaseError(err, 'approve material transaction');
+      throw err;
+    }
+  },
+  
+  async rejectMaterialTransaction({ transactionId, rejectedBy, rejectionComment }) {
+    const nowIso = new Date().toISOString();
+    
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const tx = (data.materialTransactions || []).find(t => t.id === transactionId);
+      if (!tx) throw new Error('Transaction not found');
+      
+      tx.status = 'REJECTED';
+      tx.updatedAt = nowIso;
+      if (tx.status === 'PENDING_VERIFICATION') {
+         data.materialVerifications = data.materialVerifications || [];
+         data.materialVerifications.push({ id: generateId('mver'), transactionId, verifiedBy: rejectedBy, verificationComment: `[REJECTED] ${rejectionComment}`, verifiedAt: nowIso });
+      } else {
+         data.materialApprovals = data.materialApprovals || [];
+         data.materialApprovals.push({ id: generateId('mapr'), transactionId, approvedBy: rejectedBy, approvalComment: `[REJECTED] ${rejectionComment}`, approvedAt: nowIso });
+      }
+      saveLocalData(data);
+      return tx;
+    }
+    
+    try {
+      const { data: tx } = await supabase.from('material_transactions').select('status').eq('id', transactionId).single();
+      if (!tx) throw new Error('Transaction not found');
+      
+      await supabase.from('material_transactions').update({ status: 'REJECTED', updatedAt: nowIso }).eq('id', transactionId);
+      if (tx.status === 'PENDING_VERIFICATION') {
+         await supabase.from('material_verifications').insert([{ id: generateId('mver'), transactionId, verifiedBy: rejectedBy, verificationComment: `[REJECTED] ${rejectionComment}`, verifiedAt: nowIso }]);
+      } else {
+         await supabase.from('material_approvals').insert([{ id: generateId('mapr'), transactionId, approvedBy: rejectedBy, approvalComment: `[REJECTED] ${rejectionComment}`, approvedAt: nowIso }]);
+      }
+      return { success: true };
+    } catch (err) {
+      handleSupabaseError(err, 'reject material transaction');
+      throw err;
+    }
+  },
 };
 
 function sanitizeAccountsPdfForClient(record) {

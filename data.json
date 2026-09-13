@@ -838,29 +838,32 @@
       "employeeName": "Anie",
       "role": "Ai engineer",
       "month": "2026-08",
-      "basicSalary": 35000,
-      "generatedAt": "2026-09-10T11:11:33.451Z",
+      "basicSalary": 50000,
+      "generatedAt": "2026-09-13T06:29:08.590Z",
       "totalDaysInMonth": 31,
       "workingDays": 30,
-      "regularPresentDays": 31,
+      "regularPresentDays": 0,
       "sundayPresentDays": 0,
-      "presentDays": 31,
-      "perDaySalary": 1167,
-      "regularEarned": 36177,
+      "presentDays": 0,
+      "perDaySalary": 1666.67,
+      "regularEarned": 0,
       "sundayBonus": 0,
-      "earnedSalary": 36177,
+      "earnedSalary": 0,
       "totalExpenses": 0,
-      "netSalary": 36177,
+      "netSalary": 0,
       "autoPresentDays": 0,
-      "isManualPresentDays": true,
-      "manualPresentDays": 31,
-      "editedBy": "Admin",
-      "editedAt": "2026-09-10T11:01:47.988Z",
+      "isManualPresentDays": false,
+      "manualPresentDays": null,
+      "editedBy": null,
+      "editedAt": null,
       "isManualSundayBonus": false,
       "manualSundayBonus": null,
       "autoSundayBonus": 0,
       "sundayBonusEditedBy": null,
-      "sundayBonusEditedAt": null
+      "sundayBonusEditedAt": null,
+      "worked14Aug": false,
+      "aug14Bonus": 0,
+      "extraDaysBonus": 0
     },
     {
       "id": "sal_mtub3e5h_r1w2y",
@@ -1746,6 +1749,39 @@
       "sundayPresentDays": 0,
       "presentDays": 0,
       "perDaySalary": 1333,
+      "regularEarned": 0,
+      "sundayBonus": 0,
+      "earnedSalary": 0,
+      "totalExpenses": 0,
+      "netSalary": 0
+    },
+    {
+      "id": "sal_mtzf40dk_c4rqa",
+      "employeeId": "test-emp-123",
+      "employeeName": "test-emp-123",
+      "role": "Staff",
+      "month": "2026-08",
+      "basicSalary": 0,
+      "generatedAt": "2026-09-13T06:13:24.092Z",
+      "totalDaysInMonth": 31,
+      "workingDays": 30,
+      "regularPresentDays": 0,
+      "sundayPresentDays": 0,
+      "worked14Aug": false,
+      "aug14Bonus": 0,
+      "extraDaysBonus": 0,
+      "presentDays": 0,
+      "autoPresentDays": 0,
+      "isManualPresentDays": false,
+      "manualPresentDays": null,
+      "editedBy": null,
+      "editedAt": null,
+      "isManualSundayBonus": false,
+      "manualSundayBonus": null,
+      "autoSundayBonus": 0,
+      "sundayBonusEditedBy": null,
+      "sundayBonusEditedAt": null,
+      "perDaySalary": 0,
       "regularEarned": 0,
       "sundayBonus": 0,
       "earnedSalary": 0,
@@ -10185,5 +10221,169 @@
       "createdAt": "2026-09-09T09:11:25.485Z",
       "updatedAt": "2026-09-09T14:45:35.586Z"
     }
-  ]
+  ],
+  "materials": [
+    {
+      "id": "mat_mtzeyle7_gnnaq",
+      "name": "BULB",
+      "createdAt": "2026-09-13T06:09:02.671Z"
+    },
+    {
+      "id": "mat_mtzeylv2_mm2jt",
+      "name": "CABLE",
+      "createdAt": "2026-09-13T06:09:03.278Z"
+    },
+    {
+      "id": "mat_mtzeylwk_j64pc",
+      "name": "NEW_MAT",
+      "createdAt": "2026-09-13T06:09:03.332Z"
+    },
+    {
+      "id": "mat_mtzeylxp_1ryzf",
+      "name": "J_MAT",
+      "createdAt": "2026-09-13T06:09:03.373Z"
+    }
+  ],
+  "materialTransactions": [
+    {
+      "id": "mtrx_mtzeylgh_lp7za",
+      "employeeId": "test-emp-123",
+      "employeeName": "Test Employee",
+      "materialId": "mat_mtzeyle7_gnnaq",
+      "materialName": "BULB",
+      "previousApprovedRemaining": 0,
+      "inwardQuantity": 10,
+      "outwardQuantity": 5,
+      "availableQuantity": 10,
+      "remainingQuantity": 5,
+      "status": "APPROVED",
+      "createdAt": "2026-09-13T06:09:02.753Z",
+      "updatedAt": "2026-09-13T06:09:02.837Z"
+    },
+    {
+      "id": "mtrx_mtzeylkw_xyqah",
+      "employeeId": "test-emp-123",
+      "employeeName": "Test Employee",
+      "materialId": "mat_mtzeyle7_gnnaq",
+      "materialName": "BULB",
+      "previousApprovedRemaining": 5,
+      "inwardQuantity": 3,
+      "outwardQuantity": 2,
+      "availableQuantity": 8,
+      "remainingQuantity": 6,
+      "status": "APPROVED",
+      "createdAt": "2026-09-13T06:09:02.912Z",
+      "updatedAt": "2026-09-13T06:09:02.979Z"
+    },
+    {
+      "id": "mtrx_mtzeylpk_3n7wg",
+      "employeeId": "test-emp-123",
+      "employeeName": "Test Employee",
+      "materialId": "mat_mtzeyle7_gnnaq",
+      "materialName": "BULB",
+      "previousApprovedRemaining": 6,
+      "inwardQuantity": 4,
+      "outwardQuantity": 3,
+      "availableQuantity": 10,
+      "remainingQuantity": 7,
+      "status": "APPROVED",
+      "createdAt": "2026-09-13T06:09:03.080Z",
+      "updatedAt": "2026-09-13T06:09:03.195Z"
+    },
+    {
+      "id": "mtrx_mtzeyltx_qolmo",
+      "employeeId": "test-emp-123",
+      "employeeName": "Test Employee",
+      "materialId": "mat_mtzeyle7_gnnaq",
+      "materialName": "BULB",
+      "previousApprovedRemaining": 7,
+      "inwardQuantity": 0,
+      "outwardQuantity": 0,
+      "availableQuantity": 7,
+      "remainingQuantity": 7,
+      "status": "REJECTED",
+      "createdAt": "2026-09-13T06:09:03.237Z",
+      "updatedAt": "2026-09-13T06:09:03.253Z"
+    },
+    {
+      "id": "mtrx_mtzeylvs_tbzyp",
+      "employeeId": "test-emp-123",
+      "employeeName": "Test Employee",
+      "materialId": "mat_mtzeylv2_mm2jt",
+      "materialName": "CABLE",
+      "previousApprovedRemaining": 0,
+      "inwardQuantity": 20,
+      "outwardQuantity": 0,
+      "availableQuantity": 20,
+      "remainingQuantity": 20,
+      "status": "PENDING_VERIFICATION",
+      "createdAt": "2026-09-13T06:09:03.304Z",
+      "updatedAt": "2026-09-13T06:09:03.304Z"
+    },
+    {
+      "id": "mtrx_mtzeylyl_rtadz",
+      "employeeId": "test-emp-123",
+      "employeeName": "Test Employee",
+      "materialId": "mat_mtzeylxp_1ryzf",
+      "materialName": "J_MAT",
+      "previousApprovedRemaining": 0,
+      "inwardQuantity": 0,
+      "outwardQuantity": 0,
+      "availableQuantity": 0,
+      "remainingQuantity": 0,
+      "status": "PENDING_VERIFICATION",
+      "createdAt": "2026-09-13T06:09:03.405Z",
+      "updatedAt": "2026-09-13T06:09:03.405Z"
+    }
+  ],
+  "materialAttachments": [],
+  "materialVerifications": [
+    {
+      "id": "mver_mtzeylhr_14dy0",
+      "transactionId": "mtrx_mtzeylgh_lp7za",
+      "verifiedBy": "Admin",
+      "verifiedAt": "2026-09-13T06:09:02.799Z"
+    },
+    {
+      "id": "mver_mtzeylll_l5c0v",
+      "transactionId": "mtrx_mtzeylkw_xyqah",
+      "verifiedBy": "Admin",
+      "verifiedAt": "2026-09-13T06:09:02.937Z"
+    },
+    {
+      "id": "mver_mtzeylrd_aye99",
+      "transactionId": "mtrx_mtzeylpk_3n7wg",
+      "verifiedBy": "Admin",
+      "verifiedAt": "2026-09-13T06:09:03.145Z"
+    }
+  ],
+  "materialVerificationAttachments": [],
+  "materialApprovals": [
+    {
+      "id": "mapr_mtzeylit_ck9di",
+      "transactionId": "mtrx_mtzeylgh_lp7za",
+      "approvedBy": "Senior",
+      "approvedAt": "2026-09-13T06:09:02.837Z"
+    },
+    {
+      "id": "mapr_mtzeylmr_v3ela",
+      "transactionId": "mtrx_mtzeylkw_xyqah",
+      "approvedBy": "Senior",
+      "approvedAt": "2026-09-13T06:09:02.979Z"
+    },
+    {
+      "id": "mapr_mtzeylsr_6z124",
+      "transactionId": "mtrx_mtzeylpk_3n7wg",
+      "approvedBy": "Senior",
+      "approvedAt": "2026-09-13T06:09:03.195Z"
+    },
+    {
+      "id": "mapr_mtzeylum_8hhyi",
+      "transactionId": "mtrx_mtzeyltx_qolmo",
+      "approvedBy": "Test",
+      "approvalComment": "[REJECTED] Clean",
+      "approvedAt": "2026-09-13T06:09:03.253Z"
+    }
+  ],
+  "materialApprovalAttachments": []
 }

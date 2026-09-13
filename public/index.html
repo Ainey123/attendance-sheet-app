@@ -158,6 +158,7 @@
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-workrecord">Work & Payment</button>
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-forms">My Forms</button>
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-comments">💬 Messages &amp; Comments</button>
+              <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-material">📦 Material Details</button>
             </div>
 
             <div id="emp-pane-attendance" class="emp-tab-pane active">
@@ -455,6 +456,126 @@
             </div>
 
             <!-- Messages & Comments Tab Pane -->
+            
+            <!-- MATERIAL DETAILS PANE -->
+            <div id="emp-pane-material" class="emp-tab-pane hidden">
+              <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  <h3 style="margin:0;">Active Materials</h3>
+                  <button id="btn-new-material-tx" class="btn btn-primary btn-sm">+ New Transaction</button>
+                </div>
+                <div class="card-body">
+                  <div id="employee-materials-summary" style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                    <!-- Filled by JS -->
+                  </div>
+                  <h4>Transaction History</h4>
+                  <div class="table-responsive">
+                    <table class="table data-table" id="emp-material-history-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Material</th>
+                          <th>Prev Rem.</th>
+                          <th>Inward</th>
+                          <th>Outward</th>
+                          <th>Rem.</th>
+                          <th>Status</th>
+                          <th>Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- NEW MATERIAL WIZARD MODAL -->
+            <div id="modal-material-wizard" class="modal hidden">
+              <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                  <h3>New Material Transaction</h3>
+                  <button class="close-btn" onclick="document.getElementById('modal-material-wizard').classList.add('hidden')">&times;</button>
+                </div>
+                <div class="modal-body">
+                  <div id="mat-wizard-step-1">
+                    <h4>Step 1: Inward (Received)</h4>
+                    <div class="form-group">
+                      <label>Material Name</label>
+                      <input type="text" id="mat-wiz-name" class="form-control" placeholder="e.g. Bulb, Cable" required>
+                      <div id="mat-wiz-lock-warning" class="text-danger hidden" style="font-size:0.85rem; margin-top:5px;">A previous transaction for this material is pending. You cannot create a new one yet.</div>
+                    </div>
+                    <div class="form-group">
+                      <label>Inward Quantity</label>
+                      <input type="number" id="mat-wiz-inward" class="form-control" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                      <label>Date</label>
+                      <input type="date" id="mat-wiz-inward-date" class="form-control">
+                    </div>
+                    <div class="form-group">
+                      <label>Comment</label>
+                      <input type="text" id="mat-wiz-inward-comment" class="form-control">
+                    </div>
+                    <div class="form-group">
+                      <label>Attachment (Image/PDF)</label>
+                      <input type="file" id="mat-wiz-inward-file" class="form-control" accept="image/*,.pdf">
+                    </div>
+                    <button class="btn btn-primary" id="mat-wiz-next-1">Next &rarr;</button>
+                  </div>
+                  
+                  <div id="mat-wizard-step-2" class="hidden">
+                    <h4>Step 2: Outward (Used)</h4>
+                    <div class="form-group">
+                      <label>Outward Quantity</label>
+                      <input type="number" id="mat-wiz-outward" class="form-control" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                      <label>Date</label>
+                      <input type="date" id="mat-wiz-outward-date" class="form-control">
+                    </div>
+                    <div class="form-group">
+                      <label>Comment</label>
+                      <input type="text" id="mat-wiz-outward-comment" class="form-control">
+                    </div>
+                    <div class="form-group">
+                      <label>Attachment (Image/PDF)</label>
+                      <input type="file" id="mat-wiz-outward-file" class="form-control" accept="image/*,.pdf">
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                      <button class="btn btn-secondary" id="mat-wiz-prev-2">&larr; Back</button>
+                      <button class="btn btn-primary" id="mat-wiz-next-2">Next &rarr;</button>
+                    </div>
+                  </div>
+                  
+                  <div id="mat-wizard-step-3" class="hidden">
+                    <h4>Step 3: Remaining (Summary)</h4>
+                    <div class="card mb-2" style="background:#f8f9fa;">
+                      <div class="card-body">
+                        <div><strong>Previous Approved Remaining:</strong> <span id="mat-wiz-prev-rem">0</span></div>
+                        <div><strong>Current Inward:</strong> <span id="mat-wiz-disp-in">0</span></div>
+                        <div><strong>Current Outward:</strong> <span id="mat-wiz-disp-out">0</span></div>
+                        <hr>
+                        <div><strong style="font-size:1.2rem;">Calculated Remaining: <span id="mat-wiz-calc-rem" class="text-primary">0</span></strong></div>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label>Remaining Comment</label>
+                      <input type="text" id="mat-wiz-rem-comment" class="form-control">
+                    </div>
+                    <div class="form-group">
+                      <label>Attachment (Image/PDF)</label>
+                      <input type="file" id="mat-wiz-rem-file" class="form-control" accept="image/*,.pdf">
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:1rem;">
+                      <button class="btn btn-secondary" id="mat-wiz-prev-3">&larr; Back</button>
+                      <button class="btn btn-success" id="mat-wiz-submit">SUBMIT MATERIAL</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div id="emp-pane-comments" class="emp-tab-pane hidden">
               <div class="panel" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
@@ -558,6 +679,12 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
               </svg>
               Individual Person History
+            </button>
+            <button class="nav-link" data-tab="tab-material-management">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+              </svg>
+              📦 Material Management
             </button>
             <button class="nav-link" data-tab="tab-settings">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -1243,7 +1370,74 @@
           </div>
 
           <!-- TAB 5: SETTINGS -->
-          <div id="tab-settings" class="tab-pane">
+          
+        <!-- MATERIAL MANAGEMENT TAB -->
+        <div id="tab-material-management" class="tab-pane hidden">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h2>Material Management</h2>
+              <button class="btn btn-secondary btn-sm" onclick="loadAdminMaterialTransactions()">Refresh</button>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table data-table" id="admin-material-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Material</th>
+                      <th>Date</th>
+                      <th>Prev Rem.</th>
+                      <th>Inward</th>
+                      <th>Outward</th>
+                      <th>Rem.</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ADMIN VERIFY/APPROVE MODAL -->
+        <div id="modal-material-admin" class="modal hidden">
+          <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+              <h3 id="mat-admin-title">Review Transaction</h3>
+              <button class="close-btn" onclick="document.getElementById('modal-material-admin').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="card mb-2" style="background:#f8f9fa;">
+                <div class="card-body text-sm" id="mat-admin-details">
+                  <!-- details injected via JS -->
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label>Comment / Notes</label>
+                <input type="text" id="mat-admin-comment" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Attachment (Image/PDF)</label>
+                <input type="file" id="mat-admin-file" class="form-control" accept="image/*,.pdf">
+              </div>
+              
+              <div id="mat-admin-senior-passcode-group" class="form-group hidden">
+                <label>Senior Admin Passcode</label>
+                <input type="password" id="mat-admin-senior-passcode" class="form-control">
+              </div>
+              
+              <div style="display:flex; gap:10px; margin-top:1rem;">
+                <button class="btn btn-success" id="mat-admin-action-btn">VERIFY</button>
+                <button class="btn btn-danger" id="mat-admin-reject-btn">REJECT</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-settings" class="tab-pane">
             <div class="settings-grid">
               <div class="panel">
                 <h3 class="panel-title">System Settings</h3>

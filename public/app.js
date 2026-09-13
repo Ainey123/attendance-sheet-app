@@ -329,6 +329,33 @@ const API = {
       body: JSON.stringify({ employeeId })
     }),
   approveFormSubmission: (id) => fetchJson(`/api/forms/${id}/approve`, { method: 'POST' }),
+
+  getMaterialTransactions: (employeeId) => {
+    let url = '/api/materials';
+    if (employeeId) url += '?employeeId=' + encodeURIComponent(employeeId);
+    return fetchJson(url, { headers: { 'X-Admin-Passcode': adminPasscode } });
+  },
+  addMaterialTransaction: (data) => fetchJson('/api/materials', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
+  verifyMaterialTransaction: (id, data) => fetchJson(`/api/materials/${id}/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+  approveMaterialTransaction: (id, data) => fetchJson(`/api/materials/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode, 'X-Senior-Passcode': data.seniorPasscode || '' },
+    body: JSON.stringify(data)
+  }),
+  rejectMaterialTransaction: (id, data) => fetchJson(`/api/materials/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
+
   rejectFormSubmission: (id) => fetchJson(`/api/forms/${id}/reject`, { method: 'POST' })
 };
 
@@ -9036,3 +9063,458 @@ window.handleSetBasicSalary = handleSetBasicSalary;
 window.updateSalarySummaryCards = updateSalarySummaryCards;
 window.hasUnsavedSalaryEdits = hasUnsavedSalaryEdits;
 
+
+
+// ==========================================================================
+// MATERIAL MANAGEMENT (EMPLOYEE & ADMIN)
+// ==========================================================================
+
+let currentMaterialTransactions = [];
+let pendingMaterialTransaction = null;
+
+// Convert File to Base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve(null);
+    if (file.size > 5 * 1024 * 1024) return reject(new Error('File is too large. Max 5MB allowed.'));
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Format date local
+function formatMaterialDate(d) {
+  if (!d) return '-';
+  return new Date(d).toLocaleDateString();
+}
+
+async function loadEmployeeMaterialTransactions() {
+  if (!selectedEmployee) return;
+  try {
+    const res = await API.getMaterialTransactions(selectedEmployee.id);
+    currentMaterialTransactions = res.transactions || [];
+    renderEmployeeMaterialSummary();
+    renderEmployeeMaterialHistory();
+  } catch (e) {
+    console.error('Failed to load materials', e);
+  }
+}
+
+function renderEmployeeMaterialSummary() {
+  const container = document.getElementById('employee-materials-summary');
+  if (!container) return;
+  container.innerHTML = '';
+  
+  // Group by materialName and get latest APPROVED remaining
+  const latestApproved = {};
+  currentMaterialTransactions.forEach(tx => {
+    if (tx.status === 'APPROVED') {
+      const name = tx.materialName.toUpperCase();
+      if (!latestApproved[name] || new Date(tx.createdAt) > new Date(latestApproved[name].createdAt)) {
+        latestApproved[name] = tx;
+      }
+    }
+  });
+  
+  if (Object.keys(latestApproved).length === 0) {
+    container.innerHTML = '<span class="text-muted">No active approved materials</span>';
+    return;
+  }
+  
+  Object.values(latestApproved).forEach(tx => {
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.padding = '10px 15px';
+    box.style.minWidth = '120px';
+    box.innerHTML = `<div style="font-size:0.85rem; color:#666;">${escapeHtml(tx.materialName)}</div>
+                     <div style="font-size:1.5rem; font-weight:bold;">${tx.remainingQuantity}</div>`;
+    container.appendChild(box);
+  });
+}
+
+function renderEmployeeMaterialHistory() {
+  const tbody = document.querySelector('#emp-material-history-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (currentMaterialTransactions.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No transactions found</td></tr>';
+    return;
+  }
+  
+  currentMaterialTransactions.forEach(tx => {
+    const tr = document.createElement('tr');
+    
+    // Status Badge
+    let statBadge = '';
+    if (tx.status === 'PENDING_VERIFICATION') statBadge = '<span class="badge bg-warning text-dark">Pending Verif</span>';
+    else if (tx.status === 'VERIFIED') statBadge = '<span class="badge bg-info">Verified</span>';
+    else if (tx.status === 'APPROVED') statBadge = '<span class="badge bg-success">Approved</span>';
+    else if (tx.status === 'REJECTED') statBadge = '<span class="badge bg-danger">Rejected</span>';
+    
+    tr.innerHTML = `
+      <td>${formatMaterialDate(tx.createdAt)}</td>
+      <td>${escapeHtml(tx.materialName)}</td>
+      <td>${tx.previousApprovedRemaining}</td>
+      <td><span class="text-success">+${tx.inwardQuantity}</span></td>
+      <td><span class="text-danger">-${tx.outwardQuantity}</span></td>
+      <td><strong>${tx.remainingQuantity}</strong></td>
+      <td>${statBadge}</td>
+      <td style="font-size:0.85rem; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(tx.remainingComment || '')}">${escapeHtml(tx.remainingComment || '-')}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// Setup Wizard
+const btnNewMaterial = document.getElementById('btn-new-material-tx');
+if (btnNewMaterial) {
+  btnNewMaterial.addEventListener('click', () => {
+    document.getElementById('mat-wizard-step-1').classList.remove('hidden');
+    document.getElementById('mat-wizard-step-2').classList.add('hidden');
+    document.getElementById('mat-wizard-step-3').classList.add('hidden');
+    
+    document.getElementById('mat-wiz-name').value = '';
+    document.getElementById('mat-wiz-inward').value = '0';
+    document.getElementById('mat-wiz-inward-date').value = getLocalDateString();
+    document.getElementById('mat-wiz-inward-comment').value = '';
+    document.getElementById('mat-wiz-inward-file').value = '';
+    document.getElementById('mat-wiz-outward').value = '0';
+    document.getElementById('mat-wiz-outward-date').value = getLocalDateString();
+    document.getElementById('mat-wiz-outward-comment').value = '';
+    document.getElementById('mat-wiz-outward-file').value = '';
+    document.getElementById('mat-wiz-rem-comment').value = '';
+    document.getElementById('mat-wiz-rem-file').value = '';
+    
+    document.getElementById('mat-wiz-lock-warning').classList.add('hidden');
+    document.getElementById('mat-wiz-next-1').disabled = false;
+    
+    document.getElementById('modal-material-wizard').classList.remove('hidden');
+  });
+}
+
+document.getElementById('mat-wiz-name')?.addEventListener('input', (e) => {
+  const name = e.target.value.trim().toUpperCase();
+  const hasPending = currentMaterialTransactions.some(t => t.materialName.toUpperCase() === name && (t.status === 'PENDING_VERIFICATION' || t.status === 'VERIFIED'));
+  
+  if (hasPending) {
+    document.getElementById('mat-wiz-lock-warning').classList.remove('hidden');
+    document.getElementById('mat-wiz-next-1').disabled = true;
+  } else {
+    document.getElementById('mat-wiz-lock-warning').classList.add('hidden');
+    document.getElementById('mat-wiz-next-1').disabled = false;
+  }
+});
+
+document.getElementById('mat-wiz-next-1')?.addEventListener('click', () => {
+  const name = document.getElementById('mat-wiz-name').value.trim();
+  if (!name) return showToast('Please enter Material Name', 'error');
+  
+  document.getElementById('mat-wizard-step-1').classList.add('hidden');
+  document.getElementById('mat-wizard-step-2').classList.remove('hidden');
+});
+
+document.getElementById('mat-wiz-prev-2')?.addEventListener('click', () => {
+  document.getElementById('mat-wizard-step-2').classList.add('hidden');
+  document.getElementById('mat-wizard-step-1').classList.remove('hidden');
+});
+
+document.getElementById('mat-wiz-next-2')?.addEventListener('click', () => {
+  document.getElementById('mat-wizard-step-2').classList.add('hidden');
+  document.getElementById('mat-wizard-step-3').classList.remove('hidden');
+  
+  // Calculate Remaining
+  const name = document.getElementById('mat-wiz-name').value.trim().toUpperCase();
+  const inQty = Number(document.getElementById('mat-wiz-inward').value) || 0;
+  const outQty = Number(document.getElementById('mat-wiz-outward').value) || 0;
+  
+  let prevRem = 0;
+  const approvedForMat = currentMaterialTransactions.filter(t => t.materialName.toUpperCase() === name && t.status === 'APPROVED');
+  if (approvedForMat.length > 0) {
+    prevRem = Number(approvedForMat[0].remainingQuantity || 0);
+  }
+  
+  document.getElementById('mat-wiz-prev-rem').innerText = prevRem;
+  document.getElementById('mat-wiz-disp-in').innerText = inQty;
+  document.getElementById('mat-wiz-disp-out').innerText = outQty;
+  
+  const totalAvailable = prevRem + inQty;
+  document.getElementById('mat-wiz-calc-rem').innerText = totalAvailable - outQty;
+  
+  if (outQty > totalAvailable) {
+    showToast('Outward quantity exceeds available quantity!', 'error');
+    document.getElementById('mat-wiz-calc-rem').classList.add('text-danger');
+  } else {
+    document.getElementById('mat-wiz-calc-rem').classList.remove('text-danger');
+  }
+});
+
+document.getElementById('mat-wiz-prev-3')?.addEventListener('click', () => {
+  document.getElementById('mat-wizard-step-3').classList.add('hidden');
+  document.getElementById('mat-wizard-step-2').classList.remove('hidden');
+});
+
+document.getElementById('mat-wiz-submit')?.addEventListener('click', async () => {
+  const btn = document.getElementById('mat-wiz-submit');
+  btn.disabled = true;
+  btn.innerText = 'Submitting...';
+  
+  try {
+    const inFile = document.getElementById('mat-wiz-inward-file').files[0];
+    const outFile = document.getElementById('mat-wiz-outward-file').files[0];
+    const remFile = document.getElementById('mat-wiz-rem-file').files[0];
+    
+    const attachments = [];
+    if (inFile) attachments.push({ step: 'INWARD', fileType: inFile.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(inFile) });
+    if (outFile) attachments.push({ step: 'OUTWARD', fileType: outFile.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(outFile) });
+    if (remFile) attachments.push({ step: 'REMAINING', fileType: remFile.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(remFile) });
+    
+    const payload = {
+      employeeId: selectedEmployee.id,
+      employeeName: selectedEmployee.name,
+      materialName: document.getElementById('mat-wiz-name').value.trim(),
+      inwardQuantity: Number(document.getElementById('mat-wiz-inward').value) || 0,
+      inwardDate: document.getElementById('mat-wiz-inward-date').value,
+      inwardComment: document.getElementById('mat-wiz-inward-comment').value,
+      outwardQuantity: Number(document.getElementById('mat-wiz-outward').value) || 0,
+      outwardDate: document.getElementById('mat-wiz-outward-date').value,
+      outwardComment: document.getElementById('mat-wiz-outward-comment').value,
+      remainingComment: document.getElementById('mat-wiz-rem-comment').value,
+      attachments
+    };
+    
+    await API.addMaterialTransaction(payload);
+    showToast('Transaction submitted successfully!', 'success');
+    document.getElementById('modal-material-wizard').classList.add('hidden');
+    loadEmployeeMaterialTransactions();
+  } catch (err) {
+    showToast(err.message || 'Failed to submit', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'SUBMIT MATERIAL';
+  }
+});
+
+// Watch for tab change to load materials
+document.addEventListener('click', (e) => {
+  if (e.target.matches('[data-emp-tab="emp-pane-material"]')) {
+    loadEmployeeMaterialTransactions();
+  }
+});
+
+
+// ADMIN SIDE MATERIAL MANAGEMENT
+let adminMaterialTxs = [];
+let currentReviewTx = null;
+
+async function loadAdminMaterialTransactions() {
+  const tbody = document.querySelector('#admin-material-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="9" class="text-center">Loading...</td></tr>';
+  
+  try {
+    const res = await API.getMaterialTransactions();
+    adminMaterialTxs = res.transactions || [];
+    renderAdminMaterialTable();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function renderAdminMaterialTable() {
+  const tbody = document.querySelector('#admin-material-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  if (adminMaterialTxs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No transactions found</td></tr>';
+    return;
+  }
+  
+  adminMaterialTxs.forEach(tx => {
+    const tr = document.createElement('tr');
+    
+    let statBadge = '';
+    if (tx.status === 'PENDING_VERIFICATION') statBadge = '<span class="badge bg-warning text-dark">Pending Verif</span>';
+    else if (tx.status === 'VERIFIED') statBadge = '<span class="badge bg-info">Verified</span>';
+    else if (tx.status === 'APPROVED') statBadge = '<span class="badge bg-success">Approved</span>';
+    else if (tx.status === 'REJECTED') statBadge = '<span class="badge bg-danger">Rejected</span>';
+    
+    let actBtn = '';
+    if (tx.status === 'PENDING_VERIFICATION') actBtn = `<button class="btn btn-sm btn-primary" onclick="openAdminReviewModal('${tx.id}')">Verify</button>`;
+    else if (tx.status === 'VERIFIED') actBtn = `<button class="btn btn-sm btn-success" onclick="openAdminReviewModal('${tx.id}')">Approve</button>`;
+    else actBtn = `<button class="btn btn-sm btn-outline-secondary" onclick="openAdminReviewModal('${tx.id}')">View</button>`;
+    
+    tr.innerHTML = `
+      <td>${escapeHtml(tx.employeeName)}</td>
+      <td>${escapeHtml(tx.materialName)}</td>
+      <td>${formatMaterialDate(tx.createdAt)}</td>
+      <td>${tx.previousApprovedRemaining}</td>
+      <td>+${tx.inwardQuantity}</td>
+      <td>-${tx.outwardQuantity}</td>
+      <td><strong>${tx.remainingQuantity}</strong></td>
+      <td>${statBadge}</td>
+      <td>${actBtn}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.openAdminReviewModal = function(id) {
+  currentReviewTx = adminMaterialTxs.find(t => t.id === id);
+  if (!currentReviewTx) return;
+  
+  const tx = currentReviewTx;
+  document.getElementById('mat-admin-title').innerText = tx.status === 'PENDING_VERIFICATION' ? 'Verify Transaction' : (tx.status === 'VERIFIED' ? 'Approve Transaction' : 'View Transaction');
+  
+  let detailsHtml = `
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+      <div><strong>Employee:</strong> ${escapeHtml(tx.employeeName)}</div>
+      <div><strong>Material:</strong> ${escapeHtml(tx.materialName)}</div>
+      <div><strong>Date:</strong> ${formatMaterialDate(tx.createdAt)}</div>
+      <div><strong>Status:</strong> ${escapeHtml(tx.status)}</div>
+    </div>
+    <hr>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+      <div><strong>Prev Remaining:</strong> ${tx.previousApprovedRemaining}</div>
+      <div><strong>Inward:</strong> +${tx.inwardQuantity}</div>
+      <div><strong>Outward:</strong> -${tx.outwardQuantity}</div>
+      <div><strong class="text-primary">New Remaining:</strong> ${tx.remainingQuantity}</div>
+    </div>
+    <hr>
+    <div><strong>Employee Comments:</strong></div>
+    <div><small>Inward: ${escapeHtml(tx.inwardComment || '-')}</small></div>
+    <div><small>Outward: ${escapeHtml(tx.outwardComment || '-')}</small></div>
+    <div><small>Remaining: ${escapeHtml(tx.remainingComment || '-')}</small></div>
+  `;
+  
+  if (tx.status === 'VERIFIED' && tx.verification) {
+    detailsHtml += `
+      <hr>
+      <div style="background:#e9f7ef; padding:8px; border-radius:4px;">
+        <strong>Admin 1 Verification</strong><br>
+        <small>Verified By: ${escapeHtml(tx.verification.verifiedBy)}</small><br>
+        <small>Comment: ${escapeHtml(tx.verification.verificationComment || '-')}</small>
+      </div>
+    `;
+  }
+  
+  if (tx.status === 'APPROVED' && tx.approval) {
+    detailsHtml += `
+      <hr>
+      <div style="background:#d4edda; padding:8px; border-radius:4px;">
+        <strong>Senior Admin Approval</strong><br>
+        <small>Approved By: ${escapeHtml(tx.approval.approvedBy)}</small><br>
+        <small>Comment: ${escapeHtml(tx.approval.approvalComment || '-')}</small>
+      </div>
+    `;
+  }
+  
+  document.getElementById('mat-admin-details').innerHTML = detailsHtml;
+  
+  document.getElementById('mat-admin-comment').value = '';
+  document.getElementById('mat-admin-file').value = '';
+  
+  if (tx.status === 'VERIFIED') {
+    document.getElementById('mat-admin-senior-passcode-group').classList.remove('hidden');
+    document.getElementById('mat-admin-senior-passcode').value = '';
+  } else {
+    document.getElementById('mat-admin-senior-passcode-group').classList.add('hidden');
+  }
+  
+  const actionBtn = document.getElementById('mat-admin-action-btn');
+  const rejectBtn = document.getElementById('mat-admin-reject-btn');
+  
+  if (tx.status === 'PENDING_VERIFICATION') {
+    actionBtn.innerText = 'VERIFY';
+    actionBtn.className = 'btn btn-primary';
+    actionBtn.classList.remove('hidden');
+    rejectBtn.classList.remove('hidden');
+  } else if (tx.status === 'VERIFIED') {
+    actionBtn.innerText = 'APPROVE';
+    actionBtn.className = 'btn btn-success';
+    actionBtn.classList.remove('hidden');
+    rejectBtn.classList.remove('hidden');
+  } else {
+    actionBtn.classList.add('hidden');
+    rejectBtn.classList.add('hidden');
+  }
+  
+  document.getElementById('modal-material-admin').classList.remove('hidden');
+};
+
+document.getElementById('mat-admin-action-btn')?.addEventListener('click', async () => {
+  if (!currentReviewTx) return;
+  const tx = currentReviewTx;
+  const btn = document.getElementById('mat-admin-action-btn');
+  btn.disabled = true;
+  btn.innerText = 'Processing...';
+  
+  try {
+    const file = document.getElementById('mat-admin-file').files[0];
+    let attachments = [];
+    if (file) {
+      attachments.push({ fileType: file.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(file) });
+    }
+    
+    if (tx.status === 'PENDING_VERIFICATION') {
+      await API.verifyMaterialTransaction(tx.id, {
+        verifiedBy: 'Admin 1',
+        verificationComment: document.getElementById('mat-admin-comment').value,
+        attachments
+      });
+      showToast('Transaction Verified', 'success');
+    } else if (tx.status === 'VERIFIED') {
+      const seniorPass = document.getElementById('mat-admin-senior-passcode').value;
+      if (!seniorPass) throw new Error('Senior Admin Passcode is required');
+      await API.approveMaterialTransaction(tx.id, {
+        seniorPasscode: seniorPass,
+        approvedBy: 'Senior Admin',
+        approvalComment: document.getElementById('mat-admin-comment').value,
+        attachments
+      });
+      showToast('Transaction Approved', 'success');
+    }
+    document.getElementById('modal-material-admin').classList.add('hidden');
+    loadAdminMaterialTransactions();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('mat-admin-reject-btn')?.addEventListener('click', async () => {
+  if (!currentReviewTx) return;
+  const tx = currentReviewTx;
+  const btn = document.getElementById('mat-admin-reject-btn');
+  
+  const comment = document.getElementById('mat-admin-comment').value;
+  if (!comment) return showToast('Rejection comment is required', 'error');
+  
+  btn.disabled = true;
+  btn.innerText = 'Rejecting...';
+  
+  try {
+    await API.rejectMaterialTransaction(tx.id, {
+      rejectedBy: tx.status === 'VERIFIED' ? 'Senior Admin' : 'Admin 1',
+      rejectionComment: comment
+    });
+    showToast('Transaction Rejected', 'success');
+    document.getElementById('modal-material-admin').classList.add('hidden');
+    loadAdminMaterialTransactions();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'REJECT';
+  }
+});
+
+// Watch Admin Tab
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-tab="tab-material-management"]')) {
+    loadAdminMaterialTransactions();
+  }
+});
