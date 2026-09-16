@@ -14,6 +14,7 @@ let supabase = null;
 let useLocalFallback = false;
 let cachedSettings = null;
 let lastSettingsFetch = 0;
+let settingsFetchPromise = null;
 
 // Check if Supabase is configured
 if (supabaseUrl && supabaseKey) {
@@ -625,25 +626,41 @@ const db = {
     if (cachedSettings && (Date.now() - lastSettingsFetch < 60000)) {
         return cachedSettings;
     }
-    try {
-      const { data, error } = await supabase
-        .from('settings')
-        .select('*')
-        .single();
-      if (error || !data) {
+    
+    // Cache stampede prevention
+    if (settingsFetchPromise) {
+      try {
+        await settingsFetchPromise;
         if (cachedSettings) return cachedSettings;
-        return { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' };
+      } catch(e) {}
+    }
+    
+    settingsFetchPromise = (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('settings')
+          .select('*')
+          .single();
+        if (error || !data) {
+          throw new Error('Supabase fetch failed');
+        }
+        cachedSettings = {
+          ...data,
+          seniorAdminPasscode: data.seniorAdminPasscode || '9999'
+        };
+        lastSettingsFetch = Date.now();
+      } finally {
+        settingsFetchPromise = null;
       }
-      cachedSettings = {
-        ...data,
-        seniorAdminPasscode: data.seniorAdminPasscode || '9999'
-      };
-      lastSettingsFetch = Date.now();
-      return cachedSettings;
+    })();
+    
+    try {
+      await settingsFetchPromise;
     } catch (error) {
       if (cachedSettings) return cachedSettings;
-      return { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' };
+      return { adminPasscode: '1290', seniorAdminPasscode: '9999', officeName: 'My Office' };
     }
+    return cachedSettings || { adminPasscode: '1290', seniorAdminPasscode: '9999', officeName: 'My Office' };
   },
 
   async updateSettings(newSettings) {
