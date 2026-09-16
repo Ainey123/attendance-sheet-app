@@ -12,6 +12,8 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 let supabase = null;
 let useLocalFallback = false;
+let cachedSettings = null;
+let lastSettingsFetch = 0;
 
 // Check if Supabase is configured
 if (supabaseUrl && supabaseKey) {
@@ -620,24 +622,32 @@ const db = {
         adminToken: s.adminToken || null
       };
     }
+    if (cachedSettings && (Date.now() - lastSettingsFetch < 60000)) {
+        return cachedSettings;
+    }
     try {
       const { data, error } = await supabase
         .from('settings')
         .select('*')
         .single();
       if (error || !data) {
+        if (cachedSettings) return cachedSettings;
         return { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' };
       }
-      return {
+      cachedSettings = {
         ...data,
         seniorAdminPasscode: data.seniorAdminPasscode || '9999'
       };
+      lastSettingsFetch = Date.now();
+      return cachedSettings;
     } catch (error) {
+      if (cachedSettings) return cachedSettings;
       return { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' };
     }
   },
 
   async updateSettings(newSettings) {
+    cachedSettings = null;
     if (useLocalFallback) {
       const data = loadLocalData();
       data.settings = { ...data.settings, ...newSettings };
