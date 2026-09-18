@@ -11,7 +11,7 @@ function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const fileData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [], accountsPdfs: fileData.accountsPdfs || [], salaryApprovals: fileData.salaryApprovals || [], expenseVerifications: fileData.expenseVerifications || [] };
+      data = { ...data, ...fileData, formSubmissions: fileData.formSubmissions || [], comments: fileData.comments || [], salaries: fileData.salaries || [], accountsPdfs: fileData.accountsPdfs || [], salaryApprovals: fileData.salaryApprovals || [], expenseVerifications: fileData.expenseVerifications || [], bills: fileData.bills || [] };
     }
   } catch (e) {
     console.error('Error loading data:', e.message);
@@ -2297,6 +2297,335 @@ const db = {
         totalApprovedCount
       },
       employees: employeeReports
+    };
+  },
+
+  // ─── BILL & EXPENSE MANAGEMENT SYSTEM (Local) ─────────────────────────────
+  async getNextBillNumber() {
+    loadData();
+    const bills = data.bills || [];
+    let maxNum = 0;
+    bills.forEach(b => {
+      const m = String(b.billNumber || '').match(/^BILL-(\d+)$/i);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (!isNaN(val) && val > maxNum) maxNum = val;
+      }
+    });
+    return `BILL-${String(maxNum + 1).padStart(6, '0')}`;
+  },
+
+  async createBill(billData) {
+    if (!billData || !billData.employeeId) {
+      const err = new Error('Employee ID is required.');
+      err.status = 400;
+      throw err;
+    }
+    if (!billData.siteName || !billData.siteName.trim()) {
+      const err = new Error('Site Name is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    const transportationExpense = Math.max(0, Number(billData.transportationExpense) || 0);
+    const materialExpense = Math.max(0, Number(billData.materialExpense) || 0);
+    const labourExpense = Math.max(0, Number(billData.labourExpense) || 0);
+    const accommodationExpense = Math.max(0, Number(billData.accommodationExpense) || 0);
+    const otherExpense = Math.max(0, Number(billData.otherExpense) || 0);
+
+    const totalClaimedAmount = transportationExpense + materialExpense + labourExpense + accommodationExpense + otherExpense;
+
+    if (totalClaimedAmount <= 0) {
+      const err = new Error('At least one expense category must have a valid positive amount.');
+      err.status = 400;
+      throw err;
+    }
+
+    const attachments = Array.isArray(billData.attachments) ? billData.attachments : [];
+    if (attachments.length === 0) {
+      const err = new Error('At least one bill picture / receipt attachment is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    loadData();
+    data.bills = data.bills || [];
+
+    const nowIso = new Date().toISOString();
+    let nextNum = await this.getNextBillNumber();
+    while (data.bills.some(b => b.billNumber === nextNum)) {
+      const m = nextNum.match(/^BILL-(\d+)$/i);
+      const val = m ? parseInt(m[1], 10) + 1 : 1;
+      nextNum = `BILL-${String(val).padStart(6, '0')}`;
+    }
+
+    const newBill = {
+      id: generateId('bill'),
+      billNumber: nextNum,
+      employeeId: String(billData.employeeId).trim(),
+      employeeName: (billData.employeeName || 'Employee').trim(),
+      siteName: billData.siteName.trim(),
+      billDate: billData.billDate || new Date().toISOString().split('T')[0],
+      submittedAt: nowIso,
+      transportationExpense,
+      materialExpense,
+      labourExpense,
+      accommodationExpense,
+      otherExpense,
+      totalClaimedAmount,
+      description: (billData.description || '').trim(),
+      attachments,
+      status: 'PENDING_VERIFICATION',
+      verifiedAmount: null,
+      verifiedBy: null,
+      verifiedAt: null,
+      verificationComment: null,
+      approvedAmount: null,
+      approvedBy: null,
+      approvedAt: null,
+      approvalComment: null,
+      rejectedBy: null,
+      rejectedAt: null,
+      rejectionReason: null,
+      auditLog: [
+        {
+          action: 'SUBMITTED',
+          by: billData.employeeName || 'Employee',
+          at: nowIso,
+          details: { totalClaimedAmount, billNumber: nextNum, attachmentsCount: attachments.length }
+        }
+      ],
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    data.bills.push(newBill);
+    saveData();
+
+    // Persistent notification in comments
+    try {
+      const notifMsg = `New Bill Submitted\nEmployee: ${newBill.employeeName}\nEmployee ID: ${newBill.employeeId}\nBill Number: ${newBill.billNumber}\nSite: ${newBill.siteName}\nDate: ${newBill.billDate}\nClaimed Amount: Rs. ${Number(newBill.totalClaimedAmount).toLocaleString()}\nStatus: Pending Verification\n[BillID:${newBill.id}]`;
+      await this.addComment({
+        employeeId: newBill.employeeId,
+        employeeName: newBill.employeeName,
+        sender: 'bill_system',
+        senderName: newBill.employeeName,
+        message: notifMsg
+      });
+    } catch (e) {}
+
+    return newBill;
+  },
+
+  async getBills({ employeeId = null, status = null, search = null } = {}) {
+    loadData();
+    let list = (data.bills || []).map(b => ({ ...b }));
+
+    if (employeeId) {
+      list = list.filter(b => b.employeeId === employeeId);
+    }
+    if (status && status !== 'ALL') {
+      list = list.filter(b => b.status === status);
+    }
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      list = list.filter(b =>
+        String(b.billNumber || '').toLowerCase().includes(term) ||
+        String(b.employeeName || '').toLowerCase().includes(term) ||
+        String(b.employeeId || '').toLowerCase().includes(term) ||
+        String(b.siteName || '').toLowerCase().includes(term) ||
+        String(b.billDate || '').toLowerCase().includes(term) ||
+        String(b.status || '').toLowerCase().includes(term)
+      );
+    }
+
+    list.sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
+    return list;
+  },
+
+  async getBillById(id) {
+    if (!id) return null;
+    loadData();
+    const found = (data.bills || []).find(b => b.id === id);
+    return found ? { ...found } : null;
+  },
+
+  async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin' } = {}) {
+    loadData();
+    data.bills = data.bills || [];
+    const idx = data.bills.findIndex(b => b.id === id);
+    if (idx === -1) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const commentText = (verificationComment || verifiedComment || '').trim();
+    const bill = data.bills[idx];
+    const numVerified = Number(verifiedAmount);
+    if (isNaN(numVerified) || numVerified < 0) {
+      const err = new Error('Verified amount must be a valid non-negative number.');
+      err.status = 400;
+      throw err;
+    }
+    const claimedAmt = Number(bill.totalClaimedAmount) || 0;
+    if (numVerified > claimedAmt) {
+      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${claimedAmt.toLocaleString()}).`);
+      err.status = 400;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const auditEntry = {
+      action: 'VERIFIED',
+      by: verifiedBy,
+      at: nowIso,
+      details: {
+        claimedAmount: claimedAmt,
+        verifiedAmount: numVerified,
+        comment: commentText
+      }
+    };
+    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+
+    bill.verifiedAmount = numVerified;
+    bill.verifiedBy = verifiedBy || 'Admin';
+    bill.verifiedAt = nowIso;
+    bill.verificationComment = commentText;
+    bill.verifiedComment = commentText;
+    bill.status = 'VERIFIED';
+    bill.auditLog = auditLog;
+    bill.updatedAt = nowIso;
+
+    saveData();
+    return { ...bill };
+  },
+
+  async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin' } = {}) {
+    loadData();
+    data.bills = data.bills || [];
+    const idx = data.bills.findIndex(b => b.id === id);
+    if (idx === -1) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const commentText = (approvalComment || approvedComment || '').trim();
+    const bill = data.bills[idx];
+    const numApproved = Number(approvedAmount);
+    if (isNaN(numApproved) || numApproved < 0) {
+      const err = new Error('Approved amount must be a valid non-negative number.');
+      err.status = 400;
+      throw err;
+    }
+
+    const maxAllowed = (bill.verifiedAmount !== null && bill.verifiedAmount !== undefined)
+      ? Number(bill.verifiedAmount)
+      : Number(bill.totalClaimedAmount);
+
+    if (numApproved > maxAllowed) {
+      const err = new Error(`Approved amount (Rs. ${numApproved.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}).`);
+      err.status = 400;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const auditEntry = {
+      action: 'APPROVED',
+      by: approvedBy,
+      at: nowIso,
+      details: {
+        claimedAmount: Number(bill.totalClaimedAmount),
+        verifiedAmount: bill.verifiedAmount,
+        approvedAmount: numApproved,
+        comment: commentText
+      }
+    };
+    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+
+    bill.approvedAmount = numApproved;
+    bill.approvedBy = approvedBy || 'Senior Admin';
+    bill.approvedAt = nowIso;
+    bill.approvalComment = commentText;
+    bill.approvedComment = commentText;
+    bill.status = 'APPROVED';
+    bill.auditLog = auditLog;
+    bill.updatedAt = nowIso;
+
+    saveData();
+    return { ...bill };
+  },
+
+  async rejectBill(id, { rejectionReason = '', reason = '', rejectedBy = 'Admin' } = {}) {
+    loadData();
+    data.bills = data.bills || [];
+    const idx = data.bills.findIndex(b => b.id === id);
+    if (idx === -1) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const reasonText = (rejectionReason || reason || 'Rejected by Admin').trim();
+
+    const bill = data.bills[idx];
+    const auditEntry = {
+      action: 'REJECTED',
+      by: rejectedBy,
+      at: nowIso,
+      details: {
+        claimedAmount: Number(bill.totalClaimedAmount),
+        verifiedAmount: bill.verifiedAmount,
+        reason: reasonText
+      }
+    };
+    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+
+    bill.status = 'REJECTED';
+    bill.rejectedBy = rejectedBy || 'Admin';
+    bill.rejectedAt = nowIso;
+    bill.rejectionReason = reasonText;
+    bill.auditLog = auditLog;
+    bill.updatedAt = nowIso;
+
+    saveData();
+    return { ...bill };
+  },
+
+  async getBillStats() {
+    const bills = await this.getBills();
+    const totalBills = bills.length;
+    let pendingVerification = 0;
+    let verified = 0;
+    let approved = 0;
+    let rejected = 0;
+    let totalClaimedAmount = 0;
+    let totalApprovedAmount = 0;
+
+    bills.forEach(b => {
+      totalClaimedAmount += (Number(b.totalClaimedAmount) || 0);
+      if (b.status === 'PENDING_VERIFICATION') pendingVerification++;
+      else if (b.status === 'VERIFIED') verified++;
+      else if (b.status === 'APPROVED') {
+        approved++;
+        totalApprovedAmount += (Number(b.approvedAmount) || 0);
+      } else if (b.status === 'REJECTED') rejected++;
+    });
+
+    return {
+      totalBills,
+      pendingVerification,
+      pendingVerificationCount: pendingVerification,
+      verified,
+      verifiedCount: verified,
+      approved,
+      approvedCount: approved,
+      rejected,
+      rejectedCount: rejected,
+      totalClaimedAmount,
+      totalApprovedAmount
     };
   }
 };

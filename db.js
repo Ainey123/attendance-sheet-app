@@ -152,6 +152,44 @@ if (supabaseUrl && supabaseKey) {
             "fileData" TEXT
           );
 
+          CREATE SEQUENCE IF NOT EXISTS bills_seq START WITH 1 INCREMENT BY 1;
+          CREATE TABLE IF NOT EXISTS bills (
+            "id"                    TEXT PRIMARY KEY,
+            "billNumber"            TEXT UNIQUE NOT NULL DEFAULT ('BILL-' || LPAD(nextval('bills_seq')::TEXT, 6, '0')),
+            "employeeId"            TEXT NOT NULL,
+            "employeeName"          TEXT NOT NULL,
+            "siteName"              TEXT NOT NULL,
+            "billDate"              TEXT NOT NULL,
+            "submittedAt"           TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            "transportationExpense" NUMERIC DEFAULT 0 CHECK ("transportationExpense" >= 0),
+            "materialExpense"       NUMERIC DEFAULT 0 CHECK ("materialExpense" >= 0),
+            "labourExpense"         NUMERIC DEFAULT 0 CHECK ("labourExpense" >= 0),
+            "accommodationExpense"  NUMERIC DEFAULT 0 CHECK ("accommodationExpense" >= 0),
+            "otherExpense"          NUMERIC DEFAULT 0 CHECK ("otherExpense" >= 0),
+            "totalClaimedAmount"    NUMERIC NOT NULL DEFAULT 0 CHECK ("totalClaimedAmount" >= 0),
+            "description"           TEXT,
+            "attachments"           JSONB DEFAULT '[]'::jsonb,
+            "status"                TEXT NOT NULL DEFAULT 'PENDING_VERIFICATION' CHECK ("status" IN ('PENDING_VERIFICATION', 'VERIFIED', 'APPROVED', 'REJECTED')),
+            "verifiedAmount"        NUMERIC CHECK ("verifiedAmount" IS NULL OR "verifiedAmount" >= 0),
+            "verifiedBy"            TEXT,
+            "verifiedAt"            TIMESTAMP WITH TIME ZONE,
+            "verificationComment"   TEXT,
+            "approvedAmount"        NUMERIC CHECK ("approvedAmount" IS NULL OR "approvedAmount" >= 0),
+            "approvedBy"            TEXT,
+            "approvedAt"            TIMESTAMP WITH TIME ZONE,
+            "approvalComment"       TEXT,
+            "rejectedBy"            TEXT,
+            "rejectedAt"            TIMESTAMP WITH TIME ZONE,
+            "rejectionReason"       TEXT,
+            "auditLog"              JSONB DEFAULT '[]'::jsonb,
+            "createdAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            "updatedAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_bills_employee_id ON bills("employeeId");
+          CREATE INDEX IF NOT EXISTS idx_bills_bill_number ON bills("billNumber");
+          CREATE INDEX IF NOT EXISTS idx_bills_status      ON bills("status");
+          CREATE INDEX IF NOT EXISTS idx_bills_date        ON bills("billDate");
+
         `
       });
       if (rpcError) {
@@ -194,11 +232,12 @@ function loadLocalData() {
         salaries: file.salaries || [],
         accountsPdfs: file.accountsPdfs || [],
         salaryApprovals: file.salaryApprovals || [],
-        expenseVerifications: file.expenseVerifications || [], materials: file.materials || [], materialTransactions: file.materialTransactions || [], materialAttachments: file.materialAttachments || [], materialVerifications: file.materialVerifications || [], materialVerificationAttachments: file.materialVerificationAttachments || [], materialApprovals: file.materialApprovals || [], materialApprovalAttachments: file.materialApprovalAttachments || []
+        expenseVerifications: file.expenseVerifications || [], materials: file.materials || [], materialTransactions: file.materialTransactions || [], materialAttachments: file.materialAttachments || [], materialVerifications: file.materialVerifications || [], materialVerificationAttachments: file.materialVerificationAttachments || [], materialApprovals: file.materialApprovals || [], materialApprovalAttachments: file.materialApprovalAttachments || [],
+        bills: file.bills || []
       };
     }
   } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [], materials: [], materialTransactions: [], materialAttachments: [], materialVerifications: [], materialVerificationAttachments: [], materialApprovals: [], materialApprovalAttachments: [] };
+  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [], materials: [], materialTransactions: [], materialAttachments: [], materialVerifications: [], materialVerificationAttachments: [], materialApprovals: [], materialApprovalAttachments: [], bills: [] };
 }
 
 function saveLocalData(data) {
@@ -5011,7 +5050,568 @@ const db = {
       throw err;
     }
   },
+
+  // ─── BILL & EXPENSE MANAGEMENT SYSTEM ─────────────────────────────────────────
+
+  // Concurrency-safe Next Bill Number preview
+  async getNextBillNumber() {
+    try {
+      if (useLocalFallback) {
+        const data = loadLocalData();
+        const bills = data.bills || [];
+        let maxNum = 0;
+        bills.forEach(b => {
+          const m = String(b.billNumber || '').match(/^BILL-(\d+)$/i);
+          if (m) {
+            const val = parseInt(m[1], 10);
+            if (!isNaN(val) && val > maxNum) maxNum = val;
+          }
+        });
+        return `BILL-${String(maxNum + 1).padStart(6, '0')}`;
+      }
+
+      const { data, error } = await supabase
+        .from('bills')
+        .select('billNumber')
+        .order('billNumber', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      let maxNum = 0;
+      (data || []).forEach(b => {
+        const m = String(b.billNumber || '').match(/^BILL-(\d+)$/i);
+        if (m) {
+          const val = parseInt(m[1], 10);
+          if (!isNaN(val) && val > maxNum) maxNum = val;
+        }
+      });
+      return `BILL-${String(maxNum + 1).padStart(6, '0')}`;
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        useLocalFallback = true;
+        return this.getNextBillNumber();
+      }
+      return 'BILL-000001';
+    }
+  },
+
+  // Concurrency-safe Atomic Bill Creation
+  async createBill(billData) {
+    if (!billData || !billData.employeeId) {
+      const err = new Error('Employee ID is required.');
+      err.status = 400;
+      throw err;
+    }
+    if (!billData.siteName || !billData.siteName.trim()) {
+      const err = new Error('Site Name is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    const transportationExpense = Math.max(0, Number(billData.transportationExpense) || 0);
+    const materialExpense = Math.max(0, Number(billData.materialExpense) || 0);
+    const labourExpense = Math.max(0, Number(billData.labourExpense) || 0);
+    const accommodationExpense = Math.max(0, Number(billData.accommodationExpense) || 0);
+    const otherExpense = Math.max(0, Number(billData.otherExpense) || 0);
+
+    const totalClaimedAmount = transportationExpense + materialExpense + labourExpense + accommodationExpense + otherExpense;
+
+    if (totalClaimedAmount <= 0) {
+      const err = new Error('At least one expense category must have a valid positive amount.');
+      err.status = 400;
+      throw err;
+    }
+
+    const attachments = Array.isArray(billData.attachments) ? billData.attachments : [];
+    if (attachments.length === 0) {
+      const err = new Error('At least one bill picture / receipt attachment is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    // Process creation sequentially via atomic mutex lock
+    return withBillLock(async () => {
+      const nowIso = new Date().toISOString();
+      const nextNum = await this.getNextBillNumber();
+
+      const newBill = {
+        id: generateId('bill'),
+        billNumber: nextNum,
+        employeeId: String(billData.employeeId).trim(),
+        employeeName: (billData.employeeName || 'Employee').trim(),
+        siteName: billData.siteName.trim(),
+        billDate: billData.billDate || getLocalDateString(),
+        submittedAt: nowIso,
+        transportationExpense,
+        materialExpense,
+        labourExpense,
+        accommodationExpense,
+        otherExpense,
+        totalClaimedAmount,
+        description: (billData.description || '').trim(),
+        attachments,
+        status: 'PENDING_VERIFICATION',
+        verifiedAmount: null,
+        verifiedBy: null,
+        verifiedAt: null,
+        verificationComment: null,
+        approvedAmount: null,
+        approvedBy: null,
+        approvedAt: null,
+        approvalComment: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        rejectionReason: null,
+        auditLog: [
+          {
+            action: 'SUBMITTED',
+            by: billData.employeeName || 'Employee',
+            at: nowIso,
+            details: { totalClaimedAmount, billNumber: nextNum, attachmentsCount: attachments.length }
+          }
+        ],
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+
+      if (useLocalFallback) {
+        const data = loadLocalData();
+        data.bills = data.bills || [];
+        // Ensure uniqueness
+        if (data.bills.some(b => b.billNumber === newBill.billNumber)) {
+          let maxNum = 0;
+          data.bills.forEach(b => {
+            const m = String(b.billNumber || '').match(/^BILL-(\d+)$/i);
+            if (m) {
+              const val = parseInt(m[1], 10);
+              if (!isNaN(val) && val > maxNum) maxNum = val;
+            }
+          });
+          newBill.billNumber = `BILL-${String(maxNum + 1).padStart(6, '0')}`;
+        }
+        data.bills.push(newBill);
+        saveLocalData(data);
+      } else {
+        try {
+          const { data, error } = await supabase
+            .from('bills')
+            .insert([newBill])
+            .select()
+            .single();
+
+          if (error) {
+            // If duplicate key error on billNumber, retry with next increment
+            if (error.code === '23505' || String(error.message).includes('duplicate key')) {
+              console.warn('Concurrent billNumber collision detected, incrementing sequence...');
+              const retryNum = await this.getNextBillNumber();
+              newBill.billNumber = retryNum;
+              const { data: retryData, error: retryErr } = await supabase
+                .from('bills')
+                .insert([newBill])
+                .select()
+                .single();
+              if (retryErr) throw retryErr;
+            } else {
+              throw error;
+            }
+          }
+        } catch (err) {
+          if (isQuotaOrNetworkError(err)) {
+            useLocalFallback = true;
+            const data = loadLocalData();
+            data.bills = data.bills || [];
+            data.bills.push(newBill);
+            saveLocalData(data);
+          } else {
+            handleSupabaseError(err, 'create bill');
+            throw err;
+          }
+        }
+      }
+
+      // Automatically create a persistent notification in comments table (existing notification system)
+      try {
+        const notifMsg = `New Bill Submitted\nEmployee: ${newBill.employeeName}\nEmployee ID: ${newBill.employeeId}\nBill Number: ${newBill.billNumber}\nSite: ${newBill.siteName}\nDate: ${newBill.billDate}\nClaimed Amount: Rs. ${Number(newBill.totalClaimedAmount).toLocaleString()}\nStatus: Pending Verification\n[BillID:${newBill.id}]`;
+        await this.addComment({
+          employeeId: newBill.employeeId,
+          employeeName: newBill.employeeName,
+          sender: 'bill_system',
+          senderName: newBill.employeeName,
+          message: notifMsg
+        });
+      } catch (e) {
+        console.warn('Persistent notification creation failed (non-fatal):', e.message);
+      }
+
+      return newBill;
+    });
+  },
+
+  // Get Bills with optional scoping & filters
+  async getBills({ employeeId = null, status = null, search = null } = {}) {
+    let list = [];
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      list = (data.bills || []).map(b => ({ ...b }));
+    } else {
+      try {
+        let query = supabase.from('bills').select('*').order('submittedAt', { ascending: false });
+        if (employeeId) {
+          query = query.eq('employeeId', employeeId);
+        }
+        if (status && status !== 'ALL') {
+          query = query.eq('status', status);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        list = data || [];
+      } catch (err) {
+        if (isQuotaOrNetworkError(err)) {
+          useLocalFallback = true;
+          const data = loadLocalData();
+          list = (data.bills || []).map(b => ({ ...b }));
+        } else {
+          handleSupabaseError(err, 'get bills');
+          throw err;
+        }
+      }
+    }
+
+    // Apply filters for local fallback or in-memory search
+    if (employeeId) {
+      list = list.filter(b => b.employeeId === employeeId);
+    }
+    if (status && status !== 'ALL') {
+      list = list.filter(b => b.status === status);
+    }
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      list = list.filter(b =>
+        String(b.billNumber || '').toLowerCase().includes(term) ||
+        String(b.employeeName || '').toLowerCase().includes(term) ||
+        String(b.employeeId || '').toLowerCase().includes(term) ||
+        String(b.siteName || '').toLowerCase().includes(term) ||
+        String(b.billDate || '').toLowerCase().includes(term) ||
+        String(b.status || '').toLowerCase().includes(term)
+      );
+    }
+
+    list.sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
+    return list;
+  },
+
+  // Get Bill By ID
+  async getBillById(id) {
+    if (!id) return null;
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const found = (data.bills || []).find(b => b.id === id);
+      return found ? { ...found } : null;
+    }
+    try {
+      const { data, error } = await supabase.from('bills').select('*').eq('id', id).single();
+      if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw error;
+      }
+      return data;
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        useLocalFallback = true;
+        const data = loadLocalData();
+        const found = (data.bills || []).find(b => b.id === id);
+        return found ? { ...found } : null;
+      }
+      handleSupabaseError(err, 'get bill by ID');
+      throw err;
+    }
+  },
+
+  // Admin Verification
+  async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin' } = {}) {
+    const commentText = (verificationComment || verifiedComment || '').trim();
+    const bill = await this.getBillById(id);
+    if (!bill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const numVerified = Number(verifiedAmount);
+    if (isNaN(numVerified) || numVerified < 0) {
+      const err = new Error('Verified amount must be a valid non-negative number.');
+      err.status = 400;
+      throw err;
+    }
+    const claimedAmt = Number(bill.totalClaimedAmount) || 0;
+    if (numVerified > claimedAmt) {
+      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${claimedAmt.toLocaleString()}).`);
+      err.status = 400;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const auditEntry = {
+      action: 'VERIFIED',
+      by: verifiedBy,
+      at: nowIso,
+      details: {
+        claimedAmount: claimedAmt,
+        verifiedAmount: numVerified,
+        comment: commentText
+      }
+    };
+    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+
+    const updates = {
+      verifiedAmount: numVerified,
+      verifiedBy: verifiedBy || 'Admin',
+      verifiedAt: nowIso,
+      verificationComment: commentText,
+      verifiedComment: commentText,
+      status: 'VERIFIED',
+      auditLog,
+      updatedAt: nowIso
+    };
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const idx = (data.bills || []).findIndex(b => b.id === id);
+      if (idx !== -1) {
+        data.bills[idx] = { ...data.bills[idx], ...updates };
+        saveLocalData(data);
+        return data.bills[idx];
+      }
+      throw new Error('Bill not found');
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('bills')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        useLocalFallback = true;
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === id);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates };
+          saveLocalData(data);
+          return data.bills[idx];
+        }
+      }
+      handleSupabaseError(err, 'verify bill');
+      throw err;
+    }
+  },
+
+  // Senior Admin Approval
+  async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin' } = {}) {
+    const commentText = (approvalComment || approvedComment || '').trim();
+    const bill = await this.getBillById(id);
+    if (!bill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const numApproved = Number(approvedAmount);
+    if (isNaN(numApproved) || numApproved < 0) {
+      const err = new Error('Approved amount must be a valid non-negative number.');
+      err.status = 400;
+      throw err;
+    }
+
+    // Strict validation: cannot exceed verified amount (or claimed amount if verification was skipped)
+    const maxAllowed = (bill.verifiedAmount !== null && bill.verifiedAmount !== undefined)
+      ? Number(bill.verifiedAmount)
+      : Number(bill.totalClaimedAmount);
+
+    if (numApproved > maxAllowed) {
+      const err = new Error(`Approved amount (Rs. ${numApproved.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}).`);
+      err.status = 400;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const auditEntry = {
+      action: 'APPROVED',
+      by: approvedBy,
+      at: nowIso,
+      details: {
+        claimedAmount: Number(bill.totalClaimedAmount),
+        verifiedAmount: bill.verifiedAmount,
+        approvedAmount: numApproved,
+        comment: commentText
+      }
+    };
+    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+
+    const updates = {
+      approvedAmount: numApproved,
+      approvedBy: approvedBy || 'Senior Admin',
+      approvedAt: nowIso,
+      approvalComment: commentText,
+      approvedComment: commentText,
+      status: 'APPROVED',
+      auditLog,
+      updatedAt: nowIso
+    };
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const idx = (data.bills || []).findIndex(b => b.id === id);
+      if (idx !== -1) {
+        data.bills[idx] = { ...data.bills[idx], ...updates };
+        saveLocalData(data);
+        return data.bills[idx];
+      }
+      throw new Error('Bill not found');
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('bills')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        useLocalFallback = true;
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === id);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates };
+          saveLocalData(data);
+          return data.bills[idx];
+        }
+      }
+      handleSupabaseError(err, 'approve bill');
+      throw err;
+    }
+  },
+
+  // Admin / Senior Admin Rejection (Audited & Non-Destructive)
+  async rejectBill(id, { rejectionReason = '', reason = '', rejectedBy = 'Admin' } = {}) {
+    const bill = await this.getBillById(id);
+    if (!bill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const reasonText = (rejectionReason || reason || 'Rejected by Admin').trim();
+
+    const auditEntry = {
+      action: 'REJECTED',
+      by: rejectedBy,
+      at: nowIso,
+      details: {
+        claimedAmount: Number(bill.totalClaimedAmount),
+        verifiedAmount: bill.verifiedAmount,
+        reason: reasonText
+      }
+    };
+    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+
+    const updates = {
+      rejectedBy: rejectedBy || 'Admin',
+      rejectedAt: nowIso,
+      rejectionReason: reasonText,
+      status: 'REJECTED',
+      auditLog,
+      updatedAt: nowIso
+    };
+
+    if (useLocalFallback) {
+      const data = loadLocalData();
+      const idx = (data.bills || []).findIndex(b => b.id === id);
+      if (idx !== -1) {
+        data.bills[idx] = { ...data.bills[idx], ...updates };
+        saveLocalData(data);
+        return data.bills[idx];
+      }
+      throw new Error('Bill not found');
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('bills')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        useLocalFallback = true;
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === id);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates };
+          saveLocalData(data);
+          return data.bills[idx];
+        }
+      }
+      handleSupabaseError(err, 'reject bill');
+      throw err;
+    }
+  },
+
+  // Bill Statistics
+  async getBillStats() {
+    const bills = await this.getBills();
+    const totalBills = bills.length;
+    let pendingVerification = 0;
+    let verified = 0;
+    let approved = 0;
+    let rejected = 0;
+    let totalClaimedAmount = 0;
+    let totalApprovedAmount = 0;
+
+    bills.forEach(b => {
+      totalClaimedAmount += (Number(b.totalClaimedAmount) || 0);
+      if (b.status === 'PENDING_VERIFICATION') pendingVerification++;
+      else if (b.status === 'VERIFIED') verified++;
+      else if (b.status === 'APPROVED') {
+        approved++;
+        totalApprovedAmount += (Number(b.approvedAmount) || 0);
+      } else if (b.status === 'REJECTED') rejected++;
+    });
+
+    return {
+      totalBills,
+      pendingVerification,
+      pendingVerificationCount: pendingVerification,
+      verified,
+      verifiedCount: verified,
+      approved,
+      approvedCount: approved,
+      rejected,
+      rejectedCount: rejected,
+      totalClaimedAmount,
+      totalApprovedAmount
+    };
+  },
 };
+
+// Global Concurrency Mutex for safe sequential operations
+let _billLock = Promise.resolve();
+function withBillLock(fn) {
+  const next = _billLock.then(() => fn(), () => fn());
+  _billLock = next;
+  return next;
+}
 
 function sanitizeAccountsPdfForClient(record) {
   if (!record) return null;

@@ -100,6 +100,44 @@ const API = {
     body: JSON.stringify({ employeeId })
   }),
   getStats: () => fetchJson('/api/stats'),
+  // Bills API endpoints
+  getNextBillNumber: () => fetchJson('/api/bills/next-number'),
+  submitBill: (data) => fetchJson('/api/bills', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
+  getBills: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.employeeId) q.append('employeeId', params.employeeId);
+    if (params.status) q.append('status', params.status);
+    if (params.search) q.append('search', params.search);
+    if (params.startDate) q.append('startDate', params.startDate);
+    if (params.endDate) q.append('endDate', params.endDate);
+    const url = `/api/bills${q.toString() ? '?' + q.toString() : ''}`;
+    return fetchJson(url, { headers: { 'X-Admin-Passcode': getAdminPasscode() } });
+  },
+  getBillStats: () => fetchJson('/api/bills/stats', {
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  getBillById: (id) => fetchJson(`/api/bills/${encodeURIComponent(id)}`, {
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  verifyBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
+  approveBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
+  rejectBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
   getAttendanceStatus: (employeeId) => fetchJson(`/api/attendance/status/${employeeId}`),
   getMonthlySummary: (month, startDate, endDate) => {
     const params = new URLSearchParams();
@@ -1123,6 +1161,8 @@ async function submitClockOutDetails(e) {
       updateEmployeeStatusBadge('OUT', true);
       await loadEmployeesList(selectedEmployee.id);
       updateClockButtonsDisabledState(false);
+      // Prompt employee if they have a bill to submit
+      openClockOutBillPrompt();
     } else {
       showToast(res.error || 'Clock out failed', 'error');
       updateClockButtonsDisabledState(false);
@@ -1177,8 +1217,12 @@ function switchView(viewName) {
   currentView = viewName;
   const employeeSec = document.getElementById('employee-portal-view');
   const adminSec = document.getElementById('admin-panel-view');
+  const billSec = document.getElementById('bill-submission-view');
   const toggleBtn = document.getElementById('btn-toggle-portal');
   const btnText = toggleBtn.querySelector('.btn-text');
+
+  if (billSec) billSec.classList.remove('active');
+  if (toggleBtn) toggleBtn.style.display = '';
   
   if (viewName === 'admin') {
     employeeSec.classList.remove('active');
@@ -1241,6 +1285,8 @@ async function switchAdminTab(tabId) {
     await loadAdminComments();
   } else if (tabId === 'tab-salary') {
     await loadSalarySheet();
+  } else if (tabId === 'tab-bills') {
+    await loadAdminBills();
   } else if (tabId === 'tab-emergency-salary') {
     const picker = document.getElementById('emerg-salary-month');
     const month = (picker && picker.value) || currentSalaryMonth || getCurrentMonthString();
@@ -1266,6 +1312,9 @@ async function loadAdminDashboard() {
     statsEl.currentIn.innerText = stats.activePresent;
     statsEl.present.innerText = stats.presentToday;
     statsEl.absent.innerText = stats.absentToday;
+
+    // Check pending bills notification badge and alert card
+    await updateAdminPendingBillsNotification().catch(console.warn);
     
     // Update main company title if it differs
     if (stats.officeName) {
@@ -2058,6 +2107,11 @@ function switchEmployeeTab(tabId) {
     if (selectedEmployee) {
       loadEmployeeComments();
       markMessagesAsRead();
+    }
+  } else if (tabId === 'emp-pane-my-bills') {
+    grid.classList.remove('work-record-active');
+    if (selectedEmployee) {
+      loadEmployeeBills();
     }
   } else {
     grid.classList.remove('work-record-active');
@@ -3951,8 +4005,15 @@ document.addEventListener('DOMContentLoaded', () => {
       closeClockOutModal();
     } else if (e.target === photoViewModal) {
       closePhotoModal();
+    } else if (e.target === billPromptModal) {
+      closeClockOutBillPrompt();
+    } else if (e.target === adminBillModal) {
+      closeAdminBillDetailsModal();
     }
   });
+
+  // Initialize Bill Management & Submission event listeners
+  initBillEventListeners();
 });
 
 // ==========================================================================
@@ -5407,6 +5468,949 @@ function requestBrowserNotificationPermission() {
       Notification.requestPermission().catch(() => {});
     }, 2000);
   }
+}
+
+// ==========================================================================
+// BILL MANAGEMENT & SUBMISSION SYSTEM
+// ==========================================================================
+let currentBillAttachments = []; // Array of { name, type, size, dataUrl }
+let currentGeneratedBillNumber = '';
+let currentAdminBills = [];
+let currentAdminBillFilter = 'ALL';
+let currentActiveAdminBillId = null;
+let currentActiveAdminBillData = null;
+
+function openClockOutBillPrompt() {
+  const modal = document.getElementById('modal-clockout-bill-prompt');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeClockOutBillPrompt() {
+  const modal = document.getElementById('modal-clockout-bill-prompt');
+  if (modal) modal.classList.add('hidden');
+}
+
+function openBillSubmissionScreen() {
+  if (!selectedEmployee) {
+    showToast('Please select an employee profile first', 'error');
+    return;
+  }
+  const employeeSec = document.getElementById('employee-portal-view');
+  const adminSec = document.getElementById('admin-panel-view');
+  const billSec = document.getElementById('bill-submission-view');
+  const toggleBtn = document.getElementById('btn-toggle-portal');
+
+  if (employeeSec) employeeSec.classList.remove('active');
+  if (adminSec) adminSec.classList.remove('active');
+  if (billSec) billSec.classList.add('active');
+  if (toggleBtn) toggleBtn.style.display = 'none';
+
+  if (window.location.hash !== '#/employee/bills/new') {
+    try {
+      window.history.pushState({ screen: 'bill-submission' }, '', '#/employee/bills/new');
+    } catch (e) {}
+  }
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  initBillSubmissionForm();
+}
+
+function closeBillSubmissionScreen() {
+  const billSec = document.getElementById('bill-submission-view');
+  const toggleBtn = document.getElementById('btn-toggle-portal');
+  if (billSec) billSec.classList.remove('active');
+  if (toggleBtn) toggleBtn.style.display = '';
+
+  if (window.location.hash === '#/employee/bills/new') {
+    try {
+      window.history.pushState({}, '', '#');
+    } catch (e) {}
+  }
+
+  switchView('employee');
+}
+
+async function initBillSubmissionForm() {
+  const formCard = document.getElementById('bill-form-card');
+  const successCard = document.getElementById('bill-success-card');
+  if (formCard) formCard.classList.remove('hidden');
+  if (successCard) successCard.classList.add('hidden');
+
+  const siteInput = document.getElementById('bill-site-name');
+  if (siteInput) siteInput.value = '';
+
+  ['bill-exp-transportation', 'bill-exp-material', 'bill-exp-labour', 'bill-exp-accommodation', 'bill-exp-other'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  const descInput = document.getElementById('bill-description');
+  if (descInput) descInput.value = '';
+
+  currentBillAttachments = [];
+  renderBillAttachmentPreviews();
+
+  const empNameEl = document.getElementById('bill-emp-name-display');
+  const empIdEl = document.getElementById('bill-emp-id-display');
+  const dateEl = document.getElementById('bill-date-display');
+  const numEl = document.getElementById('bill-number-display');
+
+  if (empNameEl) empNameEl.value = selectedEmployee ? selectedEmployee.name : 'Unknown';
+  if (empIdEl) empIdEl.value = selectedEmployee ? selectedEmployee.id : 'Unknown';
+  if (dateEl) dateEl.value = getLocalDateString();
+  if (numEl) numEl.value = 'Generating...';
+
+  updateBillReviewSummary();
+
+  try {
+    const res = await API.getNextBillNumber();
+    if (res && res.billNumber) {
+      currentGeneratedBillNumber = res.billNumber;
+      if (numEl) numEl.value = res.billNumber;
+      const revNum = document.getElementById('rev-bill-number');
+      if (revNum) revNum.innerText = res.billNumber;
+    }
+  } catch (err) {
+    if (numEl) numEl.value = 'BILL-AUTO';
+  }
+}
+
+function getBillExpenses() {
+  const trans = parseFloat(document.getElementById('bill-exp-transportation')?.value) || 0;
+  const mat = parseFloat(document.getElementById('bill-exp-material')?.value) || 0;
+  const lab = parseFloat(document.getElementById('bill-exp-labour')?.value) || 0;
+  const acc = parseFloat(document.getElementById('bill-exp-accommodation')?.value) || 0;
+  const oth = parseFloat(document.getElementById('bill-exp-other')?.value) || 0;
+  const total = trans + mat + lab + acc + oth;
+  return { trans, mat, lab, acc, oth, total };
+}
+
+function updateBillReviewSummary() {
+  const { trans, mat, lab, acc, oth, total } = getBillExpenses();
+  const site = (document.getElementById('bill-site-name')?.value || '').trim();
+  const date = document.getElementById('bill-date-display')?.value || getLocalDateString();
+  const empName = selectedEmployee ? selectedEmployee.name : '—';
+  const empId = selectedEmployee ? selectedEmployee.id : '—';
+  const billNum = currentGeneratedBillNumber || document.getElementById('bill-number-display')?.value || 'BILL-000000';
+
+  const totalEl = document.getElementById('bill-total-claimed-amount');
+  if (totalEl) totalEl.innerText = total.toLocaleString();
+
+  const revNum = document.getElementById('rev-bill-number');
+  if (revNum) revNum.innerText = billNum;
+  const revSite = document.getElementById('rev-bill-site');
+  if (revSite) revSite.innerText = site || '—';
+  const revDate = document.getElementById('rev-bill-date');
+  if (revDate) revDate.innerText = date;
+  const revEmp = document.getElementById('rev-bill-employee');
+  if (revEmp) revEmp.innerText = empName;
+  const revId = document.getElementById('rev-bill-emp-id');
+  if (revId) revId.innerText = empId;
+
+  const setRev = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = 'Rs. ' + val.toLocaleString();
+  };
+  setRev('rev-exp-trans', trans);
+  setRev('rev-exp-mat', mat);
+  setRev('rev-exp-lab', lab);
+  setRev('rev-exp-acc', acc);
+  setRev('rev-exp-oth', oth);
+
+  const revTotal = document.getElementById('rev-total-claimed');
+  if (revTotal) revTotal.innerText = total.toLocaleString();
+
+  const revAtt = document.getElementById('rev-attach-count');
+  if (revAtt) revAtt.innerText = currentBillAttachments.length;
+}
+
+function handleBillFileInput(e) {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+
+  let loaded = 0;
+  files.forEach(file => {
+    if (file.size > 15 * 1024 * 1024) {
+      showToast(`File "${file.name}" exceeds 15MB limit`, 'warning');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      currentBillAttachments.push({
+        name: file.name,
+        type: file.type || 'image/jpeg',
+        size: file.size,
+        dataUrl: ev.target.result
+      });
+      loaded++;
+      if (loaded === files.length) {
+        renderBillAttachmentPreviews();
+        updateBillReviewSummary();
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value = '';
+}
+
+function renderBillAttachmentPreviews() {
+  const grid = document.getElementById('bill-attachments-preview-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  if (!currentBillAttachments.length) {
+    grid.innerHTML = '<p id="bill-no-attachments-msg" class="text-muted" style="grid-column: 1 / -1; font-size: 0.85rem; font-style: italic; text-align: center; padding: 1rem;">No pictures attached yet. Click "+ Add Pictures" to attach receipts.</p>';
+    return;
+  }
+
+  currentBillAttachments.forEach((att, idx) => {
+    const item = document.createElement('div');
+    item.className = 'bill-attachment-thumb';
+    const isPdf = att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+
+    if (isPdf) {
+      item.innerHTML = `
+        <div class="pdf-preview">
+          <svg xmlns="http://www.w3.org/2000/svg" style="width:36px;height:36px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+          <span title="${escapeHtml(att.name)}">${escapeHtml(att.name)}</span>
+        </div>
+        <button type="button" class="bill-thumb-remove-btn" title="Remove attachment" onclick="event.stopPropagation(); removeBillAttachment(${idx})">✖</button>
+      `;
+    } else {
+      item.innerHTML = `
+        <img src="${att.dataUrl}" alt="${escapeHtml(att.name)}" />
+        <button type="button" class="bill-thumb-remove-btn" title="Remove attachment" onclick="event.stopPropagation(); removeBillAttachment(${idx})">✖</button>
+      `;
+      item.addEventListener('click', () => {
+        openPhotoModal(att.dataUrl);
+      });
+    }
+
+    grid.appendChild(item);
+  });
+}
+
+function removeBillAttachment(idx) {
+  currentBillAttachments.splice(idx, 1);
+  renderBillAttachmentPreviews();
+  updateBillReviewSummary();
+}
+
+async function submitBillForm() {
+  if (!selectedEmployee) {
+    showToast('Employee profile is not selected', 'error');
+    return;
+  }
+  const siteName = (document.getElementById('bill-site-name')?.value || '').trim();
+  if (!siteName) {
+    showToast('Please enter the Site Name', 'error');
+    document.getElementById('bill-site-name')?.focus();
+    return;
+  }
+
+  const { trans, mat, lab, acc, oth, total } = getBillExpenses();
+  if (total <= 0) {
+    showToast('Please enter at least one expense amount greater than Rs. 0', 'error');
+    return;
+  }
+
+  if (!currentBillAttachments.length) {
+    showToast('Please attach at least one bill picture or receipt', 'error');
+    return;
+  }
+
+  const description = (document.getElementById('bill-description')?.value || '').trim();
+  const date = document.getElementById('bill-date-display')?.value || getLocalDateString();
+
+  const submitBtn = document.getElementById('btn-submit-bill-final');
+  const originalText = submitBtn ? submitBtn.innerText : 'SUBMIT BILL';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Submitting Bill...';
+  }
+
+  try {
+    const payload = {
+      employeeId: selectedEmployee.id,
+      employeeName: selectedEmployee.name,
+      siteName,
+      date,
+      transportationExpense: trans,
+      materialExpense: mat,
+      labourExpense: lab,
+      accommodationExpense: acc,
+      otherExpense: oth,
+      description,
+      attachments: currentBillAttachments
+    };
+
+    const res = await API.submitBill(payload);
+    if (res.success && res.bill) {
+      const formCard = document.getElementById('bill-form-card');
+      const successCard = document.getElementById('bill-success-card');
+      if (formCard) formCard.classList.add('hidden');
+      if (successCard) successCard.classList.remove('hidden');
+
+      const succNum = document.getElementById('bill-success-number');
+      if (succNum) succNum.innerText = res.bill.billNumber;
+
+      showToast(`Bill ${res.bill.billNumber} submitted successfully!`, 'success');
+    } else {
+      showToast(res.error || 'Failed to submit bill', 'error');
+    }
+  } catch (err) {
+    showToast('Error submitting bill: ' + (err.message || 'Network error'), 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = originalText;
+    }
+  }
+}
+
+async function loadEmployeeBills() {
+  if (!selectedEmployee) return;
+  const tbody = document.querySelector('#emp-bills-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading your bills...</td></tr>';
+
+  try {
+    const res = await API.getBills({ employeeId: selectedEmployee.id });
+    const bills = res.bills || [];
+    if (!bills.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No bills submitted yet. Submit a bill after clocking out!</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    bills.forEach(bill => {
+      const tr = document.createElement('tr');
+      const badgeHtml = getBillStatusBadgeHtml(bill.status);
+      const verifiedTxt = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? `Rs. ${bill.verifiedAmount.toLocaleString()}` : '—';
+      const approvedTxt = bill.approvedAmount !== null && bill.approvedAmount !== undefined ? `Rs. ${bill.approvedAmount.toLocaleString()}` : '—';
+
+      tr.innerHTML = `
+        <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
+        <td>${bill.date}</td>
+        <td>${escapeHtml(bill.siteName || '—')}</td>
+        <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
+        <td style="color:#60a5fa;">${verifiedTxt}</td>
+        <td style="color:#4ade80;">${approvedTxt}</td>
+        <td>${badgeHtml}</td>
+        <td>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openAdminBillModal('${bill.id}')">
+            View
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty text-danger">Failed to load bills.</td></tr>';
+  }
+}
+
+function getBillStatusBadgeHtml(status) {
+  switch (status) {
+    case 'PENDING_VERIFICATION':
+      return '<span class="badge-bill-pending">● Pending Verification</span>';
+    case 'VERIFIED':
+      return '<span class="badge-bill-verified">✓ Verified</span>';
+    case 'APPROVED':
+      return '<span class="badge-bill-approved">★ Approved</span>';
+    case 'REJECTED':
+      return '<span class="badge-bill-rejected">✖ Rejected</span>';
+    default:
+      return `<span class="badge">${escapeHtml(status)}</span>`;
+  }
+}
+
+async function loadAdminBills() {
+  try {
+    const stats = await API.getBillStats();
+    const totalEl = document.getElementById('bill-stat-total');
+    if (totalEl) totalEl.innerText = stats.totalBills || 0;
+    const pendingEl = document.getElementById('bill-stat-pending');
+    if (pendingEl) pendingEl.innerText = stats.pendingVerificationCount || 0;
+    const verifiedEl = document.getElementById('bill-stat-verified');
+    if (verifiedEl) verifiedEl.innerText = stats.verifiedCount || 0;
+    const approvedEl = document.getElementById('bill-stat-approved');
+    if (approvedEl) approvedEl.innerText = stats.approvedCount || 0;
+    const totalAmtEl = document.getElementById('bill-stat-total-amount');
+    if (totalAmtEl) totalAmtEl.innerText = 'PKR ' + (stats.totalClaimedAmount || 0).toLocaleString();
+
+    updateAdminPendingBillsBadgeAndAlert(stats);
+  } catch (err) {
+    console.warn('Error loading bill stats:', err);
+  }
+
+  const tbody = document.querySelector('#admin-bills-table tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Loading bills...</td></tr>';
+
+  try {
+    const res = await API.getBills();
+    currentAdminBills = res.bills || [];
+    renderAdminBillsTable();
+  } catch (err) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="table-empty text-danger">Failed to load bills: ' + escapeHtml(err.message || '') + '</td></tr>';
+  }
+}
+
+function renderAdminBillsTable() {
+  const tbody = document.querySelector('#admin-bills-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const query = (document.getElementById('admin-bill-search')?.value || '').toLowerCase().trim();
+
+  let filtered = currentAdminBills;
+  if (currentAdminBillFilter !== 'ALL') {
+    filtered = filtered.filter(b => b.status === currentAdminBillFilter);
+  }
+  if (query) {
+    filtered = filtered.filter(b =>
+      (b.billNumber && b.billNumber.toLowerCase().includes(query)) ||
+      (b.employeeName && b.employeeName.toLowerCase().includes(query)) ||
+      (b.siteName && b.siteName.toLowerCase().includes(query)) ||
+      (b.date && b.date.toLowerCase().includes(query))
+    );
+  }
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">No bills found matching current filter.</td></tr>';
+    return;
+  }
+
+  filtered.forEach(bill => {
+    const tr = document.createElement('tr');
+    const badgeHtml = getBillStatusBadgeHtml(bill.status);
+    const verifiedTxt = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? `Rs. ${bill.verifiedAmount.toLocaleString()}` : '—';
+    const approvedTxt = bill.approvedAmount !== null && bill.approvedAmount !== undefined ? `Rs. ${bill.approvedAmount.toLocaleString()}` : '—';
+
+    tr.innerHTML = `
+      <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
+      <td>${bill.date}</td>
+      <td>${escapeHtml(bill.employeeName)}</td>
+      <td>${escapeHtml(bill.siteName || '—')}</td>
+      <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
+      <td style="color:#60a5fa;">${verifiedTxt}</td>
+      <td style="color:#4ade80;">${approvedTxt}</td>
+      <td>${badgeHtml}</td>
+      <td>
+        <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${bill.id}')">
+          ${bill.status === 'PENDING_VERIFICATION' ? 'Review & Verify' : (bill.status === 'VERIFIED' ? 'Approve / Review' : 'View Details')}
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function updateAdminPendingBillsBadgeAndAlert(stats) {
+  const pendingCount = stats ? (stats.pendingVerificationCount || 0) : 0;
+
+  const sidebarBadge = document.getElementById('badge-pending-bills');
+  if (sidebarBadge) {
+    if (pendingCount > 0) {
+      sidebarBadge.innerText = pendingCount > 9 ? '9+' : String(pendingCount);
+      sidebarBadge.style.display = 'inline-block';
+    } else {
+      sidebarBadge.style.display = 'none';
+    }
+  }
+
+  const alertCard = document.getElementById('admin-pending-bills-alert-card');
+  const countEl = document.getElementById('admin-pending-bills-count');
+  if (alertCard) {
+    if (pendingCount > 0) {
+      alertCard.classList.remove('hidden');
+      if (countEl) countEl.innerText = pendingCount;
+    } else {
+      alertCard.classList.add('hidden');
+    }
+  }
+}
+
+async function updateAdminPendingBillsNotification() {
+  try {
+    const stats = await API.getBillStats();
+    updateAdminPendingBillsBadgeAndAlert(stats);
+
+    const listEl = document.getElementById('admin-pending-bills-list');
+    if (listEl && stats.pendingVerificationCount > 0) {
+      const res = await API.getBills({ status: 'PENDING_VERIFICATION' });
+      const pendingBills = (res && res.bills) || [];
+      listEl.innerHTML = '';
+      pendingBills.slice(0, 5).forEach(b => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:0.6rem 0.9rem; border-radius:8px; font-size:0.85rem; border:1px solid rgba(239,68,68,0.2);';
+        row.innerHTML = `
+          <div>
+            <strong style="color:#38bdf8;">${b.billNumber}</strong> — 
+            <span>${escapeHtml(b.employeeName)}</span> • 
+            <span style="color:#4ade80; font-weight:700;">Rs. ${(b.totalClaimedAmount || 0).toLocaleString()}</span>
+            <span class="text-muted">(${escapeHtml(b.siteName || 'Site')})</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${b.id}')">
+            Review & Verify
+          </button>
+        `;
+        listEl.appendChild(row);
+      });
+      if (pendingBills.length > 5) {
+        const more = document.createElement('div');
+        more.className = 'text-muted';
+        more.style.fontSize = '0.8rem';
+        more.innerText = `+ ${pendingBills.length - 5} more pending bills...`;
+        listEl.appendChild(more);
+      }
+    }
+  } catch (err) {
+    // Silently ignore background polling errors
+  }
+}
+
+async function openAdminBillModal(billId) {
+  currentActiveAdminBillId = billId;
+  const modal = document.getElementById('modal-admin-bill-details');
+  if (!modal) return;
+
+  try {
+    const res = await API.getBillById(billId);
+    const bill = res.bill;
+    if (!bill) {
+      showToast('Bill record not found', 'error');
+      return;
+    }
+    currentActiveAdminBillData = bill;
+
+    document.getElementById('admin-bill-modal-num').innerText = bill.billNumber;
+    const badge = document.getElementById('admin-bill-modal-status-badge');
+    if (badge) badge.innerHTML = getBillStatusBadgeHtml(bill.status);
+
+    document.getElementById('admin-bill-modal-emp').innerText = bill.employeeName;
+    document.getElementById('admin-bill-modal-empid').innerText = bill.employeeId;
+    document.getElementById('admin-bill-modal-site').innerText = bill.siteName || '—';
+    document.getElementById('admin-bill-modal-date').innerText = bill.date;
+    document.getElementById('admin-bill-modal-time').innerText = bill.createdAt ? new Date(bill.createdAt).toLocaleString() : '—';
+
+    const setExp = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = 'Rs. ' + (val || 0).toLocaleString();
+    };
+    setExp('admin-bill-modal-trans', bill.transportationExpense);
+    setExp('admin-bill-modal-mat', bill.materialExpense);
+    setExp('admin-bill-modal-lab', bill.labourExpense);
+    setExp('admin-bill-modal-acc', bill.accommodationExpense);
+    setExp('admin-bill-modal-oth', bill.otherExpense);
+    document.getElementById('admin-bill-modal-total-claimed').innerText = (bill.totalClaimedAmount || 0).toLocaleString();
+
+    const descEl = document.getElementById('admin-bill-modal-desc');
+    if (descEl) descEl.innerText = bill.description || 'No description provided.';
+
+    const attachGrid = document.getElementById('admin-bill-modal-attachments-grid');
+    const attachCount = document.getElementById('admin-bill-modal-attach-count');
+    const attachments = bill.attachments || [];
+    if (attachCount) attachCount.innerText = attachments.length;
+    if (attachGrid) {
+      attachGrid.innerHTML = '';
+      if (!attachments.length) {
+        attachGrid.innerHTML = '<p class="text-muted" style="grid-column:1/-1; font-style:italic;">No attachments found.</p>';
+      } else {
+        attachments.forEach(att => {
+          const item = document.createElement('div');
+          item.className = 'bill-attachment-thumb';
+          const isPdf = att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+          if (isPdf) {
+            item.innerHTML = `
+              <div class="pdf-preview">
+                <svg xmlns="http://www.w3.org/2000/svg" style="width:36px;height:36px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <span title="${escapeHtml(att.name)}">${escapeHtml(att.name)}</span>
+              </div>
+            `;
+            item.addEventListener('click', () => {
+              const w = window.open();
+              w.document.write('<iframe src="' + att.dataUrl + '" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>');
+            });
+          } else {
+            item.innerHTML = `<img src="${att.dataUrl}" alt="${escapeHtml(att.name)}" />`;
+            item.addEventListener('click', () => {
+              openPhotoModal(att.dataUrl);
+            });
+          }
+          attachGrid.appendChild(item);
+        });
+      }
+    }
+
+    const verifySec = document.getElementById('admin-bill-verify-section');
+    const claimedVal = document.getElementById('admin-bill-claimed-val');
+    const verifyInput = document.getElementById('admin-bill-verify-input');
+    const verifyComment = document.getElementById('admin-bill-verify-comment-input');
+    if (claimedVal) claimedVal.innerText = (bill.totalClaimedAmount || 0).toLocaleString();
+
+    const apprSec = document.getElementById('admin-bill-approve-section');
+    const apprClaimed = document.getElementById('admin-bill-appr-claimed');
+    const apprVerified = document.getElementById('admin-bill-appr-verified');
+    const apprInput = document.getElementById('admin-bill-approve-input');
+    const apprComment = document.getElementById('admin-bill-approve-comment-input');
+    const seniorPasscodeInput = document.getElementById('admin-bill-senior-passcode-input');
+
+    if (apprClaimed) apprClaimed.innerText = (bill.totalClaimedAmount || 0).toLocaleString();
+    if (apprVerified) apprVerified.innerText = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? bill.verifiedAmount.toLocaleString() : '—';
+
+    if (bill.status === 'PENDING_VERIFICATION') {
+      if (verifySec) {
+        verifySec.style.display = 'block';
+        if (verifyInput) {
+          verifyInput.disabled = false;
+          verifyInput.value = bill.totalClaimedAmount;
+        }
+        if (verifyComment) {
+          verifyComment.disabled = false;
+          verifyComment.value = '';
+        }
+        const btnV = document.getElementById('btn-admin-verify-bill-submit');
+        if (btnV) btnV.style.display = 'inline-block';
+        const btnVR = document.getElementById('btn-admin-verify-reject-bill-submit');
+        if (btnVR) btnVR.style.display = 'inline-block';
+      }
+      if (apprSec) apprSec.style.display = 'none';
+    } else if (bill.status === 'VERIFIED') {
+      if (verifySec) {
+        verifySec.style.display = 'block';
+        if (verifyInput) {
+          verifyInput.disabled = true;
+          verifyInput.value = bill.verifiedAmount;
+        }
+        if (verifyComment) {
+          verifyComment.disabled = true;
+          verifyComment.value = bill.verifiedComment || '';
+        }
+        const btnV = document.getElementById('btn-admin-verify-bill-submit');
+        if (btnV) btnV.style.display = 'none';
+        const btnVR = document.getElementById('btn-admin-verify-reject-bill-submit');
+        if (btnVR) btnVR.style.display = 'none';
+      }
+      if (apprSec) {
+        apprSec.style.display = 'block';
+        if (apprInput) {
+          apprInput.disabled = false;
+          apprInput.value = bill.verifiedAmount;
+        }
+        if (apprComment) {
+          apprComment.disabled = false;
+          apprComment.value = '';
+        }
+        if (seniorPasscodeInput) {
+          seniorPasscodeInput.disabled = false;
+          seniorPasscodeInput.value = '';
+          seniorPasscodeInput.style.display = '';
+        }
+        const btnA = document.getElementById('btn-admin-approve-bill-submit');
+        if (btnA) btnA.style.display = 'inline-block';
+        const btnAR = document.getElementById('btn-admin-reject-bill-submit');
+        if (btnAR) btnAR.style.display = 'inline-block';
+      }
+    } else if (bill.status === 'APPROVED') {
+      if (verifySec) {
+        verifySec.style.display = 'block';
+        if (verifyInput) {
+          verifyInput.disabled = true;
+          verifyInput.value = bill.verifiedAmount;
+        }
+        if (verifyComment) {
+          verifyComment.disabled = true;
+          verifyComment.value = bill.verifiedComment || '';
+        }
+        const btnV = document.getElementById('btn-admin-verify-bill-submit');
+        if (btnV) btnV.style.display = 'none';
+        const btnVR = document.getElementById('btn-admin-verify-reject-bill-submit');
+        if (btnVR) btnVR.style.display = 'none';
+      }
+      if (apprSec) {
+        apprSec.style.display = 'block';
+        if (apprInput) {
+          apprInput.disabled = true;
+          apprInput.value = bill.approvedAmount;
+        }
+        if (apprComment) {
+          apprComment.disabled = true;
+          apprComment.value = bill.approvedComment || '';
+        }
+        if (seniorPasscodeInput) seniorPasscodeInput.style.display = 'none';
+        const btnA = document.getElementById('btn-admin-approve-bill-submit');
+        if (btnA) btnA.style.display = 'none';
+        const btnAR = document.getElementById('btn-admin-reject-bill-submit');
+        if (btnAR) btnAR.style.display = 'none';
+      }
+    } else if (bill.status === 'REJECTED') {
+      if (verifySec) verifySec.style.display = 'none';
+      if (apprSec) apprSec.style.display = 'none';
+    }
+
+    const auditList = document.getElementById('admin-bill-audit-list');
+    if (auditList) {
+      auditList.innerHTML = '';
+      const logs = bill.auditLog || [];
+      if (!logs.length) {
+        auditList.innerHTML = '<li>Created at ' + (bill.createdAt ? new Date(bill.createdAt).toLocaleString() : '—') + '</li>';
+      } else {
+        logs.forEach(l => {
+          const li = document.createElement('li');
+          const time = l.timestamp ? new Date(l.timestamp).toLocaleString() : '';
+          li.innerHTML = `<strong>${escapeHtml(l.action)}:</strong> ${escapeHtml(l.details || '')} <span style="font-size:0.75rem; color:#64748b;">(${escapeHtml(l.performedBy || 'system')} — ${time})</span>`;
+          auditList.appendChild(li);
+        });
+      }
+    }
+
+    modal.classList.remove('hidden');
+  } catch (err) {
+    showToast('Failed to open bill details: ' + (err.message || ''), 'error');
+  }
+}
+
+function closeAdminBillDetailsModal() {
+  const modal = document.getElementById('modal-admin-bill-details');
+  if (modal) modal.classList.add('hidden');
+  currentActiveAdminBillId = null;
+  currentActiveAdminBillData = null;
+}
+
+async function handleAdminVerifyBill() {
+  if (!currentActiveAdminBillId || !currentActiveAdminBillData) return;
+  const bill = currentActiveAdminBillData;
+  const verifiedVal = parseFloat(document.getElementById('admin-bill-verify-input')?.value);
+  const comment = (document.getElementById('admin-bill-verify-comment-input')?.value || '').trim();
+
+  if (isNaN(verifiedVal) || verifiedVal < 0) {
+    showToast('Please enter a valid verified amount (>= 0)', 'error');
+    return;
+  }
+  if (verifiedVal > bill.totalClaimedAmount) {
+    showToast(`Verified amount (Rs. ${verifiedVal.toLocaleString()}) cannot exceed claimed amount (Rs. ${bill.totalClaimedAmount.toLocaleString()})`, 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-admin-verify-bill-submit');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await API.verifyBill(currentActiveAdminBillId, {
+      verifiedAmount: verifiedVal,
+      verifiedComment: comment
+    });
+    if (res.success) {
+      showToast('Bill verified successfully!', 'success');
+      await openAdminBillModal(currentActiveAdminBillId);
+      await loadAdminBills();
+    } else {
+      showToast(res.error || 'Verification failed', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Verification failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleAdminApproveBill() {
+  if (!currentActiveAdminBillId || !currentActiveAdminBillData) return;
+  const bill = currentActiveAdminBillData;
+  const approvedVal = parseFloat(document.getElementById('admin-bill-approve-input')?.value);
+  const comment = (document.getElementById('admin-bill-approve-comment-input')?.value || '').trim();
+  const seniorPasscode = (document.getElementById('admin-bill-senior-passcode-input')?.value || '').trim();
+
+  if (!seniorPasscode) {
+    showToast('Senior Admin Passcode is required to approve this bill', 'error');
+    document.getElementById('admin-bill-senior-passcode-input')?.focus();
+    return;
+  }
+
+  if (isNaN(approvedVal) || approvedVal < 0) {
+    showToast('Please enter a valid approved amount (>= 0)', 'error');
+    return;
+  }
+
+  const maxAllowed = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? bill.verifiedAmount : bill.totalClaimedAmount;
+  if (approvedVal > maxAllowed) {
+    showToast(`Approved amount (Rs. ${approvedVal.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()})`, 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-admin-approve-bill-submit');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await API.approveBill(currentActiveAdminBillId, {
+      approvedAmount: approvedVal,
+      approvedComment: comment,
+      seniorPasscode
+    });
+    if (res.success) {
+      showToast('Bill approved successfully!', 'success');
+      await openAdminBillModal(currentActiveAdminBillId);
+      await loadAdminBills();
+    } else {
+      showToast(res.error || 'Approval failed', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Approval failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleAdminRejectBill(source) {
+  if (!currentActiveAdminBillId) return;
+  const reason = prompt('Please enter the reason for rejecting this bill:');
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showToast('Rejection reason cannot be empty', 'error');
+    return;
+  }
+
+  try {
+    const res = await API.rejectBill(currentActiveAdminBillId, {
+      reason: reason.trim()
+    });
+    if (res.success) {
+      showToast('Bill rejected', 'info');
+      await openAdminBillModal(currentActiveAdminBillId);
+      await loadAdminBills();
+    } else {
+      showToast(res.error || 'Rejection failed', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Rejection failed'), 'error');
+  }
+}
+
+function initBillEventListeners() {
+  const btnNoBill = document.getElementById('btn-clockout-no-bill');
+  if (btnNoBill) {
+    btnNoBill.addEventListener('click', closeClockOutBillPrompt);
+  }
+  const btnAddBill = document.getElementById('btn-clockout-add-bill');
+  if (btnAddBill) {
+    btnAddBill.addEventListener('click', () => {
+      closeClockOutBillPrompt();
+      openBillSubmissionScreen();
+    });
+  }
+
+  const btnBillBack = document.getElementById('btn-bill-back-to-attendance');
+  if (btnBillBack) {
+    btnBillBack.addEventListener('click', closeBillSubmissionScreen);
+  }
+
+  const btnSuccBack = document.getElementById('btn-bill-success-back');
+  if (btnSuccBack) {
+    btnSuccBack.addEventListener('click', closeBillSubmissionScreen);
+  }
+  const btnSuccMyBills = document.getElementById('btn-bill-success-my-bills');
+  if (btnSuccMyBills) {
+    btnSuccMyBills.addEventListener('click', () => {
+      closeBillSubmissionScreen();
+      switchEmployeeTab('emp-pane-my-bills');
+    });
+  }
+
+  const btnAddPic = document.getElementById('btn-bill-add-pictures');
+  const fileInput = document.getElementById('bill-file-input');
+  if (btnAddPic && fileInput) {
+    btnAddPic.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleBillFileInput);
+  }
+
+  document.querySelectorAll('.bill-amount-input').forEach(input => {
+    input.addEventListener('input', updateBillReviewSummary);
+  });
+  const siteInput = document.getElementById('bill-site-name');
+  if (siteInput) {
+    siteInput.addEventListener('input', updateBillReviewSummary);
+  }
+
+  const btnSubmitBill = document.getElementById('btn-submit-bill-final');
+  if (btnSubmitBill) {
+    btnSubmitBill.addEventListener('click', submitBillForm);
+  }
+
+  const btnRefreshEmpBills = document.getElementById('btn-refresh-emp-bills');
+  if (btnRefreshEmpBills) {
+    btnRefreshEmpBills.addEventListener('click', loadEmployeeBills);
+  }
+
+  const btnRefreshAdminBills = document.getElementById('btn-refresh-admin-bills');
+  if (btnRefreshAdminBills) {
+    btnRefreshAdminBills.addEventListener('click', loadAdminBills);
+  }
+
+  document.querySelectorAll('.bill-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.bill-filter-btn').forEach(b => {
+        b.classList.remove('active', 'btn-primary');
+        b.classList.add('btn-secondary');
+      });
+      btn.classList.add('active', 'btn-primary');
+      btn.classList.remove('btn-secondary');
+      currentAdminBillFilter = btn.getAttribute('data-filter') || 'ALL';
+      renderAdminBillsTable();
+    });
+  });
+
+  const adminSearch = document.getElementById('admin-bill-search');
+  if (adminSearch) {
+    adminSearch.addEventListener('input', renderAdminBillsTable);
+  }
+
+  const btnViewPending = document.getElementById('btn-view-all-pending-bills');
+  if (btnViewPending) {
+    btnViewPending.addEventListener('click', () => {
+      switchAdminTab('tab-bills');
+    });
+  }
+
+  const btnCloseAdminModal = document.getElementById('btn-close-admin-bill-modal');
+  if (btnCloseAdminModal) {
+    btnCloseAdminModal.addEventListener('click', closeAdminBillDetailsModal);
+  }
+
+  const btnVerifySubmit = document.getElementById('btn-admin-verify-bill-submit');
+  if (btnVerifySubmit) {
+    btnVerifySubmit.addEventListener('click', handleAdminVerifyBill);
+  }
+
+  const btnVerifyReject = document.getElementById('btn-admin-verify-reject-bill-submit');
+  if (btnVerifyReject) {
+    btnVerifyReject.addEventListener('click', () => handleAdminRejectBill('verify'));
+  }
+
+  const btnApproveSubmit = document.getElementById('btn-admin-approve-bill-submit');
+  if (btnApproveSubmit) {
+    btnApproveSubmit.addEventListener('click', handleAdminApproveBill);
+  }
+
+  const btnApproveReject = document.getElementById('btn-admin-reject-bill-submit');
+  if (btnApproveReject) {
+    btnApproveReject.addEventListener('click', () => handleAdminRejectBill('approve'));
+  }
+
+  window.addEventListener('popstate', (e) => {
+    if (window.location.hash === '#/employee/bills/new') {
+      openBillSubmissionScreen();
+    } else {
+      const billSec = document.getElementById('bill-submission-view');
+      if (billSec && billSec.classList.contains('active')) {
+        closeBillSubmissionScreen();
+      }
+    }
+  });
 }
 
 // ==========================================================================

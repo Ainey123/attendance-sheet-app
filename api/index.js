@@ -958,6 +958,157 @@ module.exports = async (req, res) => {
       }
     }
 
+    // ── Bills & Expense Management Routes ──────────────────────────────────
+    if (path === 'bills/next-number' && method === 'GET') {
+      try {
+        const nextNum = await db.getNextBillNumber();
+        return res.json({ success: true, billNumber: nextNum });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === 'bills' && method === 'POST') {
+      const body = await parseBody(req);
+      if (!body.employeeId) return res.status(400).json({ error: 'Employee ID is required.' });
+      if (!body.siteName || !body.siteName.trim()) return res.status(400).json({ error: 'Site Name is required.' });
+
+      try {
+        const bill = await db.createBill({
+          employeeId: body.employeeId,
+          employeeName: body.employeeName,
+          siteName: body.siteName,
+          billDate: body.billDate,
+          transportationExpense: body.transportationExpense,
+          materialExpense: body.materialExpense,
+          labourExpense: body.labourExpense,
+          accommodationExpense: body.accommodationExpense,
+          otherExpense: body.otherExpense,
+          description: body.description,
+          attachments: body.attachments
+        });
+        return res.json({ success: true, bill });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path === 'bills' && method === 'GET') {
+      const settings = await db.getSettings();
+      const isAdmin = isPasscodeValid(adminPasscode, settings);
+
+      let employeeId = query.employeeId || null;
+      if (!isAdmin) {
+        const clientEmpId = headers['x-employee-id'] || employeeId;
+        if (!clientEmpId) return res.status(401).json({ error: 'Unauthorized: Employee ID is required.' });
+        employeeId = clientEmpId;
+      }
+
+      try {
+        const bills = await db.getBills({
+          employeeId,
+          status: query.status || null,
+          search: query.search || null
+        });
+        return res.json({ success: true, bills });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === 'bills/stats' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      try {
+        const stats = await db.getBillStats();
+        return res.json({ success: true, stats });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)$/) && method === 'GET') {
+      const id = path.split('/')[1];
+      try {
+        const bill = await db.getBillById(id);
+        if (!bill) return res.status(404).json({ error: 'Bill not found.' });
+
+        const settings = await db.getSettings();
+        const isAdmin = isPasscodeValid(adminPasscode, settings);
+        if (!isAdmin) {
+          const clientEmpId = headers['x-employee-id'] || query.employeeId;
+          if (bill.employeeId !== clientEmpId) {
+            return res.status(403).json({ error: 'Forbidden. You cannot view another employee\'s bill.' });
+          }
+        }
+        return res.json({ success: true, bill });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/verify$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = path.split('/')[1];
+      const body = await parseBody(req);
+      try {
+        const updated = await db.verifyBill(id, {
+          verifiedAmount: body.verifiedAmount,
+          verificationComment: body.verificationComment,
+          verifiedBy: body.verifiedBy || 'Admin'
+        });
+        return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/approve$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      const body = await parseBody(req);
+      const provided = (body.seniorPasscode || body.passcode || headers['x-senior-passcode'] || adminPasscode || '').trim();
+      const validSenior = settings.seniorAdminPasscode || '9999';
+
+      if (provided !== validSenior) {
+        return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
+      }
+
+      const id = path.split('/')[1];
+      try {
+        const updated = await db.approveBill(id, {
+          approvedAmount: body.approvedAmount,
+          approvalComment: body.approvalComment,
+          approvedBy: body.approvedBy || 'Senior Admin'
+        });
+        return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/reject$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = path.split('/')[1];
+      const body = await parseBody(req);
+      try {
+        const updated = await db.rejectBill(id, {
+          rejectionReason: body.rejectionReason,
+          rejectedBy: body.rejectedBy || 'Admin'
+        });
+        return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
 

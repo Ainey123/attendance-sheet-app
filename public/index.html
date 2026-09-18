@@ -159,6 +159,7 @@
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-forms">My Forms</button>
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-comments">💬 Messages &amp; Comments</button>
               <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-material">📦 Material Details</button>
+              <button type="button" class="emp-tab-btn" data-emp-tab="emp-pane-my-bills">🧾 My Bills</button>
             </div>
 
             <div id="emp-pane-attendance" class="emp-tab-pane active">
@@ -606,8 +607,264 @@
               </div>
             </div>
 
+            <!-- EMP PANE: MY BILLS -->
+            <div id="emp-pane-my-bills" class="emp-tab-pane hidden">
+              <div class="panel" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                  <div>
+                    <h3 style="margin: 0; font-size: 1.15rem; color: #fff; display: flex; align-items: center; gap: 0.5rem;">
+                      🧾 My Submitted Bills
+                    </h3>
+                    <p class="text-muted" style="font-size: 0.82rem; margin: 0.25rem 0 0;">View your bill submission history, verification status, and approved amounts.</p>
+                  </div>
+                  <button type="button" id="btn-refresh-emp-bills" class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                    🔄 Refresh
+                  </button>
+                </div>
+
+                <div class="table-container" style="overflow-x: auto;">
+                  <table class="data-table" id="emp-bills-table" style="width: 100%; font-size: 0.85rem;">
+                    <thead>
+                      <tr>
+                        <th>Bill No</th>
+                        <th>Date</th>
+                        <th>Site</th>
+                        <th>Claimed</th>
+                        <th>Verified</th>
+                        <th>Approved</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td colspan="8" class="table-empty">Loading your bills...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- DEDICATED BILL SUBMISSION VIEW (FULL SCREEN) -->
+    <section id="bill-submission-view" class="view-section">
+      <div class="bill-page-container" style="max-width: 860px; margin: 0 auto; padding: 1.5rem 1rem;">
+        
+        <!-- Top Navigation Bar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <button type="button" id="btn-bill-back-to-attendance" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; font-weight: 600;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 18px; height: 18px;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            Back to Attendance
+          </button>
+          <span style="font-size: 0.75rem; padding: 0.25rem 0.65rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; font-weight: 600;">
+            Bill Submission Screen
+          </span>
+        </div>
+
+        <!-- Main Bill Form Card -->
+        <div id="bill-form-card" class="panel" style="border: 1px solid var(--border-color); border-radius: 16px; padding: 2rem; background: var(--bg-panel); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4);">
+          
+          <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; margin-bottom: 1.5rem;">
+            <h2 style="font-size: 1.75rem; font-weight: 800; color: #fff; margin: 0 0 0.35rem; letter-spacing: -0.5px;">Submit Bill</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">Fill in your expense details and attach receipts for official verification.</p>
+          </div>
+
+          <form id="form-submit-bill" onsubmit="return false;">
+            
+            <!-- Grid for Metadata Fields 1-5 -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+              
+              <!-- 1. SITE NAME -->
+              <div class="form-group" style="grid-column: 1 / -1;">
+                <label for="bill-site-name" style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; color: #f1f5f9;">
+                  Site Name <span style="color: #ef4444;">*</span>
+                </label>
+                <input type="text" id="bill-site-name" placeholder="Enter Site Name (e.g. DHA Phase 8 Site)" required style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.95rem;">
+              </div>
+
+              <!-- 2. BILL NUMBER -->
+              <div class="form-group">
+                <label for="bill-number-display" style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; color: #f1f5f9;">
+                  Bill Number
+                </label>
+                <input type="text" id="bill-number-display" readonly value="Loading..." style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(56, 189, 248, 0.08); color: #38bdf8; font-weight: 700; font-size: 0.95rem; cursor: not-allowed;">
+                <small class="text-muted" style="font-size: 0.75rem; margin-top: 0.25rem; display: block;">Generated automatically by database</small>
+              </div>
+
+              <!-- 3. DATE -->
+              <div class="form-group">
+                <label for="bill-date-display" style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; color: #f1f5f9;">
+                  Date
+                </label>
+                <input type="text" id="bill-date-display" readonly style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: #e2e8f0; font-size: 0.95rem; cursor: not-allowed;">
+              </div>
+
+              <!-- 4. EMPLOYEE NAME -->
+              <div class="form-group">
+                <label for="bill-emp-name-display" style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; color: #f1f5f9;">
+                  Employee Name
+                </label>
+                <input type="text" id="bill-emp-name-display" readonly style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: #e2e8f0; font-size: 0.95rem; cursor: not-allowed;">
+              </div>
+
+              <!-- 5. EMPLOYEE ID -->
+              <div class="form-group">
+                <label for="bill-emp-id-display" style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; color: #f1f5f9;">
+                  Employee ID
+                </label>
+                <input type="text" id="bill-emp-id-display" readonly style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: #e2e8f0; font-size: 0.95rem; cursor: not-allowed;">
+              </div>
+            </div>
+
+            <!-- STEP 5 & 6 — EXPENSE SECTION & AMOUNTS -->
+            <div style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
+              <div style="margin-bottom: 1.25rem;">
+                <h4 style="font-size: 1.1rem; color: #fff; margin: 0 0 0.25rem;">Expense Details</h4>
+                <p class="text-muted" style="font-size: 0.85rem; margin: 0;">Enter amount for at least one expense category. Empty categories remain Rs. 0.</p>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                <div class="form-group">
+                  <label for="bill-exp-transportation" style="font-weight: 600; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.35rem; display: block;">Transportation Expense</label>
+                  <div style="position: relative;">
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Rs.</span>
+                    <input type="number" id="bill-exp-transportation" min="0" step="1" placeholder="0" class="bill-amount-input" style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.5rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(15, 23, 42, 0.5); color: #fff; font-size: 0.95rem;">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="bill-exp-material" style="font-weight: 600; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.35rem; display: block;">Material Expense</label>
+                  <div style="position: relative;">
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Rs.</span>
+                    <input type="number" id="bill-exp-material" min="0" step="1" placeholder="0" class="bill-amount-input" style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.5rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(15, 23, 42, 0.5); color: #fff; font-size: 0.95rem;">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="bill-exp-labour" style="font-weight: 600; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.35rem; display: block;">Labour Expense</label>
+                  <div style="position: relative;">
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Rs.</span>
+                    <input type="number" id="bill-exp-labour" min="0" step="1" placeholder="0" class="bill-amount-input" style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.5rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(15, 23, 42, 0.5); color: #fff; font-size: 0.95rem;">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="bill-exp-accommodation" style="font-weight: 600; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.35rem; display: block;">Accommodation Expense</label>
+                  <div style="position: relative;">
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Rs.</span>
+                    <input type="number" id="bill-exp-accommodation" min="0" step="1" placeholder="0" class="bill-amount-input" style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.5rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(15, 23, 42, 0.5); color: #fff; font-size: 0.95rem;">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="bill-exp-other" style="font-weight: 600; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.35rem; display: block;">Other Expense</label>
+                  <div style="position: relative;">
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Rs.</span>
+                    <input type="number" id="bill-exp-other" min="0" step="1" placeholder="0" class="bill-amount-input" style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.5rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(15, 23, 42, 0.5); color: #fff; font-size: 0.95rem;">
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 7 — TOTAL CLAIMED AMOUNT -->
+              <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px dashed var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 1rem; font-weight: 600; color: #cbd5e1;">Total Claimed Amount:</span>
+                <span style="font-size: 1.4rem; font-weight: 800; color: #4ade80;">Rs. <span id="bill-total-claimed-amount">0</span></span>
+              </div>
+            </div>
+
+            <!-- STEP 8 — BILL DESCRIPTION -->
+            <div class="form-group" style="margin-bottom: 1.75rem;">
+              <label for="bill-description" style="display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; color: #f1f5f9;">
+                Bill Details / Description <span class="text-muted" style="font-weight: normal; font-size: 0.8rem;">(Optional)</span>
+              </label>
+              <textarea id="bill-description" rows="3" placeholder="Explain this bill (e.g. Material purchased for DHA site...)" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.95rem; resize: vertical;"></textarea>
+            </div>
+
+            <!-- STEP 9 — ATTACH MULTIPLE BILL PICTURES -->
+            <div style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                  <h4 style="font-size: 1.05rem; color: #fff; margin: 0 0 0.25rem;">
+                    Attach Bill / Receipt <span style="color: #ef4444;">*</span>
+                  </h4>
+                  <p class="text-muted" style="font-size: 0.85rem; margin: 0;">Add one or more photos or PDFs of bills, receipts, or vouchers.</p>
+                </div>
+                <button type="button" id="btn-bill-add-pictures" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 18px; height: 18px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  + Add Pictures
+                </button>
+                <input type="file" id="bill-file-input" multiple accept="image/*,application/pdf" style="display: none;">
+              </div>
+
+              <!-- Attachments Preview Grid -->
+              <div id="bill-attachments-preview-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.85rem; min-height: 50px;">
+                <p id="bill-no-attachments-msg" class="text-muted" style="grid-column: 1 / -1; font-size: 0.85rem; font-style: italic; text-align: center; padding: 1rem;">
+                  No pictures attached yet. Click "+ Add Pictures" to attach receipts.
+                </p>
+              </div>
+            </div>
+
+            <!-- STEP 10 — REVIEW BEFORE SUBMIT -->
+            <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+              <h4 style="font-size: 1.05rem; color: #38bdf8; margin: 0 0 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                📋 Bill Summary
+              </h4>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.6rem; font-size: 0.88rem;">
+                <div><span class="text-muted">Bill Number:</span> <strong id="rev-bill-number">Loading...</strong></div>
+                <div><span class="text-muted">Site:</span> <strong id="rev-bill-site">—</strong></div>
+                <div><span class="text-muted">Date:</span> <strong id="rev-bill-date">—</strong></div>
+                <div><span class="text-muted">Employee:</span> <strong id="rev-bill-employee">—</strong></div>
+                <div><span class="text-muted">Employee ID:</span> <strong id="rev-bill-emp-id">—</strong></div>
+                <div><span class="text-muted">Transportation:</span> <strong id="rev-exp-trans">Rs. 0</strong></div>
+                <div><span class="text-muted">Material:</span> <strong id="rev-exp-mat">Rs. 0</strong></div>
+                <div><span class="text-muted">Labour:</span> <strong id="rev-exp-lab">Rs. 0</strong></div>
+                <div><span class="text-muted">Accommodation:</span> <strong id="rev-exp-acc">Rs. 0</strong></div>
+                <div><span class="text-muted">Other:</span> <strong id="rev-exp-oth">Rs. 0</strong></div>
+                <div style="grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 1rem; font-weight: 700; color: #fff;">TOTAL CLAIMED:</span>
+                  <span style="font-size: 1.3rem; font-weight: 800; color: #4ade80;">Rs. <span id="rev-total-claimed">0</span></span>
+                </div>
+                <div><span class="text-muted">Attachments:</span> <strong id="rev-attach-count">0</strong></div>
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="button" id="btn-submit-bill-final" class="btn btn-primary btn-full" style="padding: 1rem; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4);">
+              SUBMIT BILL
+            </button>
+          </form>
+        </div>
+
+        <!-- STEP 11 — SUCCESS SCREEN -->
+        <div id="bill-success-card" class="panel hidden" style="border: 1px solid rgba(34, 197, 94, 0.4); border-radius: 16px; padding: 3rem 2rem; background: var(--bg-panel); text-align: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4);">
+          <div style="width: 72px; height: 72px; border-radius: 50%; background: rgba(34, 197, 94, 0.15); border: 2px solid rgba(34, 197, 94, 0.5); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="#22c55e" style="width: 40px; height: 40px;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          </div>
+          <h2 style="font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 0.75rem;">Bill Submitted Successfully</h2>
+          <p style="color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto 2rem; line-height: 1.6;">
+            Your bill <strong id="bill-success-number" style="color: #38bdf8; font-size: 1.15rem;">BILL-000000</strong> has been submitted successfully and is waiting for Admin verification.
+          </p>
+          <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+            <button type="button" id="btn-bill-success-back" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 600;">
+              Back to Attendance
+            </button>
+            <button type="button" id="btn-bill-success-my-bills" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 600;">
+              My Bills
+            </button>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -685,6 +942,13 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
               </svg>
               📦 Material Management
+            </button>
+            <button class="nav-link" data-tab="tab-bills">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+              🧾 Bill Management
+              <span id="badge-pending-bills" class="badge" style="display:none; margin-left:auto; background:#ef4444; color:#fff; font-size:0.7rem; padding:0.15rem 0.45rem; border-radius:10px; font-weight:700;">0</span>
             </button>
             <button class="nav-link" data-tab="tab-settings">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -775,6 +1039,22 @@
                   <span class="stat-label">Absent Today</span>
                   <span class="stat-number" id="stat-absent-today">0</span>
                 </div>
+              </div>
+            </div>
+
+            <!-- Pending Bill Verification Alerts Card -->
+            <div id="admin-pending-bills-alert-card" class="panel hidden" style="background:rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.35); margin-bottom: 1.5rem; border-radius:12px; padding:1.25rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+                <h4 style="margin:0; font-size:1.05rem; color:#f87171; display:flex; align-items:center; gap:0.5rem;">
+                  ⚠️ Pending Bill Verification Required (<span id="admin-pending-bills-count">0</span>)
+                </h4>
+                <button type="button" class="btn btn-secondary" id="btn-view-all-pending-bills" style="padding:0.3rem 0.75rem; font-size:0.8rem; font-weight:600;">
+                  Open Bill Management &rarr;
+                </button>
+              </div>
+              <p class="text-muted" style="font-size:0.85rem; margin-bottom:0.75rem;">Click on any pending bill below to inspect receipts and verify amount:</p>
+              <div id="admin-pending-bills-list" style="display:flex; flex-direction:column; gap:0.5rem;">
+                <!-- JS populated clickable alerts -->
               </div>
             </div>
 
@@ -1437,6 +1717,125 @@
           </div>
         </div>
 
+        <!-- TAB: BILL MANAGEMENT -->
+        <div id="tab-bills" class="tab-pane hidden">
+          <div class="panel data-panel" style="margin-bottom: 1.5rem;">
+            <div class="panel-header-actions" style="flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 class="data-panel-title">🧾 Bill Management & Reimbursements</h3>
+                <p class="data-panel-subtitle">Review, verify, and approve staff submitted bills with attachments.</p>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button type="button" id="btn-refresh-admin-bills" class="btn btn-secondary" style="font-weight: 600;">
+                  🔄 Refresh Bills
+                </button>
+              </div>
+            </div>
+
+            <!-- Bill Stats Grid -->
+            <div class="dashboard-grid" style="margin: 1.25rem 0; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+              <div class="stat-card">
+                <div class="stat-icon bg-indigo">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Total Bills</span>
+                  <span class="stat-number" id="bill-stat-total">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-rose">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Pending Verification</span>
+                  <span class="stat-number" id="bill-stat-pending">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-violet">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Verified</span>
+                  <span class="stat-number" id="bill-stat-verified">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-emerald">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-4.5 4.5L15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Approved</span>
+                  <span class="stat-number" id="bill-stat-approved">0</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon bg-emerald">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Total Claimed</span>
+                  <span class="stat-number" id="bill-stat-total-amount">PKR 0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Status Filter Pills & Search Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+              <div class="bill-filter-tabs" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-primary bill-filter-btn active" data-filter="ALL">All Bills</button>
+                <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="PENDING_VERIFICATION">Pending Verification</button>
+                <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="VERIFIED">Verified</button>
+                <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="APPROVED">Approved</button>
+                <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="REJECTED">Rejected</button>
+              </div>
+
+              <div style="min-width: 260px;">
+                <input type="text" id="admin-bill-search" placeholder="Search by Bill #, Employee, Site, Date..." style="width: 100%; padding: 0.5rem 0.85rem; font-size: 0.85rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: #fff;">
+              </div>
+            </div>
+
+            <!-- Admin Bills Table -->
+            <div class="table-container" style="overflow-x: auto;">
+              <table class="data-table" id="admin-bills-table" style="width: 100%; font-size: 0.85rem;">
+                <thead>
+                  <tr>
+                    <th>Bill Number</th>
+                    <th>Date</th>
+                    <th>Employee</th>
+                    <th>Site Name</th>
+                    <th>Claimed Amount</th>
+                    <th>Verified Amount</th>
+                    <th>Approved Amount</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="9" class="table-empty">Loading bills...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <div id="tab-settings" class="tab-pane">
             <div class="settings-grid">
               <div class="panel">
@@ -1985,6 +2384,193 @@
           </div>
           <button type="submit" class="btn btn-primary btn-full">Submit Clock Out</button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Post Clock-Out Bill Submission Prompt -->
+  <div id="modal-clockout-bill-prompt" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 440px; text-align: center; padding: 2rem 1.5rem;">
+      <div style="width: 54px; height: 54px; border-radius: 50%; background: rgba(34, 197, 94, 0.15); border: 2px solid rgba(34, 197, 94, 0.4); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="#22c55e" style="width: 30px; height: 30px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+        </svg>
+      </div>
+      <h3 style="margin-bottom: 0.5rem; font-size: 1.35rem; color: #fff;">Shift Completed Successfully</h3>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.75rem;">
+        Do you have a Bill to submit?
+      </p>
+      <div style="display: flex; gap: 0.85rem; justify-content: center;">
+        <button type="button" id="btn-clockout-add-bill" class="btn btn-primary" style="flex: 1; padding: 0.75rem 1rem; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #10b981, #059669); border: none; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);">
+          ADD BILL
+        </button>
+        <button type="button" id="btn-clockout-no-bill" class="btn btn-secondary" style="flex: 1; padding: 0.75rem 1rem; font-size: 1rem; font-weight: 600;">
+          NO BILL
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Admin Bill Details, Verification & Approval -->
+  <div id="modal-admin-bill-details" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 780px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <h3 class="modal-title" style="margin: 0; font-size: 1.25rem;">
+            Bill Details — <span id="admin-bill-modal-num" style="color: #38bdf8;">BILL-000000</span>
+          </h3>
+          <span id="admin-bill-modal-status-badge" class="badge" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">PENDING</span>
+        </div>
+        <button id="btn-close-admin-bill-modal" class="btn-close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="overflow-y: auto; padding: 1.25rem 0; display: flex; flex-direction: column; gap: 1.25rem;">
+        
+        <!-- Section 1: Staff & Bill Info -->
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
+          <h4 style="font-size: 0.95rem; color: #fff; margin: 0 0 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
+            📌 Bill & Staff Information
+          </h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; font-size: 0.85rem;">
+            <div><span class="text-muted">Employee:</span> <strong id="admin-bill-modal-emp">—</strong></div>
+            <div><span class="text-muted">Employee ID:</span> <strong id="admin-bill-modal-empid">—</strong></div>
+            <div><span class="text-muted">Site Name:</span> <strong id="admin-bill-modal-site">—</strong></div>
+            <div><span class="text-muted">Bill Date:</span> <strong id="admin-bill-modal-date">—</strong></div>
+            <div><span class="text-muted">Submission Time:</span> <strong id="admin-bill-modal-time">—</strong></div>
+          </div>
+        </div>
+
+        <!-- Section 2: Expense Breakdown -->
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
+          <h4 style="font-size: 0.95rem; color: #fff; margin: 0 0 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
+            💰 Expense Breakdown
+          </h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; font-size: 0.85rem; margin-bottom: 0.75rem;">
+            <div><span class="text-muted">Transportation:</span> <strong id="admin-bill-modal-trans">Rs. 0</strong></div>
+            <div><span class="text-muted">Material:</span> <strong id="admin-bill-modal-mat">Rs. 0</strong></div>
+            <div><span class="text-muted">Labour:</span> <strong id="admin-bill-modal-lab">Rs. 0</strong></div>
+            <div><span class="text-muted">Accommodation:</span> <strong id="admin-bill-modal-acc">Rs. 0</strong></div>
+            <div><span class="text-muted">Other:</span> <strong id="admin-bill-modal-oth">Rs. 0</strong></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <span style="font-weight: 700; color: #fff; font-size: 0.95rem;">Total Claimed Amount:</span>
+            <span style="font-size: 1.25rem; font-weight: 800; color: #4ade80;">Rs. <span id="admin-bill-modal-total-claimed">0</span></span>
+          </div>
+          <div id="admin-bill-modal-desc-box" style="margin-top: 0.75rem; font-size: 0.85rem;">
+            <span class="text-muted">Description:</span>
+            <p id="admin-bill-modal-desc" style="margin: 0.25rem 0 0; color: #cbd5e1; font-style: italic; background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 6px;">No description provided.</p>
+          </div>
+        </div>
+
+        <!-- Section 3: Attachments Gallery -->
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
+            <h4 style="font-size: 0.95rem; color: #fff; margin: 0;">
+              📎 Bill Pictures &amp; Receipts (<span id="admin-bill-modal-attach-count">0</span>)
+            </h4>
+            <span class="text-muted" style="font-size: 0.75rem;">Click attachment to view full size</span>
+          </div>
+          <div id="admin-bill-modal-attachments-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;">
+            <!-- JS populated thumbnails -->
+          </div>
+        </div>
+
+        <!-- Section 4: Admin Verification Interface -->
+        <div id="admin-bill-verify-section" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 10px; padding: 1.25rem;">
+          <h4 style="font-size: 1rem; color: #60a5fa; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            🔍 Step 1: Admin Verification
+          </h4>
+          <p class="text-muted" style="font-size: 0.82rem; margin: 0 0 1rem;">
+            Inspect receipts and manually enter the amount you actually verify. The original claimed amount is always preserved.
+          </p>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+            <div>
+              <span class="text-muted" style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Employee Claimed:</span>
+              <div style="font-size: 1.15rem; font-weight: 700; color: #fff;">Rs. <span id="admin-bill-claimed-val">0</span></div>
+            </div>
+            <div class="form-group">
+              <label for="admin-bill-verify-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                Verified Amount (Rs.) *
+              </label>
+              <input type="number" id="admin-bill-verify-input" min="0" step="1" placeholder="Enter verified amount" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700; font-size: 1rem;">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="admin-bill-verify-comment-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+              Admin Comment / Explanation
+            </label>
+            <textarea id="admin-bill-verify-comment-input" rows="2" placeholder="e.g. Transportation verified. Material receipt was incomplete, therefore Rs. 8,000 verified." style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem; resize: vertical;"></textarea>
+          </div>
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" id="btn-admin-verify-bill-submit" class="btn btn-primary" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              VERIFY BILL
+            </button>
+            <button type="button" id="btn-admin-verify-reject-bill-submit" class="btn btn-danger" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              REJECT BILL
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 5: Senior Admin Approval Interface -->
+        <div id="admin-bill-approve-section" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 10px; padding: 1.25rem;">
+          <h4 style="font-size: 1rem; color: #34d399; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            ⭐ Step 2: Senior Admin Approval
+          </h4>
+          <p class="text-muted" style="font-size: 0.82rem; margin: 0 0 1rem;">
+            Authorized Senior Admin enters the final approved amount and passcode. Approved amount cannot exceed verified amount.
+          </p>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+            <div>
+              <span class="text-muted" style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Claimed Amount:</span>
+              <div style="font-size: 1.1rem; font-weight: 700; color: #cbd5e1;">Rs. <span id="admin-bill-appr-claimed">0</span></div>
+            </div>
+            <div>
+              <span class="text-muted" style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Verified Amount:</span>
+              <div style="font-size: 1.1rem; font-weight: 700; color: #38bdf8;">Rs. <span id="admin-bill-appr-verified">0</span></div>
+            </div>
+            <div class="form-group">
+              <label for="admin-bill-approve-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                Approved Amount (Rs.) *
+              </label>
+              <input type="number" id="admin-bill-approve-input" min="0" step="1" placeholder="Enter approved amount" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700; font-size: 1rem;">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+            <div class="form-group">
+              <label for="admin-bill-approve-comment-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                Approval Comment
+              </label>
+              <input type="text" id="admin-bill-approve-comment-input" placeholder="e.g. Final approval granted" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+            </div>
+            <div class="form-group">
+              <label for="admin-bill-senior-passcode-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                Senior Admin Passcode *
+              </label>
+              <input type="password" id="admin-bill-senior-passcode-input" placeholder="Enter Senior Passcode (9999)" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" id="btn-admin-approve-bill-submit" class="btn btn-success" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              APPROVE BILL
+            </button>
+            <button type="button" id="btn-admin-reject-bill-submit" class="btn btn-danger" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              REJECT BILL
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 6: Audit History Log -->
+        <div id="admin-bill-audit-container" style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
+          <h4 style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem;">📜 Audit &amp; Activity Log</h4>
+          <ul id="admin-bill-audit-list" style="list-style: none; padding: 0; margin: 0; font-size: 0.8rem; color: #94a3b8; display: flex; flex-direction: column; gap: 0.35rem;">
+            <!-- JS populated audit timeline -->
+          </ul>
+        </div>
+
       </div>
     </div>
   </div>

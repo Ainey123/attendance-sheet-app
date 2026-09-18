@@ -156,6 +156,47 @@ CREATE INDEX IF NOT EXISTS idx_form_submissions_type    ON form_submissions("for
 CREATE INDEX IF NOT EXISTS idx_comments_employee_id     ON comments("employeeId");
 CREATE INDEX IF NOT EXISTS idx_accounts_pdfs_month      ON accounts_pdfs("salaryMonth");
 
+-- 10. Bills Table (Expense submission and multi-step verification)
+CREATE SEQUENCE IF NOT EXISTS bills_seq START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE IF NOT EXISTS bills (
+  "id"                    TEXT PRIMARY KEY,
+  "billNumber"            TEXT UNIQUE NOT NULL DEFAULT ('BILL-' || LPAD(nextval('bills_seq')::TEXT, 6, '0')),
+  "employeeId"            TEXT NOT NULL,
+  "employeeName"          TEXT NOT NULL,
+  "siteName"              TEXT NOT NULL,
+  "billDate"              TEXT NOT NULL,
+  "submittedAt"           TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "transportationExpense" NUMERIC DEFAULT 0 CHECK ("transportationExpense" >= 0),
+  "materialExpense"       NUMERIC DEFAULT 0 CHECK ("materialExpense" >= 0),
+  "labourExpense"         NUMERIC DEFAULT 0 CHECK ("labourExpense" >= 0),
+  "accommodationExpense"  NUMERIC DEFAULT 0 CHECK ("accommodationExpense" >= 0),
+  "otherExpense"          NUMERIC DEFAULT 0 CHECK ("otherExpense" >= 0),
+  "totalClaimedAmount"    NUMERIC NOT NULL DEFAULT 0 CHECK ("totalClaimedAmount" >= 0),
+  "description"           TEXT,
+  "attachments"           JSONB DEFAULT '[]'::jsonb,
+  "status"                TEXT NOT NULL DEFAULT 'PENDING_VERIFICATION' CHECK ("status" IN ('PENDING_VERIFICATION', 'VERIFIED', 'APPROVED', 'REJECTED')),
+  "verifiedAmount"        NUMERIC CHECK ("verifiedAmount" IS NULL OR "verifiedAmount" >= 0),
+  "verifiedBy"            TEXT,
+  "verifiedAt"            TIMESTAMP WITH TIME ZONE,
+  "verificationComment"   TEXT,
+  "approvedAmount"        NUMERIC CHECK ("approvedAmount" IS NULL OR "approvedAmount" >= 0),
+  "approvedBy"            TEXT,
+  "approvedAt"            TIMESTAMP WITH TIME ZONE,
+  "approvalComment"       TEXT,
+  "rejectedBy"            TEXT,
+  "rejectedAt"            TIMESTAMP WITH TIME ZONE,
+  "rejectionReason"       TEXT,
+  "auditLog"              JSONB DEFAULT '[]'::jsonb,
+  "createdAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "updatedAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bills_employee_id ON bills("employeeId");
+CREATE INDEX IF NOT EXISTS idx_bills_bill_number ON bills("billNumber");
+CREATE INDEX IF NOT EXISTS idx_bills_status      ON bills("status");
+CREATE INDEX IF NOT EXISTS idx_bills_date        ON bills("billDate");
+
 -- ── Row Level Security (RLS) ─────────────────────────────
 ALTER TABLE employees            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings             ENABLE ROW LEVEL SECURITY;
@@ -166,6 +207,7 @@ ALTER TABLE form_submissions     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE employee_evaluations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE accounts_pdfs        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bills                ENABLE ROW LEVEL SECURITY;
 
 -- Policies (DO NOTHING if they already exist — avoids errors on re-run)
 DO $$ BEGIN
@@ -195,6 +237,9 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='accounts_pdfs' AND policyname='Allow all access for accounts_pdfs') THEN
     CREATE POLICY "Allow all access for accounts_pdfs" ON accounts_pdfs FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='bills' AND policyname='Allow all access for bills') THEN
+    CREATE POLICY "Allow all access for bills" ON bills FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 

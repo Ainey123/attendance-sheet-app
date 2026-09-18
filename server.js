@@ -977,6 +977,178 @@ app.get('/api/salary/:employeeId', checkAdminAuth, async (req, res) => {
   }
 });
 
+// ─── BILL & EXPENSE MANAGEMENT API ROUTES ──────────────────────────────────
+
+// GET /api/bills/next-number (Preview next bill number)
+app.get('/api/bills/next-number', async (req, res) => {
+  try {
+    const nextNum = await db.getNextBillNumber();
+    res.json({ success: true, billNumber: nextNum });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bills (Employee submits a new bill)
+app.post('/api/bills', async (req, res) => {
+  try {
+    const {
+      employeeId,
+      employeeName,
+      siteName,
+      billDate,
+      transportationExpense,
+      materialExpense,
+      labourExpense,
+      accommodationExpense,
+      otherExpense,
+      description,
+      attachments
+    } = req.body;
+
+    if (!employeeId) {
+      return res.status(400).json({ error: 'Employee ID is required.' });
+    }
+    if (!siteName || !siteName.trim()) {
+      return res.status(400).json({ error: 'Site Name is required.' });
+    }
+
+    const bill = await db.createBill({
+      employeeId,
+      employeeName,
+      siteName,
+      billDate,
+      transportationExpense,
+      materialExpense,
+      labourExpense,
+      accommodationExpense,
+      otherExpense,
+      description,
+      attachments
+    });
+
+    res.json({ success: true, bill });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// GET /api/bills (List bills: scoped to employee if non-admin; all if admin)
+app.get('/api/bills', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || '').trim();
+    const isAdmin = adminPass && (adminPass === (settings.adminPasscode || '1234') || adminPass === (settings.seniorAdminPasscode || '9999') || adminPass === '1289' || adminPass === '1290');
+
+    let employeeId = req.query.employeeId || null;
+    if (!isAdmin) {
+      // Non-admin can ONLY view their own bills
+      const clientEmpId = req.headers['x-employee-id'] || employeeId;
+      if (!clientEmpId) {
+        return res.status(401).json({ error: 'Unauthorized. Employee ID is required.' });
+      }
+      employeeId = clientEmpId;
+    }
+
+    const bills = await db.getBills({
+      employeeId,
+      status: req.query.status || null,
+      search: req.query.search || null
+    });
+
+    res.json({ success: true, bills });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bills/stats (Admin stats dashboard)
+app.get('/api/bills/stats', checkAdminAuth, async (req, res) => {
+  try {
+    const stats = await db.getBillStats();
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bills/:id (Get single bill)
+app.get('/api/bills/:id', async (req, res) => {
+  try {
+    const bill = await db.getBillById(req.params.id);
+    if (!bill) {
+      return res.status(404).json({ error: 'Bill not found.' });
+    }
+
+    const settings = await db.getSettings();
+    const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || '').trim();
+    const isAdmin = adminPass && (adminPass === (settings.adminPasscode || '1234') || adminPass === (settings.seniorAdminPasscode || '9999') || adminPass === '1289' || adminPass === '1290');
+
+    if (!isAdmin) {
+      const clientEmpId = req.headers['x-employee-id'] || req.query.employeeId;
+      if (bill.employeeId !== clientEmpId) {
+        return res.status(403).json({ error: 'Forbidden. You cannot view another employee\'s bill.' });
+      }
+    }
+
+    res.json({ success: true, bill });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/verify (Admin verification)
+app.post('/api/bills/:id/verify', checkAdminAuth, async (req, res) => {
+  try {
+    const { verifiedAmount, verificationComment, verifiedBy } = req.body;
+    const updated = await db.verifyBill(req.params.id, {
+      verifiedAmount,
+      verificationComment,
+      verifiedBy: verifiedBy || 'Admin'
+    });
+    res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/approve (Senior Admin approval)
+app.post('/api/bills/:id/approve', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const provided = (req.body.seniorPasscode || req.body.passcode || req.headers['x-senior-passcode'] || req.headers['x-admin-passcode'] || '').trim();
+    const validSenior = settings.seniorAdminPasscode || '9999';
+
+    if (provided !== validSenior) {
+      return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
+    }
+
+    const { approvedAmount, approvalComment, approvedBy } = req.body;
+    const updated = await db.approveBill(req.params.id, {
+      approvedAmount,
+      approvalComment,
+      approvedBy: approvedBy || 'Senior Admin'
+    });
+    res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/reject (Admin or Senior Admin rejection)
+app.post('/api/bills/:id/reject', checkAdminAuth, async (req, res) => {
+  try {
+    const { rejectionReason, rejectedBy } = req.body;
+    const updated = await db.rejectBill(req.params.id, {
+      rejectionReason,
+      rejectedBy: rejectedBy || 'Admin'
+    });
+    res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
 // For any other route, serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

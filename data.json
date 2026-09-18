@@ -310,7 +310,258 @@
     }
   ],
   "employeeEvaluations": [],
-  "comments": [],
+  "comments": [
+    {
+      "id": "comm_mu6lynn3_0g9tz",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000001\nSite: Concurrent Test Site 1\nDate: 2026-09-18\nClaimed Amount: Rs. 350\nStatus: Pending Verification\n[BillID:bill_mu6lynm3_5kylv]",
+      "createdAt": "2026-09-18T06:59:26.127Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6lynnu_e5bd2",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000002\nSite: Concurrent Test Site 2\nDate: 2026-09-18\nClaimed Amount: Rs. 450\nStatus: Pending Verification\n[BillID:bill_mu6lynnk_gnzev]",
+      "createdAt": "2026-09-18T06:59:26.154Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6lynon_zmv7b",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000003\nSite: Concurrent Test Site 3\nDate: 2026-09-18\nClaimed Amount: Rs. 550\nStatus: Pending Verification\n[BillID:bill_mu6lynob_uw5hg]",
+      "createdAt": "2026-09-18T06:59:26.183Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6lynpg_voagm",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000004\nSite: Concurrent Test Site 4\nDate: 2026-09-18\nClaimed Amount: Rs. 650\nStatus: Pending Verification\n[BillID:bill_mu6lynp4_z3ojd]",
+      "createdAt": "2026-09-18T06:59:26.212Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6lynq6_v3t37",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000005\nSite: Concurrent Test Site 5\nDate: 2026-09-18\nClaimed Amount: Rs. 750\nStatus: Pending Verification\n[BillID:bill_mu6lynpw_xxgd1]",
+      "createdAt": "2026-09-18T06:59:26.238Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6lynqz_9u8uk",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000006\nSite: Concurrent Test Site 6\nDate: 2026-09-18\nClaimed Amount: Rs. 850\nStatus: Pending Verification\n[BillID:bill_mu6lynqm_ard4h]",
+      "createdAt": "2026-09-18T06:59:26.267Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6lyns1_jen2l",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000007\nSite: Gulberg Commercial Plaza\nDate: 2026-09-18\nClaimed Amount: Rs. 9,000\nStatus: Pending Verification\n[BillID:bill_mu6lynrr_fju0f]",
+      "createdAt": "2026-09-18T06:59:26.305Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rof_3ycl8",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000008\nSite: Concurrent Test Site 1\nDate: 2026-09-18\nClaimed Amount: Rs. 350\nStatus: Pending Verification\n[BillID:bill_mu6m7rnd_w0c3j]",
+      "createdAt": "2026-09-18T07:06:31.263Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rp7_lzg7n",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000009\nSite: Concurrent Test Site 2\nDate: 2026-09-18\nClaimed Amount: Rs. 450\nStatus: Pending Verification\n[BillID:bill_mu6m7row_erydf]",
+      "createdAt": "2026-09-18T07:06:31.291Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rpx_h1yss",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000010\nSite: Concurrent Test Site 3\nDate: 2026-09-18\nClaimed Amount: Rs. 550\nStatus: Pending Verification\n[BillID:bill_mu6m7rpo_946ou]",
+      "createdAt": "2026-09-18T07:06:31.317Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rqn_fqykx",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000011\nSite: Concurrent Test Site 4\nDate: 2026-09-18\nClaimed Amount: Rs. 650\nStatus: Pending Verification\n[BillID:bill_mu6m7rqc_wt1wg]",
+      "createdAt": "2026-09-18T07:06:31.343Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rrb_u3ats",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000012\nSite: Concurrent Test Site 5\nDate: 2026-09-18\nClaimed Amount: Rs. 750\nStatus: Pending Verification\n[BillID:bill_mu6m7rr2_oqq9m]",
+      "createdAt": "2026-09-18T07:06:31.367Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rs3_m6qxp",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000013\nSite: Concurrent Test Site 6\nDate: 2026-09-18\nClaimed Amount: Rs. 850\nStatus: Pending Verification\n[BillID:bill_mu6m7rrt_9fakb]",
+      "createdAt": "2026-09-18T07:06:31.395Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rsw_3b5wc",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000014\nSite: Gulberg Commercial Plaza\nDate: 2026-09-18\nClaimed Amount: Rs. 9,000\nStatus: Pending Verification\n[BillID:bill_mu6m7rsk_yg8fk]",
+      "createdAt": "2026-09-18T07:06:31.424Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rv0_icoqh",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000015\nSite: Site Beta for Rejection Test\nDate: 2026-09-18\nClaimed Amount: Rs. 500\nStatus: Pending Verification\n[BillID:bill_mu6m7rur_wrrpc]",
+      "createdAt": "2026-09-18T07:06:31.500Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m7rw8_p22zp",
+      "employeeId": "test-emp-002",
+      "employeeName": "Test Employee Beta",
+      "sender": "bill_system",
+      "senderName": "Test Employee Beta",
+      "message": "New Bill Submitted\nEmployee: Test Employee Beta\nEmployee ID: test-emp-002\nBill Number: BILL-000016\nSite: Site Gamma\nDate: 2026-09-18\nClaimed Amount: Rs. 1,000\nStatus: Pending Verification\n[BillID:bill_mu6m7rvx_kdo72]",
+      "createdAt": "2026-09-18T07:06:31.544Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m9951_ziwzk",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000017\nSite: Concurrent Test Site 1\nDate: 2026-09-18\nClaimed Amount: Rs. 350\nStatus: Pending Verification\n[BillID:bill_mu6m993z_xe1ly]",
+      "createdAt": "2026-09-18T07:07:40.549Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m995t_txtyi",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000018\nSite: Concurrent Test Site 2\nDate: 2026-09-18\nClaimed Amount: Rs. 450\nStatus: Pending Verification\n[BillID:bill_mu6m995i_oelaq]",
+      "createdAt": "2026-09-18T07:07:40.577Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m996p_x1xha",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000019\nSite: Concurrent Test Site 3\nDate: 2026-09-18\nClaimed Amount: Rs. 550\nStatus: Pending Verification\n[BillID:bill_mu6m996b_br6v9]",
+      "createdAt": "2026-09-18T07:07:40.609Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m997h_abppb",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000020\nSite: Concurrent Test Site 4\nDate: 2026-09-18\nClaimed Amount: Rs. 650\nStatus: Pending Verification\n[BillID:bill_mu6m9975_cc0z3]",
+      "createdAt": "2026-09-18T07:07:40.637Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m998d_3gelw",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000021\nSite: Concurrent Test Site 5\nDate: 2026-09-18\nClaimed Amount: Rs. 750\nStatus: Pending Verification\n[BillID:bill_mu6m9980_5e63r]",
+      "createdAt": "2026-09-18T07:07:40.669Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m9994_smk9y",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000022\nSite: Concurrent Test Site 6\nDate: 2026-09-18\nClaimed Amount: Rs. 850\nStatus: Pending Verification\n[BillID:bill_mu6m998u_to8z2]",
+      "createdAt": "2026-09-18T07:07:40.696Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m999w_varwk",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000023\nSite: Gulberg Commercial Plaza\nDate: 2026-09-18\nClaimed Amount: Rs. 9,000\nStatus: Pending Verification\n[BillID:bill_mu6m999l_9rhq7]",
+      "createdAt": "2026-09-18T07:07:40.724Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m99c8_93rfe",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "sender": "bill_system",
+      "senderName": "Test Employee Alpha",
+      "message": "New Bill Submitted\nEmployee: Test Employee Alpha\nEmployee ID: test-emp-001\nBill Number: BILL-000024\nSite: Site Beta for Rejection Test\nDate: 2026-09-18\nClaimed Amount: Rs. 500\nStatus: Pending Verification\n[BillID:bill_mu6m99bw_mb8sj]",
+      "createdAt": "2026-09-18T07:07:40.808Z",
+      "isRead": true
+    },
+    {
+      "id": "comm_mu6m99dk_s5q7w",
+      "employeeId": "test-emp-002",
+      "employeeName": "Test Employee Beta",
+      "sender": "bill_system",
+      "senderName": "Test Employee Beta",
+      "message": "New Bill Submitted\nEmployee: Test Employee Beta\nEmployee ID: test-emp-002\nBill Number: BILL-000025\nSite: Site Gamma\nDate: 2026-09-18\nClaimed Amount: Rs. 1,000\nStatus: Pending Verification\n[BillID:bill_mu6m99d7_gp3mh]",
+      "createdAt": "2026-09-18T07:07:40.856Z",
+      "isRead": true
+    }
+  ],
   "salaries": [
     {
       "id": "sal_mts7kat0_sg8iv",
@@ -1763,6 +2014,39 @@
       "month": "2026-08",
       "basicSalary": 0,
       "generatedAt": "2026-09-13T06:13:24.092Z",
+      "totalDaysInMonth": 31,
+      "workingDays": 30,
+      "regularPresentDays": 0,
+      "sundayPresentDays": 0,
+      "worked14Aug": false,
+      "aug14Bonus": 0,
+      "extraDaysBonus": 0,
+      "presentDays": 0,
+      "autoPresentDays": 0,
+      "isManualPresentDays": false,
+      "manualPresentDays": null,
+      "editedBy": null,
+      "editedAt": null,
+      "isManualSundayBonus": false,
+      "manualSundayBonus": null,
+      "autoSundayBonus": 0,
+      "sundayBonusEditedBy": null,
+      "sundayBonusEditedAt": null,
+      "perDaySalary": 0,
+      "regularEarned": 0,
+      "sundayBonus": 0,
+      "earnedSalary": 0,
+      "totalExpenses": 0,
+      "netSalary": 0
+    },
+    {
+      "id": "sal_mu6lvduw_01ge8",
+      "employeeId": "emp_mu27xpqd_pt38f",
+      "employeeName": "test",
+      "role": "testing eng",
+      "month": "2026-08",
+      "basicSalary": 0,
+      "generatedAt": "2026-09-18T07:10:11.751Z",
       "totalDaysInMonth": 31,
       "workingDays": 30,
       "regularPresentDays": 0,
@@ -10385,5 +10669,1323 @@
       "approvedAt": "2026-09-13T06:09:03.253Z"
     }
   ],
-  "materialApprovalAttachments": []
+  "materialApprovalAttachments": [],
+  "bills": [
+    {
+      "id": "bill_mu6lynm3_5kylv",
+      "billNumber": "BILL-000001",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 1",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:25.246Z",
+      "transportationExpense": 100,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 350,
+      "description": "Concurrent submission test batch #1",
+      "attachments": [
+        {
+          "name": "receipt_0.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:25.246Z",
+          "details": {
+            "totalClaimedAmount": 350,
+            "billNumber": "BILL-000001",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:25.246Z",
+      "updatedAt": "2026-09-18T06:59:25.246Z"
+    },
+    {
+      "id": "bill_mu6lynnk_gnzev",
+      "billNumber": "BILL-000002",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 2",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:26.137Z",
+      "transportationExpense": 200,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 450,
+      "description": "Concurrent submission test batch #2",
+      "attachments": [
+        {
+          "name": "receipt_1.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:26.137Z",
+          "details": {
+            "totalClaimedAmount": 450,
+            "billNumber": "BILL-000002",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:26.137Z",
+      "updatedAt": "2026-09-18T06:59:26.137Z"
+    },
+    {
+      "id": "bill_mu6lynob_uw5hg",
+      "billNumber": "BILL-000003",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 3",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:26.165Z",
+      "transportationExpense": 300,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 550,
+      "description": "Concurrent submission test batch #3",
+      "attachments": [
+        {
+          "name": "receipt_2.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:26.165Z",
+          "details": {
+            "totalClaimedAmount": 550,
+            "billNumber": "BILL-000003",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:26.165Z",
+      "updatedAt": "2026-09-18T06:59:26.165Z"
+    },
+    {
+      "id": "bill_mu6lynp4_z3ojd",
+      "billNumber": "BILL-000004",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 4",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:26.195Z",
+      "transportationExpense": 400,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 650,
+      "description": "Concurrent submission test batch #4",
+      "attachments": [
+        {
+          "name": "receipt_3.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:26.195Z",
+          "details": {
+            "totalClaimedAmount": 650,
+            "billNumber": "BILL-000004",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:26.195Z",
+      "updatedAt": "2026-09-18T06:59:26.195Z"
+    },
+    {
+      "id": "bill_mu6lynpw_xxgd1",
+      "billNumber": "BILL-000005",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 5",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:26.222Z",
+      "transportationExpense": 500,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 750,
+      "description": "Concurrent submission test batch #5",
+      "attachments": [
+        {
+          "name": "receipt_4.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:26.222Z",
+          "details": {
+            "totalClaimedAmount": 750,
+            "billNumber": "BILL-000005",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:26.222Z",
+      "updatedAt": "2026-09-18T06:59:26.222Z"
+    },
+    {
+      "id": "bill_mu6lynqm_ard4h",
+      "billNumber": "BILL-000006",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 6",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:26.249Z",
+      "transportationExpense": 600,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 850,
+      "description": "Concurrent submission test batch #6",
+      "attachments": [
+        {
+          "name": "receipt_5.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:26.249Z",
+          "details": {
+            "totalClaimedAmount": 850,
+            "billNumber": "BILL-000006",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:26.249Z",
+      "updatedAt": "2026-09-18T06:59:26.249Z"
+    },
+    {
+      "id": "bill_mu6lynrr_fju0f",
+      "billNumber": "BILL-000007",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Gulberg Commercial Plaza",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T06:59:26.288Z",
+      "transportationExpense": 1500,
+      "materialExpense": 4200,
+      "labourExpense": 2000,
+      "accommodationExpense": 1000,
+      "otherExpense": 300,
+      "totalClaimedAmount": 9000,
+      "description": "Emergency plumbing fixtures and transport",
+      "attachments": [
+        {
+          "name": "plumbing_bill.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,plumbing123"
+        },
+        {
+          "name": "fuel_receipt.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,fuel123"
+        }
+      ],
+      "status": "VERIFIED",
+      "verifiedAmount": 8500,
+      "verifiedBy": "Admin Officer",
+      "verifiedAt": "2026-09-18T06:59:26.338Z",
+      "verificationComment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500.",
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T06:59:26.288Z",
+          "details": {
+            "totalClaimedAmount": 9000,
+            "billNumber": "BILL-000007",
+            "attachmentsCount": 2
+          }
+        },
+        {
+          "action": "VERIFIED",
+          "by": "Admin Officer",
+          "at": "2026-09-18T06:59:26.338Z",
+          "details": {
+            "claimedAmount": 9000,
+            "verifiedAmount": 8500,
+            "comment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500."
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T06:59:26.288Z",
+      "updatedAt": "2026-09-18T06:59:26.338Z"
+    },
+    {
+      "id": "bill_mu6m7rnd_w0c3j",
+      "billNumber": "BILL-000008",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 1",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:30.558Z",
+      "transportationExpense": 100,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 350,
+      "description": "Concurrent submission test batch #1",
+      "attachments": [
+        {
+          "name": "receipt_0.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:30.558Z",
+          "details": {
+            "totalClaimedAmount": 350,
+            "billNumber": "BILL-000008",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:30.558Z",
+      "updatedAt": "2026-09-18T07:06:30.558Z"
+    },
+    {
+      "id": "bill_mu6m7row_erydf",
+      "billNumber": "BILL-000009",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 2",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.274Z",
+      "transportationExpense": 200,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 450,
+      "description": "Concurrent submission test batch #2",
+      "attachments": [
+        {
+          "name": "receipt_1.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.274Z",
+          "details": {
+            "totalClaimedAmount": 450,
+            "billNumber": "BILL-000009",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.274Z",
+      "updatedAt": "2026-09-18T07:06:31.274Z"
+    },
+    {
+      "id": "bill_mu6m7rpo_946ou",
+      "billNumber": "BILL-000010",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 3",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.301Z",
+      "transportationExpense": 300,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 550,
+      "description": "Concurrent submission test batch #3",
+      "attachments": [
+        {
+          "name": "receipt_2.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.301Z",
+          "details": {
+            "totalClaimedAmount": 550,
+            "billNumber": "BILL-000010",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.301Z",
+      "updatedAt": "2026-09-18T07:06:31.301Z"
+    },
+    {
+      "id": "bill_mu6m7rqc_wt1wg",
+      "billNumber": "BILL-000011",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 4",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.327Z",
+      "transportationExpense": 400,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 650,
+      "description": "Concurrent submission test batch #4",
+      "attachments": [
+        {
+          "name": "receipt_3.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.327Z",
+          "details": {
+            "totalClaimedAmount": 650,
+            "billNumber": "BILL-000011",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.327Z",
+      "updatedAt": "2026-09-18T07:06:31.327Z"
+    },
+    {
+      "id": "bill_mu6m7rr2_oqq9m",
+      "billNumber": "BILL-000012",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 5",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.352Z",
+      "transportationExpense": 500,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 750,
+      "description": "Concurrent submission test batch #5",
+      "attachments": [
+        {
+          "name": "receipt_4.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.352Z",
+          "details": {
+            "totalClaimedAmount": 750,
+            "billNumber": "BILL-000012",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.352Z",
+      "updatedAt": "2026-09-18T07:06:31.352Z"
+    },
+    {
+      "id": "bill_mu6m7rrt_9fakb",
+      "billNumber": "BILL-000013",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 6",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.380Z",
+      "transportationExpense": 600,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 850,
+      "description": "Concurrent submission test batch #6",
+      "attachments": [
+        {
+          "name": "receipt_5.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.380Z",
+          "details": {
+            "totalClaimedAmount": 850,
+            "billNumber": "BILL-000013",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.380Z",
+      "updatedAt": "2026-09-18T07:06:31.380Z"
+    },
+    {
+      "id": "bill_mu6m7rsk_yg8fk",
+      "billNumber": "BILL-000014",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Gulberg Commercial Plaza",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.407Z",
+      "transportationExpense": 1500,
+      "materialExpense": 4200,
+      "labourExpense": 2000,
+      "accommodationExpense": 1000,
+      "otherExpense": 300,
+      "totalClaimedAmount": 9000,
+      "description": "Emergency plumbing fixtures and transport",
+      "attachments": [
+        {
+          "name": "plumbing_bill.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,plumbing123"
+        },
+        {
+          "name": "fuel_receipt.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,fuel123"
+        }
+      ],
+      "status": "APPROVED",
+      "verifiedAmount": 8500,
+      "verifiedBy": "Admin Officer",
+      "verifiedAt": "2026-09-18T07:06:31.450Z",
+      "verificationComment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500.",
+      "approvedAmount": 8200,
+      "approvedBy": "Senior Director",
+      "approvedAt": "2026-09-18T07:06:31.474Z",
+      "approvalComment": "Approved for accounts disbursement.",
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.407Z",
+          "details": {
+            "totalClaimedAmount": 9000,
+            "billNumber": "BILL-000014",
+            "attachmentsCount": 2
+          }
+        },
+        {
+          "action": "VERIFIED",
+          "by": "Admin Officer",
+          "at": "2026-09-18T07:06:31.450Z",
+          "details": {
+            "claimedAmount": 9000,
+            "verifiedAmount": 8500,
+            "comment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500."
+          }
+        },
+        {
+          "action": "APPROVED",
+          "by": "Senior Director",
+          "at": "2026-09-18T07:06:31.474Z",
+          "details": {
+            "claimedAmount": 9000,
+            "verifiedAmount": 8500,
+            "approvedAmount": 8200,
+            "comment": "Approved for accounts disbursement."
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.407Z",
+      "updatedAt": "2026-09-18T07:06:31.474Z",
+      "verifiedComment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500.",
+      "approvedComment": "Approved for accounts disbursement."
+    },
+    {
+      "id": "bill_mu6m7rur_wrrpc",
+      "billNumber": "BILL-000015",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Site Beta for Rejection Test",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.485Z",
+      "transportationExpense": 500,
+      "materialExpense": 0,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 0,
+      "totalClaimedAmount": 500,
+      "description": "Trip without authorization",
+      "attachments": [
+        {
+          "name": "ticket.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,ticket123"
+        }
+      ],
+      "status": "REJECTED",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": "Admin Auditor",
+      "rejectedAt": "2026-09-18T07:06:31.517Z",
+      "rejectionReason": "No prior management authorization for travel.",
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:06:31.485Z",
+          "details": {
+            "totalClaimedAmount": 500,
+            "billNumber": "BILL-000015",
+            "attachmentsCount": 1
+          }
+        },
+        {
+          "action": "REJECTED",
+          "by": "Admin Auditor",
+          "at": "2026-09-18T07:06:31.517Z",
+          "details": {
+            "claimedAmount": 500,
+            "verifiedAmount": null,
+            "reason": "No prior management authorization for travel."
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.485Z",
+      "updatedAt": "2026-09-18T07:06:31.517Z"
+    },
+    {
+      "id": "bill_mu6m7rvx_kdo72",
+      "billNumber": "BILL-000016",
+      "employeeId": "test-emp-002",
+      "employeeName": "Test Employee Beta",
+      "siteName": "Site Gamma",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:06:31.528Z",
+      "transportationExpense": 1000,
+      "materialExpense": 0,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 0,
+      "totalClaimedAmount": 1000,
+      "description": "Beta bill",
+      "attachments": [
+        {
+          "name": "rec.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,rec"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Beta",
+          "at": "2026-09-18T07:06:31.528Z",
+          "details": {
+            "totalClaimedAmount": 1000,
+            "billNumber": "BILL-000016",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:06:31.528Z",
+      "updatedAt": "2026-09-18T07:06:31.528Z"
+    },
+    {
+      "id": "bill_mu6m993z_xe1ly",
+      "billNumber": "BILL-000017",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 1",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.046Z",
+      "transportationExpense": 100,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 350,
+      "description": "Concurrent submission test batch #1",
+      "attachments": [
+        {
+          "name": "receipt_0.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.046Z",
+          "details": {
+            "totalClaimedAmount": 350,
+            "billNumber": "BILL-000017",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.046Z",
+      "updatedAt": "2026-09-18T07:07:40.046Z"
+    },
+    {
+      "id": "bill_mu6m995i_oelaq",
+      "billNumber": "BILL-000018",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 2",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.559Z",
+      "transportationExpense": 200,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 450,
+      "description": "Concurrent submission test batch #2",
+      "attachments": [
+        {
+          "name": "receipt_1.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.559Z",
+          "details": {
+            "totalClaimedAmount": 450,
+            "billNumber": "BILL-000018",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.559Z",
+      "updatedAt": "2026-09-18T07:07:40.559Z"
+    },
+    {
+      "id": "bill_mu6m996b_br6v9",
+      "billNumber": "BILL-000019",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 3",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.591Z",
+      "transportationExpense": 300,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 550,
+      "description": "Concurrent submission test batch #3",
+      "attachments": [
+        {
+          "name": "receipt_2.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.591Z",
+          "details": {
+            "totalClaimedAmount": 550,
+            "billNumber": "BILL-000019",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.591Z",
+      "updatedAt": "2026-09-18T07:07:40.591Z"
+    },
+    {
+      "id": "bill_mu6m9975_cc0z3",
+      "billNumber": "BILL-000020",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 4",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.619Z",
+      "transportationExpense": 400,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 650,
+      "description": "Concurrent submission test batch #4",
+      "attachments": [
+        {
+          "name": "receipt_3.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.619Z",
+          "details": {
+            "totalClaimedAmount": 650,
+            "billNumber": "BILL-000020",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.619Z",
+      "updatedAt": "2026-09-18T07:07:40.619Z"
+    },
+    {
+      "id": "bill_mu6m9980_5e63r",
+      "billNumber": "BILL-000021",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 5",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.650Z",
+      "transportationExpense": 500,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 750,
+      "description": "Concurrent submission test batch #5",
+      "attachments": [
+        {
+          "name": "receipt_4.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.650Z",
+          "details": {
+            "totalClaimedAmount": 750,
+            "billNumber": "BILL-000021",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.650Z",
+      "updatedAt": "2026-09-18T07:07:40.650Z"
+    },
+    {
+      "id": "bill_mu6m998u_to8z2",
+      "billNumber": "BILL-000022",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Concurrent Test Site 6",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.681Z",
+      "transportationExpense": 600,
+      "materialExpense": 200,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 50,
+      "totalClaimedAmount": 850,
+      "description": "Concurrent submission test batch #6",
+      "attachments": [
+        {
+          "name": "receipt_5.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,sample"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.681Z",
+          "details": {
+            "totalClaimedAmount": 850,
+            "billNumber": "BILL-000022",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.681Z",
+      "updatedAt": "2026-09-18T07:07:40.681Z"
+    },
+    {
+      "id": "bill_mu6m999l_9rhq7",
+      "billNumber": "BILL-000023",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Gulberg Commercial Plaza",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.707Z",
+      "transportationExpense": 1500,
+      "materialExpense": 4200,
+      "labourExpense": 2000,
+      "accommodationExpense": 1000,
+      "otherExpense": 300,
+      "totalClaimedAmount": 9000,
+      "description": "Emergency plumbing fixtures and transport",
+      "attachments": [
+        {
+          "name": "plumbing_bill.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,plumbing123"
+        },
+        {
+          "name": "fuel_receipt.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,fuel123"
+        }
+      ],
+      "status": "APPROVED",
+      "verifiedAmount": 8500,
+      "verifiedBy": "Admin Officer",
+      "verifiedAt": "2026-09-18T07:07:40.753Z",
+      "verificationComment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500.",
+      "approvedAmount": 8200,
+      "approvedBy": "Senior Director",
+      "approvedAt": "2026-09-18T07:07:40.778Z",
+      "approvalComment": "Approved for accounts disbursement.",
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.707Z",
+          "details": {
+            "totalClaimedAmount": 9000,
+            "billNumber": "BILL-000023",
+            "attachmentsCount": 2
+          }
+        },
+        {
+          "action": "VERIFIED",
+          "by": "Admin Officer",
+          "at": "2026-09-18T07:07:40.753Z",
+          "details": {
+            "claimedAmount": 9000,
+            "verifiedAmount": 8500,
+            "comment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500."
+          }
+        },
+        {
+          "action": "APPROVED",
+          "by": "Senior Director",
+          "at": "2026-09-18T07:07:40.778Z",
+          "details": {
+            "claimedAmount": 9000,
+            "verifiedAmount": 8500,
+            "approvedAmount": 8200,
+            "comment": "Approved for accounts disbursement."
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.707Z",
+      "updatedAt": "2026-09-18T07:07:40.778Z",
+      "verifiedComment": "Fuel receipt verified. Plumbing slightly adjusted by Rs. 500.",
+      "approvedComment": "Approved for accounts disbursement."
+    },
+    {
+      "id": "bill_mu6m99bw_mb8sj",
+      "billNumber": "BILL-000024",
+      "employeeId": "test-emp-001",
+      "employeeName": "Test Employee Alpha",
+      "siteName": "Site Beta for Rejection Test",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.791Z",
+      "transportationExpense": 500,
+      "materialExpense": 0,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 0,
+      "totalClaimedAmount": 500,
+      "description": "Trip without authorization",
+      "attachments": [
+        {
+          "name": "ticket.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,ticket123"
+        }
+      ],
+      "status": "REJECTED",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": "Admin Auditor",
+      "rejectedAt": "2026-09-18T07:07:40.825Z",
+      "rejectionReason": "No prior management authorization for travel.",
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Alpha",
+          "at": "2026-09-18T07:07:40.791Z",
+          "details": {
+            "totalClaimedAmount": 500,
+            "billNumber": "BILL-000024",
+            "attachmentsCount": 1
+          }
+        },
+        {
+          "action": "REJECTED",
+          "by": "Admin Auditor",
+          "at": "2026-09-18T07:07:40.825Z",
+          "details": {
+            "claimedAmount": 500,
+            "verifiedAmount": null,
+            "reason": "No prior management authorization for travel."
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.791Z",
+      "updatedAt": "2026-09-18T07:07:40.825Z"
+    },
+    {
+      "id": "bill_mu6m99d7_gp3mh",
+      "billNumber": "BILL-000025",
+      "employeeId": "test-emp-002",
+      "employeeName": "Test Employee Beta",
+      "siteName": "Site Gamma",
+      "billDate": "2026-09-18",
+      "submittedAt": "2026-09-18T07:07:40.838Z",
+      "transportationExpense": 1000,
+      "materialExpense": 0,
+      "labourExpense": 0,
+      "accommodationExpense": 0,
+      "otherExpense": 0,
+      "totalClaimedAmount": 1000,
+      "description": "Beta bill",
+      "attachments": [
+        {
+          "name": "rec.jpg",
+          "type": "image/jpeg",
+          "dataUrl": "data:image/jpeg;base64,rec"
+        }
+      ],
+      "status": "PENDING_VERIFICATION",
+      "verifiedAmount": null,
+      "verifiedBy": null,
+      "verifiedAt": null,
+      "verificationComment": null,
+      "approvedAmount": null,
+      "approvedBy": null,
+      "approvedAt": null,
+      "approvalComment": null,
+      "rejectedBy": null,
+      "rejectedAt": null,
+      "rejectionReason": null,
+      "auditLog": [
+        {
+          "action": "SUBMITTED",
+          "by": "Test Employee Beta",
+          "at": "2026-09-18T07:07:40.838Z",
+          "details": {
+            "totalClaimedAmount": 1000,
+            "billNumber": "BILL-000025",
+            "attachmentsCount": 1
+          }
+        }
+      ],
+      "createdAt": "2026-09-18T07:07:40.838Z",
+      "updatedAt": "2026-09-18T07:07:40.838Z"
+    }
+  ]
 }

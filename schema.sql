@@ -140,6 +140,50 @@ CREATE INDEX idx_accounts_pdfs_month ON accounts_pdfs("salaryMonth");
 ALTER TABLE accounts_pdfs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all access for accounts_pdfs" ON accounts_pdfs FOR ALL USING (true) WITH CHECK (true);
 
+-- ── Table 8: bills ────────────────────────────────────────
+-- Atomic sequence for unique sequential Bill Numbers
+CREATE SEQUENCE IF NOT EXISTS bills_seq START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE IF NOT EXISTS bills (
+  "id"                    TEXT PRIMARY KEY,
+  "billNumber"            TEXT UNIQUE NOT NULL DEFAULT ('BILL-' || LPAD(nextval('bills_seq')::TEXT, 6, '0')),
+  "employeeId"            TEXT NOT NULL,
+  "employeeName"          TEXT NOT NULL,
+  "siteName"              TEXT NOT NULL,
+  "billDate"              TEXT NOT NULL,
+  "submittedAt"           TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "transportationExpense" NUMERIC DEFAULT 0 CHECK ("transportationExpense" >= 0),
+  "materialExpense"       NUMERIC DEFAULT 0 CHECK ("materialExpense" >= 0),
+  "labourExpense"         NUMERIC DEFAULT 0 CHECK ("labourExpense" >= 0),
+  "accommodationExpense"  NUMERIC DEFAULT 0 CHECK ("accommodationExpense" >= 0),
+  "otherExpense"          NUMERIC DEFAULT 0 CHECK ("otherExpense" >= 0),
+  "totalClaimedAmount"    NUMERIC NOT NULL DEFAULT 0 CHECK ("totalClaimedAmount" >= 0),
+  "description"           TEXT,
+  "attachments"           JSONB DEFAULT '[]'::jsonb,
+  "status"                TEXT NOT NULL DEFAULT 'PENDING_VERIFICATION' CHECK ("status" IN ('PENDING_VERIFICATION', 'VERIFIED', 'APPROVED', 'REJECTED')),
+  "verifiedAmount"        NUMERIC CHECK ("verifiedAmount" IS NULL OR "verifiedAmount" >= 0),
+  "verifiedBy"            TEXT,
+  "verifiedAt"            TIMESTAMP WITH TIME ZONE,
+  "verificationComment"   TEXT,
+  "approvedAmount"        NUMERIC CHECK ("approvedAmount" IS NULL OR "approvedAmount" >= 0),
+  "approvedBy"            TEXT,
+  "approvedAt"            TIMESTAMP WITH TIME ZONE,
+  "approvalComment"       TEXT,
+  "rejectedBy"            TEXT,
+  "rejectedAt"            TIMESTAMP WITH TIME ZONE,
+  "rejectionReason"       TEXT,
+  "auditLog"              JSONB DEFAULT '[]'::jsonb,
+  "createdAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "updatedAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bills_employee_id ON bills("employeeId");
+CREATE INDEX IF NOT EXISTS idx_bills_bill_number ON bills("billNumber");
+CREATE INDEX IF NOT EXISTS idx_bills_status ON bills("status");
+CREATE INDEX IF NOT EXISTS idx_bills_date ON bills("billDate");
+ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all access for bills" ON bills FOR ALL USING (true) WITH CHECK (true);
+
 -- ── Seed default settings row ─────────────────────────────
 INSERT INTO settings ("id", "adminPasscode", "officeName")
 VALUES ('default', '1234', 'My Office')
