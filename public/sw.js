@@ -1,16 +1,16 @@
-const CACHE_NAME = 'attendance-portal-v245';
+const CACHE_NAME = 'attendance-portal-v270-nocache';
 
 // Install Event - skip waiting immediately
 self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 
-// Activate Event - PURGE ALL OLD CACHES IMMEDIATELY
+// Activate Event - PURGE ALL OLD CACHES IMMEDIATELY AND UNREGISTER
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(keys.map((key) => caches.delete(key)));
-    }).then(() => self.clients.claim())
+    }).then(() => self.clients.claim()).then(() => self.registration.unregister())
   );
 });
 

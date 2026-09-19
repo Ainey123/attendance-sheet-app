@@ -18,8 +18,15 @@
   
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        regs.forEach(reg => reg.update());
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+    if (typeof caches !== 'undefined') {
+      caches.keys().then(function(names) {
+        for (let name of names) caches.delete(name);
       });
     }
   </script>
@@ -28,7 +35,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=217">
+  <link rel="stylesheet" href="style.css?v=270">
 
   <!-- html2pdf.js for generating monthly expense flow PDF reports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -56,7 +63,7 @@
           </svg>
         </div>
         <div>
-          <h1 id="office-title" style="display:inline-flex; align-items:center;">Office Attendance <span style="font-size:0.68rem; padding:0.15rem 0.45rem; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:12px; margin-left:0.5rem; font-weight:600;">v225 LIVE</span></h1>
+          <h1 id="office-title" style="display:inline-flex; align-items:center;">Office Attendance <span style="font-size:0.68rem; padding:0.15rem 0.45rem; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:12px; margin-left:0.5rem; font-weight:600;">v270 LIVE</span></h1>
           <p class="subtitle">Daily Registry & Tracker</p>
         </div>
       </div>
@@ -3353,6 +3360,6 @@ This action cannot be undone.</p>
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=269"></script>
+  <script src="app.js?v=270"></script>
 </body>
 </html>

@@ -3278,8 +3278,12 @@ async function handleEmployeeAuthSubmit(e) {
 function setupEmployeeSessionUI(employee) {
   // Hide select list
   document.getElementById('select-employee-panel').classList.add('hidden');
-  // Hide admin toggle
-  document.getElementById('btn-toggle-portal').classList.add('hidden');
+  // Keep admin toggle visible (always protected by admin passcode)
+  const toggleBtn = document.getElementById('btn-toggle-portal');
+  if (toggleBtn && !strictEmployeeMode) {
+    toggleBtn.classList.remove('hidden');
+    toggleBtn.style.display = '';
+  }
   // Show logout button
   document.getElementById('btn-employee-logout').classList.remove('hidden');
   // Show employee sub-tabs
@@ -5907,7 +5911,18 @@ async function loadEmployeeBills() {
     const res = await API.getBills({ employeeId: selectedEmployee.id });
     const bills = res.bills || [];
     if (!bills.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No bills submitted yet. Submit a bill after clocking out!</td></tr>';
+      const empName = (selectedEmployee && selectedEmployee.name) || 'this employee';
+      tbody.innerHTML = `<tr><td colspan="8" class="table-empty" style="padding: 2.5rem 1rem; text-align: center;">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">🧾</div>
+        <div style="font-weight: 700; color: #fff; font-size: 1rem; margin-bottom: 0.35rem;">No bills submitted yet for ${escapeHtml(empName)}</div>
+        <div class="text-muted" style="font-size: 0.85rem; max-width: 440px; margin: 0 auto 1rem;">Have receipts or expenses from a site visit? Submit your bill here for Admin verification.</div>
+        <button type="button" class="btn btn-primary" onclick="openBillSubmissionScreen()" style="font-weight: 600; padding: 0.55rem 1.25rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+          ➕ Submit a Bill Now
+        </button>
+        <div class="text-muted" style="font-size: 0.78rem; margin-top: 0.85rem; font-style: italic;">
+          (Note: To review all company bills submitted by other staff, switch to the Admin Panel)
+        </div>
+      </td></tr>`;
       return;
     }
 

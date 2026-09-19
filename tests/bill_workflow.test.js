@@ -43,7 +43,7 @@ async function runAllTests() {
 
   // Clean up any stale test bills and comments before starting
   try {
-    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance'];
+    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance', 'emp-acceptance'];
     const { createClient } = require('@supabase/supabase-js');
     const path = require('path');
     require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
@@ -423,7 +423,7 @@ async function runAllTests() {
 
   // Cleanup test bills so the production database stays pristine
   try {
-    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance'];
+    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance', 'emp-acceptance'];
     const { createClient } = require('@supabase/supabase-js');
     const path = require('path');
     require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
