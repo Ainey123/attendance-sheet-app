@@ -3023,6 +3023,9 @@ function computeBillTotalsAndStatus(categories, currentOverallStatus) {
 function normalizeBillRecord(bill) {
   if (!bill) return null;
   const b = { ...bill };
+  const billDate = b.billDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : getLocalDateString());
+  b.date = billDate;
+  b.billDate = billDate;
 
   const transportationExpense = Math.max(0, Number(b.transportationExpense) || 0);
   const materialExpense = Math.max(0, Number(b.materialExpense) || 0);

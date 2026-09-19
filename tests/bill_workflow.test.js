@@ -41,6 +41,22 @@ async function runAllTests() {
   const testEmployeeId = 'test-emp-001';
   const testEmployeeName = 'Test Employee Alpha';
 
+  // Clean up any stale test bills and comments before starting
+  try {
+    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance'];
+    const { createClient } = require('@supabase/supabase-js');
+    const path = require('path');
+    require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+    require('dotenv').config();
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+      for (const tId of testEmpIds) {
+        await sb.from('bills').delete().eq('employeeId', tId);
+        await sb.from('comments').delete().eq('employeeId', tId);
+      }
+    }
+  } catch (e) {}
+
   // 1. Concurrency-Safe Sequential Bill Creation
   await runTest('Test 1: Concurrent bill creation generates strictly unique sequential numbers', async () => {
     const concurrentSubmissions = 6;
@@ -416,6 +432,7 @@ async function runAllTests() {
       const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
       for (const tId of testEmpIds) {
         await sb.from('bills').delete().eq('employeeId', tId);
+        await sb.from('comments').delete().eq('employeeId', tId);
       }
     }
   } catch (e) {}

@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-passcode, X-Admin-Passcode, x-senior-passcode, X-Senior-Passcode');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-passcode, X-Admin-Passcode, x-senior-passcode, X-Senior-Passcode, x-employee-id, X-Employee-Id, authorization, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const path = getPath(req);

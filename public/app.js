@@ -5668,28 +5668,77 @@ function handleBillFileInput(e) {
   const files = Array.from(e.target.files || []);
   if (!files.length) return;
 
+  const grid = document.getElementById('bill-attachments-preview-grid');
+  if (grid && !currentBillAttachments.length) {
+    grid.innerHTML = '<p class="text-muted" style="grid-column: 1 / -1; font-size: 0.85rem; font-style: italic; text-align: center; padding: 1rem;">Compressing and processing receipt photos...</p>';
+  }
+
   let loaded = 0;
+  const totalFiles = files.length;
+
   files.forEach(file => {
-    if (file.size > 15 * 1024 * 1024) {
-      showToast(`File "${file.name}" exceeds 15MB limit`, 'warning');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      currentBillAttachments.push({
-        name: file.name,
-        type: file.type || 'image/jpeg',
-        size: file.size,
-        dataUrl: ev.target.result
+    const isImage = (file.type && file.type.startsWith('image/')) || /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name);
+    const isPdf = file.type === 'application/pdf' || (file.name && file.name.toLowerCase().endsWith('.pdf'));
+
+    if (isImage) {
+      compressImage(file, 1280, 1280, 0.75, (compressedDataUrl) => {
+        if (compressedDataUrl) {
+          const approxSize = Math.round((compressedDataUrl.length * 3) / 4);
+          currentBillAttachments.push({
+            name: file.name,
+            type: 'image/jpeg',
+            size: approxSize,
+            dataUrl: compressedDataUrl
+          });
+        }
+        loaded++;
+        if (loaded === totalFiles) {
+          renderBillAttachmentPreviews();
+          updateBillReviewSummary();
+        }
       });
+    } else if (isPdf) {
+      if (file.size > 4 * 1024 * 1024) {
+        showToast(`PDF "${file.name}" exceeds 4MB limit`, 'warning');
+        loaded++;
+        if (loaded === totalFiles) {
+          renderBillAttachmentPreviews();
+          updateBillReviewSummary();
+        }
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        currentBillAttachments.push({
+          name: file.name,
+          type: 'application/pdf',
+          size: file.size,
+          dataUrl: ev.target.result
+        });
+        loaded++;
+        if (loaded === totalFiles) {
+          renderBillAttachmentPreviews();
+          updateBillReviewSummary();
+        }
+      };
+      reader.onerror = () => {
+        loaded++;
+        if (loaded === totalFiles) {
+          renderBillAttachmentPreviews();
+          updateBillReviewSummary();
+        }
+      };
+      reader.readAsDataURL(file);
+    } else {
+      showToast(`Unsupported file format for "${file.name}"`, 'warning');
       loaded++;
-      if (loaded === files.length) {
+      if (loaded === totalFiles) {
         renderBillAttachmentPreviews();
         updateBillReviewSummary();
       }
-    };
-    reader.readAsDataURL(file);
+    }
   });
+
   e.target.value = '';
 }
 
@@ -5823,6 +5872,7 @@ async function submitBillForm() {
         loadEmployeeBills().catch(() => {});
       }
       updateAdminPendingBillsNotification().catch(() => {});
+      loadAdminBills().catch(() => {});
     } else {
       const errMsg = (res && res.error) || 'Failed to submit bill';
       showToast(errMsg, 'error');
@@ -5872,7 +5922,7 @@ async function loadEmployeeBills() {
 
       tr.innerHTML = `
         <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
-        <td>${bill.date}</td>
+        <td>${bill.billDate || bill.date || '—'}</td>
         <td>${escapeHtml(bill.siteName || '—')}</td>
         <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
         <td style="color:#60a5fa;">${verifiedTxt}</td>
@@ -5959,12 +6009,13 @@ function renderAdminBillsTable() {
     filtered = filtered.filter(b => b.status === currentAdminBillFilter);
   }
   if (query) {
-    filtered = filtered.filter(b =>
-      (b.billNumber && b.billNumber.toLowerCase().includes(query)) ||
-      (b.employeeName && b.employeeName.toLowerCase().includes(query)) ||
-      (b.siteName && b.siteName.toLowerCase().includes(query)) ||
-      (b.date && b.date.toLowerCase().includes(query))
-    );
+    filtered = filtered.filter(b => {
+      const billDateStr = b.billDate || b.date || '';
+      return (b.billNumber && b.billNumber.toLowerCase().includes(query)) ||
+        (b.employeeName && b.employeeName.toLowerCase().includes(query)) ||
+        (b.siteName && b.siteName.toLowerCase().includes(query)) ||
+        (billDateStr && billDateStr.toLowerCase().includes(query));
+    });
   }
 
   if (!filtered.length) {
@@ -5989,7 +6040,7 @@ function renderAdminBillsTable() {
 
     tr.innerHTML = `
       <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
-      <td>${bill.date}</td>
+      <td>${bill.billDate || bill.date || '—'}</td>
       <td>${escapeHtml(bill.employeeName)}</td>
       <td>${escapeHtml(bill.siteName || '—')}</td>
       <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
@@ -6524,7 +6575,7 @@ async function openAdminBillModal(billId, isReadOnly = false) {
     document.getElementById('admin-bill-modal-emp').innerText = bill.employeeName || '—';
     document.getElementById('admin-bill-modal-empid').innerText = bill.employeeId || '—';
     document.getElementById('admin-bill-modal-site').innerText = bill.siteName || '—';
-    document.getElementById('admin-bill-modal-date').innerText = bill.date || '—';
+    document.getElementById('admin-bill-modal-date').innerText = bill.billDate || bill.date || '—';
     document.getElementById('admin-bill-modal-time').innerText = bill.createdAt ? new Date(bill.createdAt).toLocaleString() : '—';
 
     renderBillCategoriesTable(bill, currentActiveAdminBillIsReadOnly);
@@ -6732,6 +6783,21 @@ function initBillEventListeners() {
       }
     }
   });
+
+  // Global window bindings for inline HTML handlers
+  window.openBillSubmissionScreen = openBillSubmissionScreen;
+  window.closeBillSubmissionScreen = closeBillSubmissionScreen;
+  window.initBillSubmissionForm = initBillSubmissionForm;
+  window.submitBillForm = submitBillForm;
+  window.handleBillFileInput = handleBillFileInput;
+  window.removeBillAttachment = removeBillAttachment;
+  window.loadEmployeeBills = loadEmployeeBills;
+  window.loadAdminBills = loadAdminBills;
+  window.openAdminBillModal = openAdminBillModal;
+  window.closeAdminBillDetailsModal = closeAdminBillDetailsModal;
+  window.submitCategoryVerification = submitCategoryVerification;
+  window.submitCategoryApproval = submitCategoryApproval;
+  window.submitCategoryRejection = submitCategoryRejection;
 }
 
 // ==========================================================================
