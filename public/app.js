@@ -5732,26 +5732,42 @@ function removeBillAttachment(idx) {
   updateBillReviewSummary();
 }
 
+let isSubmittingBill = false;
+
 async function submitBillForm() {
+  if (isSubmittingBill) return;
+
+  const errorBanner = document.getElementById('bill-submit-inline-error');
+  if (errorBanner) {
+    errorBanner.classList.add('hidden');
+    errorBanner.innerText = '';
+  }
+
   if (!selectedEmployee) {
-    showToast('Employee profile is not selected', 'error');
+    const msg = 'Please select an employee profile first';
+    showToast(msg, 'error');
+    if (errorBanner) {
+      errorBanner.innerText = '⚠️ ' + msg;
+      errorBanner.classList.remove('hidden');
+    }
     return;
   }
-  const siteName = (document.getElementById('bill-site-name')?.value || '').trim();
+
+  let siteName = (document.getElementById('bill-site-name')?.value || '').trim();
   if (!siteName) {
-    showToast('Please enter the Site Name', 'error');
-    document.getElementById('bill-site-name')?.focus();
-    return;
+    siteName = 'General Site';
+    const siteInput = document.getElementById('bill-site-name');
+    if (siteInput) siteInput.value = 'General Site';
   }
 
   const { trans, mat, lab, acc, oth, total } = getBillExpenses();
   if (total <= 0) {
-    showToast('Please enter at least one expense amount greater than Rs. 0', 'error');
-    return;
-  }
-
-  if (!currentBillAttachments.length) {
-    showToast('Please attach at least one bill picture or receipt', 'error');
+    const msg = 'Please enter at least one expense amount greater than Rs. 0 (e.g. Material, Transportation, etc.)';
+    showToast(msg, 'error');
+    if (errorBanner) {
+      errorBanner.innerText = '⚠️ ' + msg;
+      errorBanner.classList.remove('hidden');
+    }
     return;
   }
 
@@ -5765,6 +5781,8 @@ async function submitBillForm() {
     submitBtn.innerText = 'Submitting Bill...';
   }
 
+  isSubmittingBill = true;
+
   try {
     const payload = {
       employeeId: selectedEmployee.id,
@@ -5777,11 +5795,11 @@ async function submitBillForm() {
       accommodationExpense: acc,
       otherExpense: oth,
       description,
-      attachments: currentBillAttachments
+      attachments: Array.isArray(currentBillAttachments) ? currentBillAttachments : []
     };
 
     const res = await API.submitBill(payload);
-    if (res.success && res.bill) {
+    if (res && res.success && res.bill) {
       const formCard = document.getElementById('bill-form-card');
       const successCard = document.getElementById('bill-success-card');
       if (formCard) formCard.classList.add('hidden');
@@ -5791,12 +5809,24 @@ async function submitBillForm() {
       if (succNum) succNum.innerText = res.bill.billNumber;
 
       showToast(`Bill ${res.bill.billNumber} submitted successfully!`, 'success');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      showToast(res.error || 'Failed to submit bill', 'error');
+      const errMsg = (res && res.error) || 'Failed to submit bill';
+      showToast(errMsg, 'error');
+      if (errorBanner) {
+        errorBanner.innerText = '⚠️ ' + errMsg;
+        errorBanner.classList.remove('hidden');
+      }
     }
   } catch (err) {
-    showToast('Error submitting bill: ' + (err.message || 'Network error'), 'error');
+    const errMsg = 'Error submitting bill: ' + (err.message || 'Network error');
+    showToast(errMsg, 'error');
+    if (errorBanner) {
+      errorBanner.innerText = '⚠️ ' + errMsg;
+      errorBanner.classList.remove('hidden');
+    }
   } finally {
+    isSubmittingBill = false;
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerText = originalText;

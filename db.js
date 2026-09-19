@@ -5121,11 +5121,6 @@ const db = {
     }
 
     const attachments = Array.isArray(billData.attachments) ? billData.attachments : [];
-    if (attachments.length === 0) {
-      const err = new Error('At least one bill picture / receipt attachment is required.');
-      err.status = 400;
-      throw err;
-    }
 
     const claimMap = {
       transportation: transportationExpense,

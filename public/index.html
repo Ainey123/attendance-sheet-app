@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=214">
+  <link rel="stylesheet" href="style.css?v=215">
 
   <!-- html2pdf.js for generating monthly expense flow PDF reports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -792,7 +792,7 @@
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
                   <h4 style="font-size: 1.05rem; color: #fff; margin: 0 0 0.25rem;">
-                    Attach Bill / Receipt <span style="color: #ef4444;">*</span>
+                    Attach Bill / Receipt <span class="text-muted" style="font-weight: normal; font-size: 0.82rem;">(Optional)</span>
                   </h4>
                   <p class="text-muted" style="font-size: 0.85rem; margin: 0;">Add one or more photos or PDFs of bills, receipts, or vouchers.</p>
                 </div>
@@ -837,8 +837,11 @@
               </div>
             </div>
 
+            <!-- Inline Error Banner -->
+            <div id="bill-submit-inline-error" class="hidden" style="margin-bottom: 1.25rem; padding: 0.9rem 1.25rem; border-radius: 8px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.95rem; font-weight: 600;"></div>
+
             <!-- Submit Button -->
-            <button type="button" id="btn-submit-bill-final" class="btn btn-primary btn-full" style="padding: 1rem; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4);">
+            <button type="button" id="btn-submit-bill-final" class="btn btn-primary btn-full" style="padding: 1rem; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4); cursor: pointer;">
               SUBMIT BILL
             </button>
           </form>
@@ -3329,6 +3332,6 @@ This action cannot be undone.</p>
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=265"></script>
+  <script src="app.js?v=266"></script>
 </body>
 </html>
