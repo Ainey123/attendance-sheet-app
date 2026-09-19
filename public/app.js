@@ -1287,7 +1287,11 @@ async function switchAdminTab(tabId) {
   document.querySelectorAll('.admin-body .tab-pane').forEach(pane => {
     pane.classList.remove('active');
   });
-  document.getElementById(tabId).classList.add('active');
+  const targetPane = document.getElementById(tabId);
+  if (targetPane) {
+    targetPane.classList.remove('hidden');
+    targetPane.classList.add('active');
+  }
 
   // Trigger API loads depending on selected tab
   if (tabId === 'tab-dashboard') {
@@ -5900,7 +5904,8 @@ function getBillStatusBadgeHtml(status) {
 
 async function loadAdminBills() {
   try {
-    const stats = await API.getBillStats();
+    const statsRes = await API.getBillStats();
+    const stats = (statsRes && statsRes.stats) ? statsRes.stats : (statsRes || {});
     const totalEl = document.getElementById('bill-stat-total');
     if (totalEl) totalEl.innerText = stats.totalBills || 0;
     const pendingEl = document.getElementById('bill-stat-pending');
@@ -5922,7 +5927,7 @@ async function loadAdminBills() {
 
   try {
     const res = await API.getBills();
-    currentAdminBills = res.bills || [];
+    currentAdminBills = (res && res.bills) ? res.bills : (Array.isArray(res) ? res : []);
     renderAdminBillsTable();
   } catch (err) {
     if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="table-empty text-danger">Failed to load bills: ' + escapeHtml(err.message || '') + '</td></tr>';
@@ -5937,7 +5942,11 @@ function renderAdminBillsTable() {
   const query = (document.getElementById('admin-bill-search')?.value || '').toLowerCase().trim();
 
   let filtered = currentAdminBills;
-  if (currentAdminBillFilter !== 'ALL') {
+  if (currentAdminBillFilter === 'PENDING_VERIFICATION') {
+    filtered = filtered.filter(b => b.status === 'PENDING_VERIFICATION' || b.status === 'SUBMITTED' || b.status === 'PARTIALLY_VERIFIED');
+  } else if (currentAdminBillFilter === 'VERIFIED') {
+    filtered = filtered.filter(b => b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED');
+  } else if (currentAdminBillFilter !== 'ALL') {
     filtered = filtered.filter(b => b.status === currentAdminBillFilter);
   }
   if (query) {
