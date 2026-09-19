@@ -1056,11 +1056,12 @@ module.exports = async (req, res) => {
       }
       const id = path.split('/')[1];
       const body = await parseBody(req);
+      const verificationComment = body.verificationComment || body.verifiedComment || body.comment || '';
       try {
         const updated = await db.verifyBillCategory(id, {
           category: body.category,
           verifiedAmount: body.verifiedAmount,
-          verificationComment: body.verificationComment,
+          verificationComment,
           verifiedBy: body.verifiedBy || 'Admin'
         });
         return res.json({ success: true, bill: updated });
@@ -1076,10 +1077,12 @@ module.exports = async (req, res) => {
       }
       const id = path.split('/')[1];
       const body = await parseBody(req);
+      const rejectionReason = body.rejectionReason || body.reason || '';
       try {
         const updated = await db.rejectBillCategory(id, {
           category: body.category,
-          rejectionReason: body.rejectionReason,
+          rejectionReason,
+          reason: rejectionReason,
           rejectedBy: body.rejectedBy || 'Admin',
           stage: body.stage || 'verification'
         });
@@ -1100,11 +1103,12 @@ module.exports = async (req, res) => {
       }
 
       const id = path.split('/')[1];
+      const approvalComment = body.approvalComment || body.approvedComment || body.comment || '';
       try {
         const updated = await db.approveBillCategory(id, {
           category: body.category,
           approvedAmount: body.approvedAmount,
-          approvalComment: body.approvalComment,
+          approvalComment,
           approvedBy: body.approvedBy || 'Senior Admin'
         });
         return res.json({ success: true, bill: updated });

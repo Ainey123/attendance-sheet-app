@@ -5138,7 +5138,6 @@ const db = {
         claimedAmount: claimed,
         verifiedAmount: claimed === 0 ? 0 : null,
         approvedAmount: claimed === 0 ? 0 : null,
-        status: claimed === 0 ? 'N/A' : 'SUBMITTED',
         verificationStatus: claimed === 0 ? 'N/A' : 'PENDING',
         approvalStatus: claimed === 0 ? 'N/A' : 'PENDING',
         verificationComment: '',
@@ -5149,14 +5148,14 @@ const db = {
         approvedAt: null,
         rejectedBy: null,
         rejectedAt: null,
-        rejectionReason: ''
+        rejectionReason: '',
+        status: claimed === 0 ? 'N/A' : 'SUBMITTED'
       };
     });
 
-    // Process creation sequentially via atomic mutex lock
     return withBillLock(async () => {
-      const nowIso = new Date().toISOString();
       const nextNum = await this.getNextBillNumber();
+      const nowIso = new Date().toISOString();
 
       const newBill = {
         id: generateId('bill'),
@@ -5194,7 +5193,7 @@ const db = {
             action: 'SUBMITTED',
             by: billData.employeeName || 'Employee',
             at: nowIso,
-            details: { totalClaimedAmount, billNumber: nextNum, attachmentsCount: attachments.length }
+            details: { totalClaimedAmount, billNumber: nextNum, attachmentsCount: attachments.length, categories }
           }
         ],
         createdAt: nowIso,
@@ -5218,10 +5217,21 @@ const db = {
         data.bills.push(newBill);
         saveLocalData(data);
       } else {
+        const hasNativeCategories = await checkBillsTableNativeCategories();
+        const rowToInsert = { ...newBill };
+        if (!hasNativeCategories) {
+          delete rowToInsert.categories;
+          delete rowToInsert.totalVerifiedAmount;
+          delete rowToInsert.totalApprovedAmount;
+          if (rowToInsert.status === 'SUBMITTED') {
+            rowToInsert.status = 'PENDING_VERIFICATION';
+          }
+        }
+
         try {
           const { data, error } = await supabase
             .from('bills')
-            .insert([newBill])
+            .insert([rowToInsert])
             .select()
             .single();
 
@@ -5230,9 +5240,10 @@ const db = {
               console.warn('Concurrent billNumber collision detected, incrementing sequence...');
               const retryNum = await this.getNextBillNumber();
               newBill.billNumber = retryNum;
+              rowToInsert.billNumber = retryNum;
               const { data: retryData, error: retryErr } = await supabase
                 .from('bills')
-                .insert([newBill])
+                .insert([rowToInsert])
                 .select()
                 .single();
               if (retryErr) throw retryErr;
@@ -5428,7 +5439,8 @@ const db = {
             claimedAmount: cat.claimedAmount,
             verifiedAmount: numVerified,
             comment: commentText,
-            billStatus: bill.status
+            billStatus: bill.status,
+            categories: bill.categories
           }
         };
         bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
@@ -5456,8 +5468,19 @@ const db = {
           throw new Error('Bill not found');
         }
 
+        const hasNativeCategories = await checkBillsTableNativeCategories();
+        const updatesToPersist = { ...updates };
+        if (!hasNativeCategories) {
+          delete updatesToPersist.categories;
+          delete updatesToPersist.totalVerifiedAmount;
+          delete updatesToPersist.totalApprovedAmount;
+          if (updatesToPersist.status === 'PARTIALLY_VERIFIED' || updatesToPersist.status === 'SUBMITTED') {
+            updatesToPersist.status = 'PENDING_VERIFICATION';
+          }
+        }
+
         try {
-          let query = supabase.from('bills').update(updates).eq('id', id);
+          let query = supabase.from('bills').update(updatesToPersist).eq('id', id);
           if (rawBill.updatedAt && attempt < maxRetries) {
             query = query.eq('updatedAt', rawBill.updatedAt);
           }
@@ -5471,7 +5494,23 @@ const db = {
             throw error;
           }
 
-          return normalizeBillRecord(data);
+          try {
+            await this.addComment({
+              employeeId: bill.employeeId,
+              employeeName: bill.employeeName,
+              sender: 'admin',
+              senderName: verifiedBy || 'Admin',
+              message: `✓ Bill Category Verified: ${cat.name || catName} verified for Rs. ${numVerified.toLocaleString()} (Bill: ${bill.billNumber})`
+            });
+          } catch (e) {}
+
+          return normalizeBillRecord({
+            ...data,
+            categories: bill.categories,
+            totalVerifiedAmount: bill.totalVerifiedAmount,
+            totalApprovedAmount: bill.totalApprovedAmount,
+            status: bill.status
+          });
         } catch (err) {
           if (attempt === maxRetries || !isQuotaOrNetworkError(err)) {
             if (isQuotaOrNetworkError(err)) {
@@ -5553,7 +5592,8 @@ const db = {
           details: {
             claimedAmount: cat.claimedAmount,
             reason: reasonText,
-            billStatus: bill.status
+            billStatus: bill.status,
+            categories: bill.categories
           }
         };
         bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
@@ -5581,8 +5621,19 @@ const db = {
           throw new Error('Bill not found');
         }
 
+        const hasNativeCategories = await checkBillsTableNativeCategories();
+        const updatesToPersist = { ...updates };
+        if (!hasNativeCategories) {
+          delete updatesToPersist.categories;
+          delete updatesToPersist.totalVerifiedAmount;
+          delete updatesToPersist.totalApprovedAmount;
+          if (updatesToPersist.status === 'PARTIALLY_VERIFIED' || updatesToPersist.status === 'SUBMITTED') {
+            updatesToPersist.status = 'PENDING_VERIFICATION';
+          }
+        }
+
         try {
-          let query = supabase.from('bills').update(updates).eq('id', id);
+          let query = supabase.from('bills').update(updatesToPersist).eq('id', id);
           if (rawBill.updatedAt && attempt < maxRetries) {
             query = query.eq('updatedAt', rawBill.updatedAt);
           }
@@ -5596,7 +5647,23 @@ const db = {
             throw error;
           }
 
-          return normalizeBillRecord(data);
+          try {
+            await this.addComment({
+              employeeId: bill.employeeId,
+              employeeName: bill.employeeName,
+              sender: 'admin',
+              senderName: rejectedBy || 'Admin',
+              message: `✖ Bill Category Rejected: ${cat.name || catName} was rejected. Reason: ${reasonText} (Bill: ${bill.billNumber})`
+            });
+          } catch (e) {}
+
+          return normalizeBillRecord({
+            ...data,
+            categories: bill.categories,
+            totalVerifiedAmount: bill.totalVerifiedAmount,
+            totalApprovedAmount: bill.totalApprovedAmount,
+            status: bill.status
+          });
         } catch (err) {
           if (attempt === maxRetries || !isQuotaOrNetworkError(err)) {
             if (isQuotaOrNetworkError(err)) {
@@ -5702,7 +5769,8 @@ const db = {
             verifiedAmount: cat.verifiedAmount,
             approvedAmount: numApproved,
             comment: commentText,
-            billStatus: bill.status
+            billStatus: bill.status,
+            categories: bill.categories
           }
         };
         bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
@@ -5730,8 +5798,19 @@ const db = {
           throw new Error('Bill not found');
         }
 
+        const hasNativeCategories = await checkBillsTableNativeCategories();
+        const updatesToPersist = { ...updates };
+        if (!hasNativeCategories) {
+          delete updatesToPersist.categories;
+          delete updatesToPersist.totalVerifiedAmount;
+          delete updatesToPersist.totalApprovedAmount;
+          if (updatesToPersist.status === 'PARTIALLY_APPROVED') {
+            updatesToPersist.status = 'PENDING_VERIFICATION';
+          }
+        }
+
         try {
-          let query = supabase.from('bills').update(updates).eq('id', id);
+          let query = supabase.from('bills').update(updatesToPersist).eq('id', id);
           if (rawBill.updatedAt && attempt < maxRetries) {
             query = query.eq('updatedAt', rawBill.updatedAt);
           }
@@ -5745,7 +5824,23 @@ const db = {
             throw error;
           }
 
-          return normalizeBillRecord(data);
+          try {
+            await this.addComment({
+              employeeId: bill.employeeId,
+              employeeName: bill.employeeName,
+              sender: 'senior_admin',
+              senderName: approvedBy || 'Senior Admin',
+              message: `★ Bill Category Approved: ${cat.name || catName} approved for Rs. ${numApproved.toLocaleString()} (Bill: ${bill.billNumber})`
+            });
+          } catch (e) {}
+
+          return normalizeBillRecord({
+            ...data,
+            categories: bill.categories,
+            totalVerifiedAmount: bill.totalVerifiedAmount,
+            totalApprovedAmount: bill.totalApprovedAmount,
+            status: bill.status
+          });
         } catch (err) {
           if (attempt === maxRetries || !isQuotaOrNetworkError(err)) {
             if (isQuotaOrNetworkError(err)) {
@@ -5962,6 +6057,26 @@ const db = {
 
 const BILL_EXPENSE_CATEGORIES = ['transportation', 'material', 'labour', 'accommodation', 'other'];
 
+let billsTableHasNativeCategories = null;
+async function checkBillsTableNativeCategories() {
+  if (billsTableHasNativeCategories !== null) return billsTableHasNativeCategories;
+  if (!supabase || useLocalFallback) {
+    billsTableHasNativeCategories = true;
+    return true;
+  }
+  try {
+    const { error } = await supabase.from('bills').select('categories').limit(1);
+    if (error && (error.message?.includes('categories') || error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
+      billsTableHasNativeCategories = false;
+    } else {
+      billsTableHasNativeCategories = true;
+    }
+  } catch (e) {
+    billsTableHasNativeCategories = false;
+  }
+  return billsTableHasNativeCategories;
+}
+
 function computeBillTotalsAndStatus(categories, currentOverallStatus) {
   let totalClaimed = 0;
   let totalVerified = 0;
@@ -6075,6 +6190,15 @@ function normalizeBillRecord(bill) {
   };
 
   let categories = b.categories;
+  if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
+    if (Array.isArray(b.auditLog) && b.auditLog.length > 0) {
+      const auditWithCats = b.auditLog.slice().reverse().find(entry => entry && entry.details && entry.details.categories);
+      if (auditWithCats && auditWithCats.details && auditWithCats.details.categories) {
+        categories = JSON.parse(JSON.stringify(auditWithCats.details.categories));
+      }
+    }
+  }
+
   if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
     categories = {};
     const isLegacyVerified = b.status === 'VERIFIED' || b.status === 'APPROVED';

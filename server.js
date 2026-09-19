@@ -1100,7 +1100,8 @@ app.get('/api/bills/:id', async (req, res) => {
 // POST /api/bills/:id/verify-category (Admin category verification)
 app.post('/api/bills/:id/verify-category', checkAdminAuth, async (req, res) => {
   try {
-    const { category, verifiedAmount, verificationComment, verifiedBy } = req.body;
+    const { category, verifiedAmount, verifiedBy } = req.body;
+    const verificationComment = req.body.verificationComment || req.body.verifiedComment || req.body.comment || '';
     const updated = await db.verifyBillCategory(req.params.id, {
       category,
       verifiedAmount,
@@ -1116,10 +1117,12 @@ app.post('/api/bills/:id/verify-category', checkAdminAuth, async (req, res) => {
 // POST /api/bills/:id/reject-category (Admin or Senior Admin category rejection)
 app.post('/api/bills/:id/reject-category', checkAdminAuth, async (req, res) => {
   try {
-    const { category, rejectionReason, rejectedBy, stage } = req.body;
+    const { category, rejectedBy, stage } = req.body;
+    const rejectionReason = req.body.rejectionReason || req.body.reason || '';
     const updated = await db.rejectBillCategory(req.params.id, {
       category,
       rejectionReason,
+      reason: rejectionReason,
       rejectedBy: rejectedBy || 'Admin',
       stage: stage || 'verification'
     });
@@ -1140,7 +1143,8 @@ app.post('/api/bills/:id/approve-category', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
     }
 
-    const { category, approvedAmount, approvalComment, approvedBy } = req.body;
+    const { category, approvedAmount, approvedBy } = req.body;
+    const approvalComment = req.body.approvalComment || req.body.approvedComment || req.body.comment || '';
     const updated = await db.approveBillCategory(req.params.id, {
       category,
       approvedAmount,

@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=216">
+  <link rel="stylesheet" href="style.css?v=217">
 
   <!-- html2pdf.js for generating monthly expense flow PDF reports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -2516,6 +2516,9 @@
             <div id="cat-action-verified-wrapper"><span class="text-muted">Verified:</span> <strong id="cat-action-verified" style="color:#38bdf8;">Rs. 0</strong></div>
           </div>
 
+          <!-- Inline Error / Warning Banner for Validation -->
+          <div id="cat-action-inline-error" class="hidden" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #fca5a5; padding: 0.6rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; font-weight: 500;"></div>
+
           <!-- Fields for Verification -->
           <div id="cat-action-verify-fields" class="hidden">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 0.75rem;">
@@ -2533,7 +2536,7 @@
               <input type="text" id="cat-verify-comment-input" placeholder="e.g. Receipt verified in full" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
             </div>
             <div style="display: flex; gap: 0.75rem;">
-              <button type="button" id="btn-submit-cat-verification" class="btn btn-primary" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              <button type="button" id="btn-submit-cat-verification" class="btn btn-primary" onclick="submitCategoryVerification()" style="padding: 0.65rem 1.25rem; font-weight: 600;">
                 SAVE VERIFICATION
               </button>
               <button type="button" class="btn btn-secondary" onclick="closeCategoryActionBox()">
@@ -2565,7 +2568,7 @@
               <input type="text" id="cat-approve-comment-input" placeholder="e.g. Approved for accounts disbursement" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
             </div>
             <div style="display: flex; gap: 0.75rem;">
-              <button type="button" id="btn-submit-cat-approval" class="btn btn-success" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              <button type="button" id="btn-submit-cat-approval" class="btn btn-success" onclick="submitCategoryApproval()" style="padding: 0.65rem 1.25rem; font-weight: 600;">
                 APPROVE CATEGORY
               </button>
               <button type="button" class="btn btn-secondary" onclick="closeCategoryActionBox()">
@@ -2583,7 +2586,7 @@
               <input type="text" id="cat-reject-reason-input" placeholder="e.g. Receipt unreadable / unauthorized travel" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid rgba(239,68,68,0.4); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
             </div>
             <div style="display: flex; gap: 0.75rem;">
-              <button type="button" id="btn-submit-cat-rejection" class="btn btn-danger" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+              <button type="button" id="btn-submit-cat-rejection" class="btn btn-danger" onclick="submitCategoryRejection()" style="padding: 0.65rem 1.25rem; font-weight: 600;">
                 CONFIRM REJECTION
               </button>
               <button type="button" class="btn btn-secondary" onclick="closeCategoryActionBox()">
@@ -3332,6 +3335,6 @@ This action cannot be undone.</p>
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=267"></script>
+  <script src="app.js?v=268"></script>
 </body>
 </html>

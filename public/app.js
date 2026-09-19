@@ -115,7 +115,9 @@ const API = {
     if (params.startDate) q.append('startDate', params.startDate);
     if (params.endDate) q.append('endDate', params.endDate);
     const url = `/api/bills${q.toString() ? '?' + q.toString() : ''}`;
-    return fetchJson(url, { headers: { 'X-Admin-Passcode': getAdminPasscode() } });
+    const headers = { 'X-Admin-Passcode': getAdminPasscode() };
+    if (params.employeeId) headers['X-Employee-Id'] = params.employeeId;
+    return fetchJson(url, { headers });
   },
   getBillStats: () => fetchJson('/api/bills/stats', {
     headers: { 'X-Admin-Passcode': getAdminPasscode() }
@@ -5793,6 +5795,7 @@ async function submitBillForm() {
       employeeName: selectedEmployee.name,
       siteName,
       date,
+      billDate: date,
       transportationExpense: trans,
       materialExpense: mat,
       labourExpense: lab,
@@ -5814,6 +5817,12 @@ async function submitBillForm() {
 
       showToast(`Bill ${res.bill.billNumber} submitted successfully!`, 'success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Refresh data
+      if (selectedEmployee) {
+        loadEmployeeBills().catch(() => {});
+      }
+      updateAdminPendingBillsNotification().catch(() => {});
     } else {
       const errMsg = (res && res.error) || 'Failed to submit bill';
       showToast(errMsg, 'error');
@@ -6198,6 +6207,24 @@ function renderBillCategoriesTable(bill, isReadOnly) {
   if (totBadge) totBadge.innerHTML = getBillStatusBadgeHtml(bill.status);
 }
 
+function showCatActionError(msg) {
+  const errBox = document.getElementById('cat-action-inline-error');
+  if (errBox) {
+    errBox.innerHTML = `⚠️ <strong>Validation:</strong> ${escapeHtml(msg)}`;
+    errBox.classList.remove('hidden');
+    errBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  showToast(msg, 'error');
+}
+
+function clearCatActionError() {
+  const errBox = document.getElementById('cat-action-inline-error');
+  if (errBox) {
+    errBox.classList.add('hidden');
+    errBox.innerHTML = '';
+  }
+}
+
 function openCategoryActionBox(catKey, actionType) {
   if (!currentActiveAdminBillData) return;
   const bill = currentActiveAdminBillData;
@@ -6214,6 +6241,7 @@ function openCategoryActionBox(catKey, actionType) {
   const box = document.getElementById('admin-bill-cat-action-box');
   if (!box) return;
   box.classList.remove('hidden');
+  clearCatActionError();
 
   const catNameEl = document.getElementById('cat-action-catname');
   if (catNameEl) catNameEl.innerText = cat.name || catKey;
@@ -6249,6 +6277,18 @@ function openCategoryActionBox(catKey, actionType) {
     if (input) {
       input.max = cat.claimedAmount || 0;
       input.value = cat.verifiedAmount !== null && cat.verifiedAmount !== undefined ? cat.verifiedAmount : (cat.claimedAmount || 0);
+      input.style.borderColor = '';
+      input.oninput = () => {
+        const val = parseFloat(input.value);
+        const maxVal = Number(cat.claimedAmount || 0);
+        if (!isNaN(val) && val > maxVal) {
+          showCatActionError(`Verified amount (Rs. ${val.toLocaleString()}) cannot exceed claimed amount (Rs. ${maxVal.toLocaleString()}). Maximum allowed is Rs. ${maxVal.toLocaleString()}.`);
+          input.style.borderColor = '#ef4444';
+        } else {
+          clearCatActionError();
+          input.style.borderColor = '';
+        }
+      };
       setTimeout(() => input.focus(), 50);
     }
     const cInput = document.getElementById('cat-verify-comment-input');
@@ -6263,6 +6303,17 @@ function openCategoryActionBox(catKey, actionType) {
     if (input) {
       input.max = maxVal;
       input.value = cat.approvedAmount !== null && cat.approvedAmount !== undefined ? cat.approvedAmount : maxVal;
+      input.style.borderColor = '';
+      input.oninput = () => {
+        const val = parseFloat(input.value);
+        if (!isNaN(val) && val > maxVal) {
+          showCatActionError(`Approved amount (Rs. ${val.toLocaleString()}) cannot exceed verified amount (Rs. ${Number(maxVal).toLocaleString()}). Maximum allowed is Rs. ${Number(maxVal).toLocaleString()}.`);
+          input.style.borderColor = '#ef4444';
+        } else {
+          clearCatActionError();
+          input.style.borderColor = '';
+        }
+      };
       setTimeout(() => input.focus(), 50);
     }
     const pInput = document.getElementById('cat-approve-senior-passcode');
@@ -6285,6 +6336,7 @@ function openCategoryActionBox(catKey, actionType) {
 function closeCategoryActionBox() {
   const box = document.getElementById('admin-bill-cat-action-box');
   if (box) box.classList.add('hidden');
+  clearCatActionError();
   currentActiveCategoryKey = null;
   currentActiveCategoryAction = null;
 }
@@ -6299,23 +6351,25 @@ async function submitCategoryVerification() {
 
   const verifiedAmount = parseFloat(input?.value);
   if (isNaN(verifiedAmount) || verifiedAmount < 0) {
-    showToast('Please enter a valid verified amount (>= 0)', 'error');
+    showCatActionError('Please enter a valid verified amount (0 or greater).');
     input?.focus();
     return;
   }
   const maxAllowed = Number(cat.claimedAmount || 0);
   if (verifiedAmount > maxAllowed) {
-    showToast(`Verified amount (Rs. ${verifiedAmount.toLocaleString()}) cannot exceed claimed amount (Rs. ${maxAllowed.toLocaleString()})`, 'error');
+    showCatActionError(`Verified amount (Rs. ${verifiedAmount.toLocaleString()}) cannot exceed claimed amount (Rs. ${maxAllowed.toLocaleString()}). Please enter Rs. ${maxAllowed.toLocaleString()} or less.`);
     input?.focus();
     return;
   }
 
+  clearCatActionError();
   if (btn) btn.disabled = true;
   try {
     const res = await API.verifyBillCategory(currentActiveAdminBillId, {
       category: currentActiveCategoryKey,
       verifiedAmount: verifiedAmount,
-      verifiedComment: (cInput?.value || '').trim()
+      verifiedComment: (cInput?.value || '').trim(),
+      verificationComment: (cInput?.value || '').trim()
     });
     if (res && res.success) {
       showToast(`${cat.name || currentActiveCategoryKey} verified successfully!`, 'success');
@@ -6323,10 +6377,10 @@ async function submitCategoryVerification() {
       await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
       await loadAdminBills();
     } else {
-      showToast((res && res.error) || 'Failed to verify category', 'error');
+      showCatActionError((res && res.error) || 'Failed to verify category');
     }
   } catch (err) {
-    showToast('Error: ' + (err.message || 'Verification failed'), 'error');
+    showCatActionError('Error: ' + (err.message || 'Verification failed'));
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -6343,30 +6397,32 @@ async function submitCategoryApproval() {
 
   const seniorPasscode = (pInput?.value || '').trim();
   if (!seniorPasscode) {
-    showToast('Senior Admin Passcode is required to approve', 'error');
+    showCatActionError('Senior Admin Passcode is required to approve this category.');
     pInput?.focus();
     return;
   }
 
   const approvedAmount = parseFloat(input?.value);
   if (isNaN(approvedAmount) || approvedAmount < 0) {
-    showToast('Please enter a valid approved amount (>= 0)', 'error');
+    showCatActionError('Please enter a valid approved amount (0 or greater).');
     input?.focus();
     return;
   }
   const maxAllowed = cat.verifiedAmount !== null && cat.verifiedAmount !== undefined ? Number(cat.verifiedAmount) : Number(cat.claimedAmount || 0);
   if (approvedAmount > maxAllowed) {
-    showToast(`Approved amount (Rs. ${approvedAmount.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()})`, 'error');
+    showCatActionError(`Approved amount (Rs. ${approvedAmount.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}). Please enter Rs. ${maxAllowed.toLocaleString()} or less.`);
     input?.focus();
     return;
   }
 
+  clearCatActionError();
   if (btn) btn.disabled = true;
   try {
     const res = await API.approveBillCategory(currentActiveAdminBillId, {
       category: currentActiveCategoryKey,
       approvedAmount: approvedAmount,
       approvedComment: (cInput?.value || '').trim(),
+      approvalComment: (cInput?.value || '').trim(),
       seniorPasscode: seniorPasscode
     });
     if (res && res.success) {
@@ -6375,10 +6431,10 @@ async function submitCategoryApproval() {
       await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
       await loadAdminBills();
     } else {
-      showToast((res && res.error) || 'Failed to approve category', 'error');
+      showCatActionError((res && res.error) || 'Failed to approve category');
     }
   } catch (err) {
-    showToast('Error: ' + (err.message || 'Approval failed'), 'error');
+    showCatActionError('Error: ' + (err.message || 'Approval failed'));
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -6393,16 +6449,18 @@ async function submitCategoryRejection() {
 
   const reason = (rInput?.value || '').trim();
   if (!reason) {
-    showToast('Please enter a reason for rejecting this category', 'error');
+    showCatActionError('Please enter a specific reason for rejecting this category.');
     rInput?.focus();
     return;
   }
 
+  clearCatActionError();
   if (btn) btn.disabled = true;
   try {
     const res = await API.rejectBillCategory(currentActiveAdminBillId, {
       category: currentActiveCategoryKey,
-      reason: reason
+      reason: reason,
+      rejectionReason: reason
     });
     if (res && res.success) {
       showToast(`${cat.name || currentActiveCategoryKey} marked as rejected`, 'info');
@@ -6410,10 +6468,10 @@ async function submitCategoryRejection() {
       await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
       await loadAdminBills();
     } else {
-      showToast((res && res.error) || 'Failed to reject category', 'error');
+      showCatActionError((res && res.error) || 'Failed to reject category');
     }
   } catch (err) {
-    showToast('Error: ' + (err.message || 'Rejection failed'), 'error');
+    showCatActionError('Error: ' + (err.message || 'Rejection failed'));
   } finally {
     if (btn) btn.disabled = false;
   }

@@ -2547,7 +2547,8 @@ const db = {
         claimedAmount: cat.claimedAmount,
         verifiedAmount: numVerified,
         comment: commentText,
-        billStatus: bill.status
+        billStatus: bill.status,
+        categories: bill.categories
       }
     };
     bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
@@ -2555,6 +2556,17 @@ const db = {
 
     data.bills[idx] = bill;
     saveData();
+
+    try {
+      await this.addComment({
+        employeeId: bill.employeeId,
+        employeeName: bill.employeeName,
+        sender: 'admin',
+        senderName: verifiedBy || 'Admin',
+        message: `✓ Bill Category Verified: ${cat.name || catName} verified for Rs. ${numVerified.toLocaleString()} (Bill: ${bill.billNumber})`
+      });
+    } catch (e) {}
+
     return normalizeBillRecord(bill);
   },
 
@@ -2616,7 +2628,8 @@ const db = {
       details: {
         claimedAmount: cat.claimedAmount,
         reason: reasonText,
-        billStatus: bill.status
+        billStatus: bill.status,
+        categories: bill.categories
       }
     };
     bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
@@ -2624,6 +2637,17 @@ const db = {
 
     data.bills[idx] = bill;
     saveData();
+
+    try {
+      await this.addComment({
+        employeeId: bill.employeeId,
+        employeeName: bill.employeeName,
+        sender: 'admin',
+        senderName: rejectedBy || 'Admin',
+        message: `✖ Bill Category Rejected: ${cat.name || catName} was rejected. Reason: ${reasonText} (Bill: ${bill.billNumber})`
+      });
+    } catch (e) {}
+
     return normalizeBillRecord(bill);
   },
 
@@ -2708,7 +2732,8 @@ const db = {
         verifiedAmount: cat.verifiedAmount,
         approvedAmount: numApproved,
         comment: commentText,
-        billStatus: bill.status
+        billStatus: bill.status,
+        categories: bill.categories
       }
     };
     bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
@@ -2716,6 +2741,17 @@ const db = {
 
     data.bills[idx] = bill;
     saveData();
+
+    try {
+      await this.addComment({
+        employeeId: bill.employeeId,
+        employeeName: bill.employeeName,
+        sender: 'senior_admin',
+        senderName: approvedBy || 'Senior Admin',
+        message: `★ Bill Category Approved: ${cat.name || catName} approved for Rs. ${numApproved.toLocaleString()} (Bill: ${bill.billNumber})`
+      });
+    } catch (e) {}
+
     return normalizeBillRecord(bill);
   },
 
@@ -3009,6 +3045,15 @@ function normalizeBillRecord(bill) {
   };
 
   let categories = b.categories;
+  if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
+    if (Array.isArray(b.auditLog) && b.auditLog.length > 0) {
+      const auditWithCats = b.auditLog.slice().reverse().find(entry => entry && entry.details && entry.details.categories);
+      if (auditWithCats && auditWithCats.details && auditWithCats.details.categories) {
+        categories = JSON.parse(JSON.stringify(auditWithCats.details.categories));
+      }
+    }
+  }
+
   if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
     categories = {};
     const isLegacyVerified = b.status === 'VERIFIED' || b.status === 'APPROVED';
