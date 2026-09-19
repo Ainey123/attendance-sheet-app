@@ -123,6 +123,21 @@ const API = {
   getBillById: (id) => fetchJson(`/api/bills/${encodeURIComponent(id)}`, {
     headers: { 'X-Admin-Passcode': getAdminPasscode() }
   }),
+  verifyBillCategory: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/verify-category`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
+  rejectBillCategory: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/reject-category`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
+  approveBillCategory: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/approve-category`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
   verifyBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
@@ -3995,19 +4010,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const pinModal = document.getElementById('change-pin-modal');
     const clockoutModal = document.getElementById('clockout-modal');
     const photoViewModal = document.getElementById('photo-view-modal');
-    if (e.target === adminModal) {
+    const billPromptModal = document.getElementById('modal-clockout-bill-prompt');
+    const adminBillModal = document.getElementById('modal-admin-bill-details');
+    if (adminModal && e.target === adminModal) {
       closeAdminAuthModal();
-    } else if (e.target === empModal) {
+    } else if (empModal && e.target === empModal) {
       closeEmployeeAuthModal();
-    } else if (e.target === pinModal) {
+    } else if (pinModal && e.target === pinModal) {
       closeChangePinModal();
-    } else if (e.target === clockoutModal) {
+    } else if (clockoutModal && e.target === clockoutModal) {
       closeClockOutModal();
-    } else if (e.target === photoViewModal) {
+    } else if (photoViewModal && e.target === photoViewModal) {
       closePhotoModal();
-    } else if (e.target === billPromptModal) {
+    } else if (billPromptModal && e.target === billPromptModal) {
       closeClockOutBillPrompt();
-    } else if (e.target === adminBillModal) {
+    } else if (adminBillModal && e.target === adminBillModal) {
       closeAdminBillDetailsModal();
     }
   });
@@ -5788,8 +5805,10 @@ async function loadEmployeeBills() {
     bills.forEach(bill => {
       const tr = document.createElement('tr');
       const badgeHtml = getBillStatusBadgeHtml(bill.status);
-      const verifiedTxt = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? `Rs. ${bill.verifiedAmount.toLocaleString()}` : '—';
-      const approvedTxt = bill.approvedAmount !== null && bill.approvedAmount !== undefined ? `Rs. ${bill.approvedAmount.toLocaleString()}` : '—';
+      const verifiedAmt = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.verifiedAmount;
+      const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
+      const approvedAmt = bill.totalApprovedAmount !== null && bill.totalApprovedAmount !== undefined ? bill.totalApprovedAmount : bill.approvedAmount;
+      const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
 
       tr.innerHTML = `
         <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
@@ -5800,7 +5819,7 @@ async function loadEmployeeBills() {
         <td style="color:#4ade80;">${approvedTxt}</td>
         <td>${badgeHtml}</td>
         <td>
-          <button type="button" class="btn btn-sm btn-secondary" onclick="openAdminBillModal('${bill.id}')">
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openAdminBillModal('${bill.id}', true)">
             View
           </button>
         </td>
@@ -5815,15 +5834,20 @@ async function loadEmployeeBills() {
 function getBillStatusBadgeHtml(status) {
   switch (status) {
     case 'PENDING_VERIFICATION':
-      return '<span class="badge-bill-pending">● Pending Verification</span>';
+    case 'SUBMITTED':
+      return '<span class="badge-bill-submitted">● Submitted</span>';
+    case 'PARTIALLY_VERIFIED':
+      return '<span class="badge-bill-partially-verified">◐ Partially Verified</span>';
     case 'VERIFIED':
       return '<span class="badge-bill-verified">✓ Verified</span>';
+    case 'PARTIALLY_APPROVED':
+      return '<span class="badge-bill-partially-approved">◑ Partially Approved</span>';
     case 'APPROVED':
       return '<span class="badge-bill-approved">★ Approved</span>';
     case 'REJECTED':
       return '<span class="badge-bill-rejected">✖ Rejected</span>';
     default:
-      return `<span class="badge">${escapeHtml(status)}</span>`;
+      return `<span class="badge">${escapeHtml(status || '—')}</span>`;
   }
 }
 
@@ -5886,8 +5910,17 @@ function renderAdminBillsTable() {
   filtered.forEach(bill => {
     const tr = document.createElement('tr');
     const badgeHtml = getBillStatusBadgeHtml(bill.status);
-    const verifiedTxt = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? `Rs. ${bill.verifiedAmount.toLocaleString()}` : '—';
-    const approvedTxt = bill.approvedAmount !== null && bill.approvedAmount !== undefined ? `Rs. ${bill.approvedAmount.toLocaleString()}` : '—';
+    const verifiedAmt = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.verifiedAmount;
+    const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
+    const approvedAmt = bill.totalApprovedAmount !== null && bill.totalApprovedAmount !== undefined ? bill.totalApprovedAmount : bill.approvedAmount;
+    const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
+
+    let btnLabel = 'View Details';
+    if (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED') {
+      btnLabel = 'Review & Verify';
+    } else if (bill.status === 'VERIFIED' || bill.status === 'PARTIALLY_APPROVED') {
+      btnLabel = 'Approve / Review';
+    }
 
     tr.innerHTML = `
       <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
@@ -5900,7 +5933,7 @@ function renderAdminBillsTable() {
       <td>${badgeHtml}</td>
       <td>
         <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${bill.id}')">
-          ${bill.status === 'PENDING_VERIFICATION' ? 'Review & Verify' : (bill.status === 'VERIFIED' ? 'Approve / Review' : 'View Details')}
+          ${btnLabel}
         </button>
       </td>
     `;
@@ -5972,8 +6005,392 @@ async function updateAdminPendingBillsNotification() {
   }
 }
 
-async function openAdminBillModal(billId) {
+const BILL_EXPENSE_CATEGORIES_CLIENT = [
+  { key: 'transportation', label: 'Transportation' },
+  { key: 'material', label: 'Material' },
+  { key: 'labour', label: 'Labour' },
+  { key: 'accommodation', label: 'Accommodation' },
+  { key: 'other', label: 'Other' }
+];
+
+let currentActiveCategoryKey = null;
+let currentActiveCategoryAction = null;
+let currentActiveAdminBillIsReadOnly = false;
+
+function renderBillCategoriesTable(bill, isReadOnly) {
+  const tbody = document.getElementById('admin-bill-categories-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const thActions = document.getElementById('th-bill-cat-actions');
+  if (thActions) {
+    thActions.innerText = isReadOnly ? 'Status' : 'Actions';
+  }
+
+  const categories = bill.categories || {};
+  BILL_EXPENSE_CATEGORIES_CLIENT.forEach(c => {
+    const cat = categories[c.key] || {
+      name: c.label,
+      claimedAmount: 0,
+      verifiedAmount: null,
+      approvedAmount: null,
+      status: 'SUBMITTED'
+    };
+
+    const claimed = Number(cat.claimedAmount || 0);
+    const isZeroClaimed = claimed === 0;
+
+    let subNote = '';
+    if (cat.status === 'REJECTED' && cat.rejectionReason) {
+      subNote = `<div style="font-size:0.75rem; color:#f87171; margin-top:2px;">Rej: ${escapeHtml(cat.rejectionReason)}</div>`;
+    } else if (cat.status === 'APPROVED' && cat.approvedComment) {
+      subNote = `<div style="font-size:0.75rem; color:#86efac; margin-top:2px;">Appr: ${escapeHtml(cat.approvedComment)}</div>`;
+    } else if (cat.status === 'VERIFIED' && cat.verifiedComment) {
+      subNote = `<div style="font-size:0.75rem; color:#93c5fd; margin-top:2px;">Ver: ${escapeHtml(cat.verifiedComment)}</div>`;
+    }
+
+    let verifiedCell = '';
+    if (isZeroClaimed) {
+      verifiedCell = '<span class="text-muted" style="font-size:0.8rem;">— (N/A)</span>';
+    } else if (cat.status === 'REJECTED') {
+      verifiedCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">Rejected (Rs. 0)</span>';
+    } else if (cat.verifiedAmount !== null && cat.verifiedAmount !== undefined) {
+      verifiedCell = `<span style="color:#60a5fa; font-weight:700;">Rs. ${cat.verifiedAmount.toLocaleString()}</span>`;
+    } else {
+      verifiedCell = '<span class="badge-bill-submitted" style="font-size:0.75rem;">Pending</span>';
+    }
+
+    let approvedCell = '';
+    if (isZeroClaimed) {
+      approvedCell = '<span class="text-muted" style="font-size:0.8rem;">— (N/A)</span>';
+    } else if (cat.status === 'REJECTED') {
+      approvedCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">Rejected (Rs. 0)</span>';
+    } else if (cat.approvedAmount !== null && cat.approvedAmount !== undefined) {
+      approvedCell = `<span style="color:#4ade80; font-weight:700;">Rs. ${cat.approvedAmount.toLocaleString()}</span>`;
+    } else {
+      approvedCell = '<span class="text-muted" style="font-size:0.8rem;">—</span>';
+    }
+
+    let actionsCell = '';
+    if (isReadOnly) {
+      if (isZeroClaimed) {
+        actionsCell = '<span class="text-muted" style="font-size:0.75rem;">N/A</span>';
+      } else if (cat.status === 'APPROVED') {
+        actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
+      } else if (cat.status === 'VERIFIED') {
+        actionsCell = '<span class="badge-bill-verified" style="font-size:0.75rem;">✓ Verified</span>';
+      } else if (cat.status === 'REJECTED') {
+        actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Rejected</span>';
+      } else {
+        actionsCell = '<span class="badge-bill-submitted" style="font-size:0.75rem;">● Pending</span>';
+      }
+    } else {
+      if (isZeroClaimed) {
+        actionsCell = '<span class="text-muted" style="font-size:0.75rem;">N/A</span>';
+      } else if (bill.status === 'APPROVED') {
+        actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
+      } else if (bill.status === 'REJECTED') {
+        actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Bill Rejected</span>';
+      } else if (cat.status === 'REJECTED') {
+        actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Rejected</span>';
+      } else if (cat.status === 'APPROVED') {
+        actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
+      } else if (cat.status === 'VERIFIED') {
+        actionsCell = `
+          <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm btn-success" style="padding:0.25rem 0.6rem; font-size:0.75rem; font-weight:600;" onclick="openCategoryActionBox('${c.key}', 'approve')">Approve</button>
+            <button type="button" class="btn btn-sm btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="openCategoryActionBox('${c.key}', 'verify')">Re-verify</button>
+            <button type="button" class="btn btn-sm btn-danger" style="padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="openCategoryActionBox('${c.key}', 'reject')">Reject</button>
+          </div>
+        `;
+      } else {
+        actionsCell = `
+          <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm btn-primary" style="padding:0.25rem 0.75rem; font-size:0.75rem; font-weight:600;" onclick="openCategoryActionBox('${c.key}', 'verify')">Verify</button>
+            <button type="button" class="btn btn-sm btn-danger" style="padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="openCategoryActionBox('${c.key}', 'reject')">Reject</button>
+          </div>
+        `;
+      }
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="vertical-align:middle;">
+        <strong style="color:#f8fafc;">${escapeHtml(cat.name || c.label)}</strong>
+        ${subNote}
+      </td>
+      <td style="text-align:right; vertical-align:middle; font-weight:600;">Rs. ${claimed.toLocaleString()}</td>
+      <td style="text-align:right; vertical-align:middle;">${verifiedCell}</td>
+      <td style="text-align:right; vertical-align:middle;">${approvedCell}</td>
+      <td style="text-align:center; vertical-align:middle;">${actionsCell}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const totClaimed = document.getElementById('admin-bill-modal-total-claimed');
+  if (totClaimed) totClaimed.innerText = (bill.totalClaimedAmount || 0).toLocaleString();
+
+  const totVerified = document.getElementById('admin-bill-modal-total-verified');
+  const verAmt = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : (bill.verifiedAmount || 0);
+  if (totVerified) totVerified.innerText = Number(verAmt).toLocaleString();
+
+  const totApproved = document.getElementById('admin-bill-modal-total-approved');
+  const apprAmt = bill.totalApprovedAmount !== null && bill.totalApprovedAmount !== undefined ? bill.totalApprovedAmount : (bill.approvedAmount || 0);
+  if (totApproved) totApproved.innerText = Number(apprAmt).toLocaleString();
+
+  const totBadge = document.getElementById('admin-bill-modal-total-status-badge');
+  if (totBadge) totBadge.innerHTML = getBillStatusBadgeHtml(bill.status);
+}
+
+function openCategoryActionBox(catKey, actionType) {
+  if (!currentActiveAdminBillData) return;
+  const bill = currentActiveAdminBillData;
+  const cat = (bill.categories && bill.categories[catKey]) || {
+    name: catKey,
+    claimedAmount: 0,
+    verifiedAmount: null,
+    approvedAmount: null
+  };
+
+  currentActiveCategoryKey = catKey;
+  currentActiveCategoryAction = actionType;
+
+  const box = document.getElementById('admin-bill-cat-action-box');
+  if (!box) return;
+  box.classList.remove('hidden');
+
+  const catNameEl = document.getElementById('cat-action-catname');
+  if (catNameEl) catNameEl.innerText = cat.name || catKey;
+
+  const catClaimedEl = document.getElementById('cat-action-claimed');
+  if (catClaimedEl) catClaimedEl.innerText = 'Rs. ' + (cat.claimedAmount || 0).toLocaleString();
+
+  const verWrap = document.getElementById('cat-action-verified-wrapper');
+  const catVerEl = document.getElementById('cat-action-verified');
+  if (actionType === 'approve') {
+    if (verWrap) verWrap.style.display = 'block';
+    const vAmt = cat.verifiedAmount !== null && cat.verifiedAmount !== undefined ? cat.verifiedAmount : (cat.claimedAmount || 0);
+    if (catVerEl) catVerEl.innerText = 'Rs. ' + Number(vAmt).toLocaleString();
+  } else {
+    if (verWrap) verWrap.style.display = 'none';
+  }
+
+  const vFields = document.getElementById('cat-action-verify-fields');
+  const aFields = document.getElementById('cat-action-approve-fields');
+  const rFields = document.getElementById('cat-action-reject-fields');
+  const titleEl = document.getElementById('cat-action-title');
+
+  if (vFields) vFields.classList.add('hidden');
+  if (aFields) aFields.classList.add('hidden');
+  if (rFields) rFields.classList.add('hidden');
+
+  if (actionType === 'verify') {
+    if (titleEl) titleEl.innerHTML = `🔍 Verify Expense: <span style="color:#fff; margin-left:4px;">${escapeHtml(cat.name || catKey)}</span>`;
+    if (vFields) vFields.classList.remove('hidden');
+    const maxEl = document.getElementById('cat-verify-max-claimed');
+    if (maxEl) maxEl.innerText = (cat.claimedAmount || 0).toLocaleString();
+    const input = document.getElementById('cat-verify-amount-input');
+    if (input) {
+      input.max = cat.claimedAmount || 0;
+      input.value = cat.verifiedAmount !== null && cat.verifiedAmount !== undefined ? cat.verifiedAmount : (cat.claimedAmount || 0);
+      setTimeout(() => input.focus(), 50);
+    }
+    const cInput = document.getElementById('cat-verify-comment-input');
+    if (cInput) cInput.value = cat.verifiedComment || '';
+  } else if (actionType === 'approve') {
+    if (titleEl) titleEl.innerHTML = `★ Senior Admin Approve: <span style="color:#fff; margin-left:4px;">${escapeHtml(cat.name || catKey)}</span>`;
+    if (aFields) aFields.classList.remove('hidden');
+    const maxEl = document.getElementById('cat-approve-max-verified');
+    const maxVal = cat.verifiedAmount !== null && cat.verifiedAmount !== undefined ? cat.verifiedAmount : (cat.claimedAmount || 0);
+    if (maxEl) maxEl.innerText = Number(maxVal).toLocaleString();
+    const input = document.getElementById('cat-approve-amount-input');
+    if (input) {
+      input.max = maxVal;
+      input.value = cat.approvedAmount !== null && cat.approvedAmount !== undefined ? cat.approvedAmount : maxVal;
+      setTimeout(() => input.focus(), 50);
+    }
+    const pInput = document.getElementById('cat-approve-senior-passcode');
+    if (pInput) pInput.value = '';
+    const cInput = document.getElementById('cat-approve-comment-input');
+    if (cInput) cInput.value = cat.approvedComment || '';
+  } else if (actionType === 'reject') {
+    if (titleEl) titleEl.innerHTML = `✖ Reject Category: <span style="color:#ef4444; margin-left:4px;">${escapeHtml(cat.name || catKey)}</span>`;
+    if (rFields) rFields.classList.remove('hidden');
+    const rInput = document.getElementById('cat-reject-reason-input');
+    if (rInput) {
+      rInput.value = cat.rejectionReason || '';
+      setTimeout(() => rInput.focus(), 50);
+    }
+  }
+
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeCategoryActionBox() {
+  const box = document.getElementById('admin-bill-cat-action-box');
+  if (box) box.classList.add('hidden');
+  currentActiveCategoryKey = null;
+  currentActiveCategoryAction = null;
+}
+
+async function submitCategoryVerification() {
+  if (!currentActiveAdminBillId || !currentActiveCategoryKey) return;
+  const bill = currentActiveAdminBillData;
+  const cat = (bill && bill.categories && bill.categories[currentActiveCategoryKey]) || {};
+  const input = document.getElementById('cat-verify-amount-input');
+  const cInput = document.getElementById('cat-verify-comment-input');
+  const btn = document.getElementById('btn-submit-cat-verification');
+
+  const verifiedAmount = parseFloat(input?.value);
+  if (isNaN(verifiedAmount) || verifiedAmount < 0) {
+    showToast('Please enter a valid verified amount (>= 0)', 'error');
+    input?.focus();
+    return;
+  }
+  const maxAllowed = Number(cat.claimedAmount || 0);
+  if (verifiedAmount > maxAllowed) {
+    showToast(`Verified amount (Rs. ${verifiedAmount.toLocaleString()}) cannot exceed claimed amount (Rs. ${maxAllowed.toLocaleString()})`, 'error');
+    input?.focus();
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.verifyBillCategory(currentActiveAdminBillId, {
+      category: currentActiveCategoryKey,
+      verifiedAmount: verifiedAmount,
+      verifiedComment: (cInput?.value || '').trim()
+    });
+    if (res && res.success) {
+      showToast(`${cat.name || currentActiveCategoryKey} verified successfully!`, 'success');
+      closeCategoryActionBox();
+      await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
+      await loadAdminBills();
+    } else {
+      showToast((res && res.error) || 'Failed to verify category', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Verification failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function submitCategoryApproval() {
+  if (!currentActiveAdminBillId || !currentActiveCategoryKey) return;
+  const bill = currentActiveAdminBillData;
+  const cat = (bill && bill.categories && bill.categories[currentActiveCategoryKey]) || {};
+  const input = document.getElementById('cat-approve-amount-input');
+  const pInput = document.getElementById('cat-approve-senior-passcode');
+  const cInput = document.getElementById('cat-approve-comment-input');
+  const btn = document.getElementById('btn-submit-cat-approval');
+
+  const seniorPasscode = (pInput?.value || '').trim();
+  if (!seniorPasscode) {
+    showToast('Senior Admin Passcode is required to approve', 'error');
+    pInput?.focus();
+    return;
+  }
+
+  const approvedAmount = parseFloat(input?.value);
+  if (isNaN(approvedAmount) || approvedAmount < 0) {
+    showToast('Please enter a valid approved amount (>= 0)', 'error');
+    input?.focus();
+    return;
+  }
+  const maxAllowed = cat.verifiedAmount !== null && cat.verifiedAmount !== undefined ? Number(cat.verifiedAmount) : Number(cat.claimedAmount || 0);
+  if (approvedAmount > maxAllowed) {
+    showToast(`Approved amount (Rs. ${approvedAmount.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()})`, 'error');
+    input?.focus();
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.approveBillCategory(currentActiveAdminBillId, {
+      category: currentActiveCategoryKey,
+      approvedAmount: approvedAmount,
+      approvedComment: (cInput?.value || '').trim(),
+      seniorPasscode: seniorPasscode
+    });
+    if (res && res.success) {
+      showToast(`${cat.name || currentActiveCategoryKey} approved successfully!`, 'success');
+      closeCategoryActionBox();
+      await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
+      await loadAdminBills();
+    } else {
+      showToast((res && res.error) || 'Failed to approve category', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Approval failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function submitCategoryRejection() {
+  if (!currentActiveAdminBillId || !currentActiveCategoryKey) return;
+  const bill = currentActiveAdminBillData;
+  const cat = (bill && bill.categories && bill.categories[currentActiveCategoryKey]) || {};
+  const rInput = document.getElementById('cat-reject-reason-input');
+  const btn = document.getElementById('btn-submit-cat-rejection');
+
+  const reason = (rInput?.value || '').trim();
+  if (!reason) {
+    showToast('Please enter a reason for rejecting this category', 'error');
+    rInput?.focus();
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.rejectBillCategory(currentActiveAdminBillId, {
+      category: currentActiveCategoryKey,
+      reason: reason
+    });
+    if (res && res.success) {
+      showToast(`${cat.name || currentActiveCategoryKey} marked as rejected`, 'info');
+      closeCategoryActionBox();
+      await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
+      await loadAdminBills();
+    } else {
+      showToast((res && res.error) || 'Failed to reject category', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Rejection failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleAdminRejectBill(source) {
+  if (!currentActiveAdminBillId) return;
+  const reason = prompt('Please enter the reason for rejecting this entire bill:');
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showToast('Rejection reason cannot be empty', 'error');
+    return;
+  }
+
+  try {
+    const res = await API.rejectBill(currentActiveAdminBillId, {
+      reason: reason.trim()
+    });
+    if (res && res.success) {
+      showToast('Bill rejected', 'info');
+      await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
+      await loadAdminBills();
+    } else {
+      showToast((res && res.error) || 'Rejection failed', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Rejection failed'), 'error');
+  }
+}
+
+async function openAdminBillModal(billId, isReadOnly = false) {
   currentActiveAdminBillId = billId;
+  currentActiveAdminBillIsReadOnly = !!isReadOnly;
   const modal = document.getElementById('modal-admin-bill-details');
   if (!modal) return;
 
@@ -5990,22 +6407,14 @@ async function openAdminBillModal(billId) {
     const badge = document.getElementById('admin-bill-modal-status-badge');
     if (badge) badge.innerHTML = getBillStatusBadgeHtml(bill.status);
 
-    document.getElementById('admin-bill-modal-emp').innerText = bill.employeeName;
-    document.getElementById('admin-bill-modal-empid').innerText = bill.employeeId;
+    document.getElementById('admin-bill-modal-emp').innerText = bill.employeeName || '—';
+    document.getElementById('admin-bill-modal-empid').innerText = bill.employeeId || '—';
     document.getElementById('admin-bill-modal-site').innerText = bill.siteName || '—';
-    document.getElementById('admin-bill-modal-date').innerText = bill.date;
+    document.getElementById('admin-bill-modal-date').innerText = bill.date || '—';
     document.getElementById('admin-bill-modal-time').innerText = bill.createdAt ? new Date(bill.createdAt).toLocaleString() : '—';
 
-    const setExp = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) el.innerText = 'Rs. ' + (val || 0).toLocaleString();
-    };
-    setExp('admin-bill-modal-trans', bill.transportationExpense);
-    setExp('admin-bill-modal-mat', bill.materialExpense);
-    setExp('admin-bill-modal-lab', bill.labourExpense);
-    setExp('admin-bill-modal-acc', bill.accommodationExpense);
-    setExp('admin-bill-modal-oth', bill.otherExpense);
-    document.getElementById('admin-bill-modal-total-claimed').innerText = (bill.totalClaimedAmount || 0).toLocaleString();
+    renderBillCategoriesTable(bill, currentActiveAdminBillIsReadOnly);
+    closeCategoryActionBox();
 
     const descEl = document.getElementById('admin-bill-modal-desc');
     if (descEl) descEl.innerText = bill.description || 'No description provided.';
@@ -6034,10 +6443,12 @@ async function openAdminBillModal(billId) {
             `;
             item.addEventListener('click', () => {
               const w = window.open();
-              w.document.write('<iframe src="' + att.dataUrl + '" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>');
+              if (w) {
+                w.document.write('<iframe src="' + att.dataUrl + '" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>');
+              }
             });
           } else {
-            item.innerHTML = `<img src="${att.dataUrl}" alt="${escapeHtml(att.name)}" />`;
+            item.innerHTML = `<img src="${att.dataUrl}" alt="${escapeHtml(att.name || 'bill attachment')}" />`;
             item.addEventListener('click', () => {
               openPhotoModal(att.dataUrl);
             });
@@ -6047,110 +6458,13 @@ async function openAdminBillModal(billId) {
       }
     }
 
-    const verifySec = document.getElementById('admin-bill-verify-section');
-    const claimedVal = document.getElementById('admin-bill-claimed-val');
-    const verifyInput = document.getElementById('admin-bill-verify-input');
-    const verifyComment = document.getElementById('admin-bill-verify-comment-input');
-    if (claimedVal) claimedVal.innerText = (bill.totalClaimedAmount || 0).toLocaleString();
-
-    const apprSec = document.getElementById('admin-bill-approve-section');
-    const apprClaimed = document.getElementById('admin-bill-appr-claimed');
-    const apprVerified = document.getElementById('admin-bill-appr-verified');
-    const apprInput = document.getElementById('admin-bill-approve-input');
-    const apprComment = document.getElementById('admin-bill-approve-comment-input');
-    const seniorPasscodeInput = document.getElementById('admin-bill-senior-passcode-input');
-
-    if (apprClaimed) apprClaimed.innerText = (bill.totalClaimedAmount || 0).toLocaleString();
-    if (apprVerified) apprVerified.innerText = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? bill.verifiedAmount.toLocaleString() : '—';
-
-    if (bill.status === 'PENDING_VERIFICATION') {
-      if (verifySec) {
-        verifySec.style.display = 'block';
-        if (verifyInput) {
-          verifyInput.disabled = false;
-          verifyInput.value = bill.totalClaimedAmount;
-        }
-        if (verifyComment) {
-          verifyComment.disabled = false;
-          verifyComment.value = '';
-        }
-        const btnV = document.getElementById('btn-admin-verify-bill-submit');
-        if (btnV) btnV.style.display = 'inline-block';
-        const btnVR = document.getElementById('btn-admin-verify-reject-bill-submit');
-        if (btnVR) btnVR.style.display = 'inline-block';
+    const overallSec = document.getElementById('admin-bill-overall-actions');
+    if (overallSec) {
+      if (currentActiveAdminBillIsReadOnly || bill.status === 'APPROVED' || bill.status === 'REJECTED') {
+        overallSec.style.display = 'none';
+      } else {
+        overallSec.style.display = 'flex';
       }
-      if (apprSec) apprSec.style.display = 'none';
-    } else if (bill.status === 'VERIFIED') {
-      if (verifySec) {
-        verifySec.style.display = 'block';
-        if (verifyInput) {
-          verifyInput.disabled = true;
-          verifyInput.value = bill.verifiedAmount;
-        }
-        if (verifyComment) {
-          verifyComment.disabled = true;
-          verifyComment.value = bill.verifiedComment || '';
-        }
-        const btnV = document.getElementById('btn-admin-verify-bill-submit');
-        if (btnV) btnV.style.display = 'none';
-        const btnVR = document.getElementById('btn-admin-verify-reject-bill-submit');
-        if (btnVR) btnVR.style.display = 'none';
-      }
-      if (apprSec) {
-        apprSec.style.display = 'block';
-        if (apprInput) {
-          apprInput.disabled = false;
-          apprInput.value = bill.verifiedAmount;
-        }
-        if (apprComment) {
-          apprComment.disabled = false;
-          apprComment.value = '';
-        }
-        if (seniorPasscodeInput) {
-          seniorPasscodeInput.disabled = false;
-          seniorPasscodeInput.value = '';
-          seniorPasscodeInput.style.display = '';
-        }
-        const btnA = document.getElementById('btn-admin-approve-bill-submit');
-        if (btnA) btnA.style.display = 'inline-block';
-        const btnAR = document.getElementById('btn-admin-reject-bill-submit');
-        if (btnAR) btnAR.style.display = 'inline-block';
-      }
-    } else if (bill.status === 'APPROVED') {
-      if (verifySec) {
-        verifySec.style.display = 'block';
-        if (verifyInput) {
-          verifyInput.disabled = true;
-          verifyInput.value = bill.verifiedAmount;
-        }
-        if (verifyComment) {
-          verifyComment.disabled = true;
-          verifyComment.value = bill.verifiedComment || '';
-        }
-        const btnV = document.getElementById('btn-admin-verify-bill-submit');
-        if (btnV) btnV.style.display = 'none';
-        const btnVR = document.getElementById('btn-admin-verify-reject-bill-submit');
-        if (btnVR) btnVR.style.display = 'none';
-      }
-      if (apprSec) {
-        apprSec.style.display = 'block';
-        if (apprInput) {
-          apprInput.disabled = true;
-          apprInput.value = bill.approvedAmount;
-        }
-        if (apprComment) {
-          apprComment.disabled = true;
-          apprComment.value = bill.approvedComment || '';
-        }
-        if (seniorPasscodeInput) seniorPasscodeInput.style.display = 'none';
-        const btnA = document.getElementById('btn-admin-approve-bill-submit');
-        if (btnA) btnA.style.display = 'none';
-        const btnAR = document.getElementById('btn-admin-reject-bill-submit');
-        if (btnAR) btnAR.style.display = 'none';
-      }
-    } else if (bill.status === 'REJECTED') {
-      if (verifySec) verifySec.style.display = 'none';
-      if (apprSec) apprSec.style.display = 'none';
     }
 
     const auditList = document.getElementById('admin-bill-audit-list');
@@ -6178,117 +6492,10 @@ async function openAdminBillModal(billId) {
 function closeAdminBillDetailsModal() {
   const modal = document.getElementById('modal-admin-bill-details');
   if (modal) modal.classList.add('hidden');
+  closeCategoryActionBox();
   currentActiveAdminBillId = null;
   currentActiveAdminBillData = null;
-}
-
-async function handleAdminVerifyBill() {
-  if (!currentActiveAdminBillId || !currentActiveAdminBillData) return;
-  const bill = currentActiveAdminBillData;
-  const verifiedVal = parseFloat(document.getElementById('admin-bill-verify-input')?.value);
-  const comment = (document.getElementById('admin-bill-verify-comment-input')?.value || '').trim();
-
-  if (isNaN(verifiedVal) || verifiedVal < 0) {
-    showToast('Please enter a valid verified amount (>= 0)', 'error');
-    return;
-  }
-  if (verifiedVal > bill.totalClaimedAmount) {
-    showToast(`Verified amount (Rs. ${verifiedVal.toLocaleString()}) cannot exceed claimed amount (Rs. ${bill.totalClaimedAmount.toLocaleString()})`, 'error');
-    return;
-  }
-
-  const btn = document.getElementById('btn-admin-verify-bill-submit');
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await API.verifyBill(currentActiveAdminBillId, {
-      verifiedAmount: verifiedVal,
-      verifiedComment: comment
-    });
-    if (res.success) {
-      showToast('Bill verified successfully!', 'success');
-      await openAdminBillModal(currentActiveAdminBillId);
-      await loadAdminBills();
-    } else {
-      showToast(res.error || 'Verification failed', 'error');
-    }
-  } catch (err) {
-    showToast('Error: ' + (err.message || 'Verification failed'), 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-async function handleAdminApproveBill() {
-  if (!currentActiveAdminBillId || !currentActiveAdminBillData) return;
-  const bill = currentActiveAdminBillData;
-  const approvedVal = parseFloat(document.getElementById('admin-bill-approve-input')?.value);
-  const comment = (document.getElementById('admin-bill-approve-comment-input')?.value || '').trim();
-  const seniorPasscode = (document.getElementById('admin-bill-senior-passcode-input')?.value || '').trim();
-
-  if (!seniorPasscode) {
-    showToast('Senior Admin Passcode is required to approve this bill', 'error');
-    document.getElementById('admin-bill-senior-passcode-input')?.focus();
-    return;
-  }
-
-  if (isNaN(approvedVal) || approvedVal < 0) {
-    showToast('Please enter a valid approved amount (>= 0)', 'error');
-    return;
-  }
-
-  const maxAllowed = bill.verifiedAmount !== null && bill.verifiedAmount !== undefined ? bill.verifiedAmount : bill.totalClaimedAmount;
-  if (approvedVal > maxAllowed) {
-    showToast(`Approved amount (Rs. ${approvedVal.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()})`, 'error');
-    return;
-  }
-
-  const btn = document.getElementById('btn-admin-approve-bill-submit');
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await API.approveBill(currentActiveAdminBillId, {
-      approvedAmount: approvedVal,
-      approvedComment: comment,
-      seniorPasscode
-    });
-    if (res.success) {
-      showToast('Bill approved successfully!', 'success');
-      await openAdminBillModal(currentActiveAdminBillId);
-      await loadAdminBills();
-    } else {
-      showToast(res.error || 'Approval failed', 'error');
-    }
-  } catch (err) {
-    showToast('Error: ' + (err.message || 'Approval failed'), 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-async function handleAdminRejectBill(source) {
-  if (!currentActiveAdminBillId) return;
-  const reason = prompt('Please enter the reason for rejecting this bill:');
-  if (reason === null) return;
-  if (!reason.trim()) {
-    showToast('Rejection reason cannot be empty', 'error');
-    return;
-  }
-
-  try {
-    const res = await API.rejectBill(currentActiveAdminBillId, {
-      reason: reason.trim()
-    });
-    if (res.success) {
-      showToast('Bill rejected', 'info');
-      await openAdminBillModal(currentActiveAdminBillId);
-      await loadAdminBills();
-    } else {
-      showToast(res.error || 'Rejection failed', 'error');
-    }
-  } catch (err) {
-    showToast('Error: ' + (err.message || 'Rejection failed'), 'error');
-  }
+  currentActiveAdminBillIsReadOnly = false;
 }
 
 function initBillEventListeners() {
@@ -6381,24 +6588,24 @@ function initBillEventListeners() {
     btnCloseAdminModal.addEventListener('click', closeAdminBillDetailsModal);
   }
 
-  const btnVerifySubmit = document.getElementById('btn-admin-verify-bill-submit');
-  if (btnVerifySubmit) {
-    btnVerifySubmit.addEventListener('click', handleAdminVerifyBill);
+  const btnCatVerify = document.getElementById('btn-submit-cat-verification');
+  if (btnCatVerify) {
+    btnCatVerify.addEventListener('click', submitCategoryVerification);
   }
 
-  const btnVerifyReject = document.getElementById('btn-admin-verify-reject-bill-submit');
-  if (btnVerifyReject) {
-    btnVerifyReject.addEventListener('click', () => handleAdminRejectBill('verify'));
+  const btnCatApprove = document.getElementById('btn-submit-cat-approval');
+  if (btnCatApprove) {
+    btnCatApprove.addEventListener('click', submitCategoryApproval);
   }
 
-  const btnApproveSubmit = document.getElementById('btn-admin-approve-bill-submit');
-  if (btnApproveSubmit) {
-    btnApproveSubmit.addEventListener('click', handleAdminApproveBill);
+  const btnCatReject = document.getElementById('btn-submit-cat-rejection');
+  if (btnCatReject) {
+    btnCatReject.addEventListener('click', submitCategoryRejection);
   }
 
-  const btnApproveReject = document.getElementById('btn-admin-reject-bill-submit');
-  if (btnApproveReject) {
-    btnApproveReject.addEventListener('click', () => handleAdminRejectBill('approve'));
+  const btnRejectWhole = document.getElementById('btn-admin-reject-bill-submit');
+  if (btnRejectWhole) {
+    btnRejectWhole.addEventListener('click', () => handleAdminRejectBill('whole'));
   }
 
   window.addEventListener('popstate', (e) => {

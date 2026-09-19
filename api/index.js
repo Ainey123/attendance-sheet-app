@@ -1049,6 +1049,70 @@ module.exports = async (req, res) => {
       }
     }
 
+    if (path.match(/^bills\/([^\/]+)\/verify-category$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = path.split('/')[1];
+      const body = await parseBody(req);
+      try {
+        const updated = await db.verifyBillCategory(id, {
+          category: body.category,
+          verifiedAmount: body.verifiedAmount,
+          verificationComment: body.verificationComment,
+          verifiedBy: body.verifiedBy || 'Admin'
+        });
+        return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/reject-category$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = path.split('/')[1];
+      const body = await parseBody(req);
+      try {
+        const updated = await db.rejectBillCategory(id, {
+          category: body.category,
+          rejectionReason: body.rejectionReason,
+          rejectedBy: body.rejectedBy || 'Admin',
+          stage: body.stage || 'verification'
+        });
+        return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/approve-category$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      const body = await parseBody(req);
+      const provided = (body.seniorPasscode || body.passcode || headers['x-senior-passcode'] || adminPasscode || '').trim();
+      const validSenior = settings.seniorAdminPasscode || '9999';
+
+      if (provided !== validSenior) {
+        return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
+      }
+
+      const id = path.split('/')[1];
+      try {
+        const updated = await db.approveBillCategory(id, {
+          category: body.category,
+          approvedAmount: body.approvedAmount,
+          approvalComment: body.approvalComment,
+          approvedBy: body.approvedBy || 'Senior Admin'
+        });
+        return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
     if (path.match(/^bills\/([^\/]+)\/verify$/) && method === 'POST') {
       const settings = await db.getSettings();
       if (!isPasscodeValid(adminPasscode, settings)) {

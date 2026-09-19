@@ -1097,6 +1097,62 @@ app.get('/api/bills/:id', async (req, res) => {
   }
 });
 
+// POST /api/bills/:id/verify-category (Admin category verification)
+app.post('/api/bills/:id/verify-category', checkAdminAuth, async (req, res) => {
+  try {
+    const { category, verifiedAmount, verificationComment, verifiedBy } = req.body;
+    const updated = await db.verifyBillCategory(req.params.id, {
+      category,
+      verifiedAmount,
+      verificationComment,
+      verifiedBy: verifiedBy || 'Admin'
+    });
+    res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/reject-category (Admin or Senior Admin category rejection)
+app.post('/api/bills/:id/reject-category', checkAdminAuth, async (req, res) => {
+  try {
+    const { category, rejectionReason, rejectedBy, stage } = req.body;
+    const updated = await db.rejectBillCategory(req.params.id, {
+      category,
+      rejectionReason,
+      rejectedBy: rejectedBy || 'Admin',
+      stage: stage || 'verification'
+    });
+    res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/approve-category (Senior Admin category approval)
+app.post('/api/bills/:id/approve-category', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const provided = (req.body.seniorPasscode || req.body.passcode || req.headers['x-senior-passcode'] || req.headers['x-admin-passcode'] || '').trim();
+    const validSenior = settings.seniorAdminPasscode || '9999';
+
+    if (provided !== validSenior) {
+      return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
+    }
+
+    const { category, approvedAmount, approvalComment, approvedBy } = req.body;
+    const updated = await db.approveBillCategory(req.params.id, {
+      category,
+      approvedAmount,
+      approvalComment,
+      approvedBy: approvedBy || 'Senior Admin'
+    });
+    res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
 // POST /api/bills/:id/verify (Admin verification)
 app.post('/api/bills/:id/verify', checkAdminAuth, async (req, res) => {
   try {

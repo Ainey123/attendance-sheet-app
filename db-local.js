@@ -2359,13 +2359,44 @@ const db = {
       nextNum = `BILL-${String(val).padStart(6, '0')}`;
     }
 
+    const claimMap = {
+      transportation: transportationExpense,
+      material: materialExpense,
+      labour: labourExpense,
+      accommodation: accommodationExpense,
+      other: otherExpense
+    };
+
+    const categories = {};
+    BILL_EXPENSE_CATEGORIES.forEach(cat => {
+      const claimed = claimMap[cat];
+      categories[cat] = {
+        name: cat.charAt(0).toUpperCase() + cat.slice(1),
+        claimedAmount: claimed,
+        verifiedAmount: claimed === 0 ? 0 : null,
+        approvedAmount: claimed === 0 ? 0 : null,
+        status: claimed === 0 ? 'N/A' : 'SUBMITTED',
+        verificationStatus: claimed === 0 ? 'N/A' : 'PENDING',
+        approvalStatus: claimed === 0 ? 'N/A' : 'PENDING',
+        verificationComment: '',
+        approvalComment: '',
+        verifiedBy: null,
+        verifiedAt: null,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        rejectionReason: ''
+      };
+    });
+
     const newBill = {
       id: generateId('bill'),
       billNumber: nextNum,
       employeeId: String(billData.employeeId).trim(),
       employeeName: (billData.employeeName || 'Employee').trim(),
       siteName: billData.siteName.trim(),
-      billDate: billData.billDate || new Date().toISOString().split('T')[0],
+      billDate: billData.billDate || billData.date || new Date().toISOString().split('T')[0],
       submittedAt: nowIso,
       transportationExpense,
       materialExpense,
@@ -2373,9 +2404,12 @@ const db = {
       accommodationExpense,
       otherExpense,
       totalClaimedAmount,
+      totalVerifiedAmount: null,
+      totalApprovedAmount: null,
+      categories,
       description: (billData.description || '').trim(),
       attachments,
-      status: 'PENDING_VERIFICATION',
+      status: 'SUBMITTED',
       verifiedAmount: null,
       verifiedBy: null,
       verifiedAt: null,
@@ -2414,18 +2448,22 @@ const db = {
       });
     } catch (e) {}
 
-    return newBill;
+    return normalizeBillRecord(newBill);
   },
 
   async getBills({ employeeId = null, status = null, search = null } = {}) {
     loadData();
-    let list = (data.bills || []).map(b => ({ ...b }));
+    let list = (data.bills || []).map(b => normalizeBillRecord(b));
 
     if (employeeId) {
       list = list.filter(b => b.employeeId === employeeId);
     }
     if (status && status !== 'ALL') {
-      list = list.filter(b => b.status === status);
+      if (status === 'PENDING_VERIFICATION' || status === 'SUBMITTED') {
+        list = list.filter(b => b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION' || b.status === 'PARTIALLY_VERIFIED');
+      } else {
+        list = list.filter(b => b.status === status);
+      }
     }
     if (search && search.trim()) {
       const term = search.trim().toLowerCase();
@@ -2447,10 +2485,10 @@ const db = {
     if (!id) return null;
     loadData();
     const found = (data.bills || []).find(b => b.id === id);
-    return found ? { ...found } : null;
+    return found ? normalizeBillRecord(found) : null;
   },
 
-  async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin' } = {}) {
+  async verifyBillCategory(id, { category, verifiedAmount, verificationComment = '', verifiedBy = 'Admin' } = {}) {
     loadData();
     data.bills = data.bills || [];
     const idx = data.bills.findIndex(b => b.id === id);
@@ -2460,48 +2498,72 @@ const db = {
       throw err;
     }
 
-    const commentText = (verificationComment || verifiedComment || '').trim();
-    const bill = data.bills[idx];
+    const catName = String(category || '').toLowerCase().trim();
+    if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
+      const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+
+    const bill = normalizeBillRecord(data.bills[idx]);
+    const cat = bill.categories[catName];
+    if (!cat) {
+      const err = new Error(`Category "${catName}" not found in bill.`);
+      err.status = 400;
+      throw err;
+    }
+
     const numVerified = Number(verifiedAmount);
     if (isNaN(numVerified) || numVerified < 0) {
       const err = new Error('Verified amount must be a valid non-negative number.');
       err.status = 400;
       throw err;
     }
-    const claimedAmt = Number(bill.totalClaimedAmount) || 0;
-    if (numVerified > claimedAmt) {
-      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${claimedAmt.toLocaleString()}).`);
+
+    if (numVerified > cat.claimedAmount) {
+      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${cat.claimedAmount.toLocaleString()}) for ${catName}.`);
       err.status = 400;
       throw err;
     }
 
     const nowIso = new Date().toISOString();
+    const commentText = (verificationComment || '').trim();
+
+    cat.verifiedAmount = numVerified;
+    cat.verifiedBy = verifiedBy || 'Admin';
+    cat.verifiedAt = nowIso;
+    cat.verificationComment = commentText;
+    cat.verificationStatus = 'VERIFIED';
+    cat.status = 'VERIFIED';
+
+    const calc = computeBillTotalsAndStatus(bill.categories, bill.status);
+    bill.totalVerifiedAmount = calc.totalVerifiedAmount;
+    bill.totalApprovedAmount = calc.totalApprovedAmount;
+    bill.verifiedAmount = calc.totalVerifiedAmount;
+    bill.approvedAmount = calc.totalApprovedAmount;
+    bill.status = calc.status;
+
     const auditEntry = {
-      action: 'VERIFIED',
-      by: verifiedBy,
+      action: 'CATEGORY_VERIFIED',
+      category: catName,
+      by: verifiedBy || 'Admin',
       at: nowIso,
       details: {
-        claimedAmount: claimedAmt,
+        claimedAmount: cat.claimedAmount,
         verifiedAmount: numVerified,
-        comment: commentText
+        comment: commentText,
+        billStatus: bill.status
       }
     };
-    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
-
-    bill.verifiedAmount = numVerified;
-    bill.verifiedBy = verifiedBy || 'Admin';
-    bill.verifiedAt = nowIso;
-    bill.verificationComment = commentText;
-    bill.verifiedComment = commentText;
-    bill.status = 'VERIFIED';
-    bill.auditLog = auditLog;
+    bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
     bill.updatedAt = nowIso;
 
+    data.bills[idx] = bill;
     saveData();
-    return { ...bill };
+    return normalizeBillRecord(bill);
   },
 
-  async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin' } = {}) {
+  async rejectBillCategory(id, { category, rejectionReason = '', reason = '', rejectedBy = 'Admin', stage = 'verification' } = {}) {
     loadData();
     data.bills = data.bills || [];
     const idx = data.bills.findIndex(b => b.id === id);
@@ -2511,8 +2573,106 @@ const db = {
       throw err;
     }
 
-    const commentText = (approvalComment || approvedComment || '').trim();
-    const bill = data.bills[idx];
+    const catName = String(category || '').toLowerCase().trim();
+    if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
+      const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+
+    const bill = normalizeBillRecord(data.bills[idx]);
+    const cat = bill.categories[catName];
+    if (!cat) {
+      const err = new Error(`Category "${catName}" not found in bill.`);
+      err.status = 400;
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const reasonText = (rejectionReason || reason || 'Rejected by Admin').trim();
+
+    if (stage === 'approval') {
+      cat.approvalStatus = 'REJECTED';
+      cat.approvedAmount = 0;
+    } else {
+      cat.verificationStatus = 'REJECTED';
+      cat.verifiedAmount = 0;
+      cat.approvalStatus = 'REJECTED';
+      cat.approvedAmount = 0;
+    }
+    cat.status = 'REJECTED';
+    cat.rejectedBy = rejectedBy || 'Admin';
+    cat.rejectedAt = nowIso;
+    cat.rejectionReason = reasonText;
+
+    const calc = computeBillTotalsAndStatus(bill.categories, bill.status);
+    bill.totalVerifiedAmount = calc.totalVerifiedAmount;
+    bill.totalApprovedAmount = calc.totalApprovedAmount;
+    bill.verifiedAmount = calc.totalVerifiedAmount;
+    bill.approvedAmount = calc.totalApprovedAmount;
+    bill.status = calc.status;
+
+    const auditEntry = {
+      action: 'CATEGORY_REJECTED',
+      category: catName,
+      stage,
+      by: rejectedBy || 'Admin',
+      at: nowIso,
+      details: {
+        claimedAmount: cat.claimedAmount,
+        reason: reasonText,
+        billStatus: bill.status
+      }
+    };
+    bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+    bill.updatedAt = nowIso;
+
+    data.bills[idx] = bill;
+    saveData();
+    return normalizeBillRecord(bill);
+  },
+
+  async approveBillCategory(id, { category, approvedAmount, approvalComment = '', approvedBy = 'Senior Admin', seniorPasscode } = {}) {
+    if (seniorPasscode !== undefined) {
+      const settings = await this.getSettings();
+      const validPass = (settings && settings.seniorAdminPasscode) || '9999';
+      if (String(seniorPasscode).trim() !== validPass) {
+        const err = new Error('Invalid Senior Admin Passcode. Approval requires authorization.');
+        err.status = 401;
+        throw err;
+      }
+    }
+
+    loadData();
+    data.bills = data.bills || [];
+    const idx = data.bills.findIndex(b => b.id === id);
+    if (idx === -1) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const catName = String(category || '').toLowerCase().trim();
+    if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
+      const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+
+    const bill = normalizeBillRecord(data.bills[idx]);
+    const cat = bill.categories[catName];
+    if (!cat) {
+      const err = new Error(`Category "${catName}" not found in bill.`);
+      err.status = 400;
+      throw err;
+    }
+
+    if (cat.verificationStatus !== 'VERIFIED') {
+      const err = new Error(`Category "${catName}" cannot be approved because it is ${cat.verificationStatus || 'PENDING'}. It must be VERIFIED first.`);
+      err.status = 400;
+      throw err;
+    }
+
     const numApproved = Number(approvedAmount);
     if (isNaN(numApproved) || numApproved < 0) {
       const err = new Error('Approved amount must be a valid non-negative number.');
@@ -2520,115 +2680,466 @@ const db = {
       throw err;
     }
 
-    const maxAllowed = (bill.verifiedAmount !== null && bill.verifiedAmount !== undefined)
-      ? Number(bill.verifiedAmount)
-      : Number(bill.totalClaimedAmount);
+    const maxAllowed = Number(cat.verifiedAmount);
+    if (numApproved > maxAllowed) {
+      const err = new Error(`Approved amount (Rs. ${numApproved.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}) for ${catName}.`);
+      err.status = 400;
+      throw err;
+    }
 
+    const nowIso = new Date().toISOString();
+    const commentText = (approvalComment || '').trim();
+
+    cat.approvedAmount = numApproved;
+    cat.approvedBy = approvedBy || 'Senior Admin';
+    cat.approvedAt = nowIso;
+    cat.approvalComment = commentText;
+    cat.approvalStatus = 'APPROVED';
+    cat.status = 'APPROVED';
+
+    const calc = computeBillTotalsAndStatus(bill.categories, bill.status);
+    bill.totalVerifiedAmount = calc.totalVerifiedAmount;
+    bill.totalApprovedAmount = calc.totalApprovedAmount;
+    bill.verifiedAmount = calc.totalVerifiedAmount;
+    bill.approvedAmount = calc.totalApprovedAmount;
+    bill.status = calc.status;
+
+    const auditEntry = {
+      action: 'CATEGORY_APPROVED',
+      category: catName,
+      by: approvedBy || 'Senior Admin',
+      at: nowIso,
+      details: {
+        verifiedAmount: cat.verifiedAmount,
+        approvedAmount: numApproved,
+        comment: commentText,
+        billStatus: bill.status
+      }
+    };
+    bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+    bill.updatedAt = nowIso;
+
+    data.bills[idx] = bill;
+    saveData();
+    return normalizeBillRecord(bill);
+  },
+
+  async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin' } = {}) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+    const bill = normalizeBillRecord(rawBill);
+    const numVerified = Number(verifiedAmount);
+    if (isNaN(numVerified) || numVerified < 0) {
+      const err = new Error('Verified amount must be a valid non-negative number.');
+      err.status = 400;
+      throw err;
+    }
+    if (numVerified > bill.totalClaimedAmount) {
+      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${bill.totalClaimedAmount.toLocaleString()}).`);
+      err.status = 400;
+      throw err;
+    }
+
+    const ratio = bill.totalClaimedAmount > 0 ? (numVerified / bill.totalClaimedAmount) : 1;
+    let runningVerified = 0;
+    const activeCats = BILL_EXPENSE_CATEGORIES.filter(c => bill.categories[c].claimedAmount > 0);
+    for (let i = 0; i < activeCats.length; i++) {
+      const catKey = activeCats[i];
+      let catAmt = Math.round(bill.categories[catKey].claimedAmount * ratio);
+      if (i === activeCats.length - 1) {
+        catAmt = numVerified - runningVerified;
+      } else {
+        runningVerified += catAmt;
+      }
+      catAmt = Math.min(catAmt, bill.categories[catKey].claimedAmount);
+      await this.verifyBillCategory(id, {
+        category: catKey,
+        verifiedAmount: Math.max(0, catAmt),
+        verificationComment: verificationComment || verifiedComment || '',
+        verifiedBy
+      });
+    }
+    return this.getBillById(id);
+  },
+
+  async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin' } = {}) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+    const bill = normalizeBillRecord(rawBill);
+    const numApproved = Number(approvedAmount);
+    if (isNaN(numApproved) || numApproved < 0) {
+      const err = new Error('Approved amount must be a valid non-negative number.');
+      err.status = 400;
+      throw err;
+    }
+    const maxAllowed = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.totalClaimedAmount;
     if (numApproved > maxAllowed) {
       const err = new Error(`Approved amount (Rs. ${numApproved.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}).`);
       err.status = 400;
       throw err;
     }
 
-    const nowIso = new Date().toISOString();
-    const auditEntry = {
-      action: 'APPROVED',
-      by: approvedBy,
-      at: nowIso,
-      details: {
-        claimedAmount: Number(bill.totalClaimedAmount),
-        verifiedAmount: bill.verifiedAmount,
-        approvedAmount: numApproved,
-        comment: commentText
+    const ratio = maxAllowed > 0 ? (numApproved / maxAllowed) : 1;
+    let runningApproved = 0;
+    const verifiedCats = BILL_EXPENSE_CATEGORIES.filter(c => bill.categories[c].verificationStatus === 'VERIFIED');
+    for (let i = 0; i < verifiedCats.length; i++) {
+      const catKey = verifiedCats[i];
+      let catAmt = Math.round(bill.categories[catKey].verifiedAmount * ratio);
+      if (i === verifiedCats.length - 1) {
+        catAmt = numApproved - runningApproved;
+      } else {
+        runningApproved += catAmt;
       }
-    };
-    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
-
-    bill.approvedAmount = numApproved;
-    bill.approvedBy = approvedBy || 'Senior Admin';
-    bill.approvedAt = nowIso;
-    bill.approvalComment = commentText;
-    bill.approvedComment = commentText;
-    bill.status = 'APPROVED';
-    bill.auditLog = auditLog;
-    bill.updatedAt = nowIso;
-
-    saveData();
-    return { ...bill };
+      catAmt = Math.min(catAmt, bill.categories[catKey].verifiedAmount);
+      await this.approveBillCategory(id, {
+        category: catKey,
+        approvedAmount: Math.max(0, catAmt),
+        approvalComment: approvalComment || approvedComment || '',
+        approvedBy
+      });
+    }
+    return this.getBillById(id);
   },
 
   async rejectBill(id, { rejectionReason = '', reason = '', rejectedBy = 'Admin' } = {}) {
-    loadData();
-    data.bills = data.bills || [];
-    const idx = data.bills.findIndex(b => b.id === id);
-    if (idx === -1) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
       const err = new Error('Bill not found.');
       err.status = 404;
       throw err;
     }
-
-    const nowIso = new Date().toISOString();
+    const bill = normalizeBillRecord(rawBill);
     const reasonText = (rejectionReason || reason || 'Rejected by Admin').trim();
 
-    const bill = data.bills[idx];
-    const auditEntry = {
-      action: 'REJECTED',
-      by: rejectedBy,
-      at: nowIso,
-      details: {
-        claimedAmount: Number(bill.totalClaimedAmount),
-        verifiedAmount: bill.verifiedAmount,
-        reason: reasonText
-      }
-    };
-    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+    const activeCats = BILL_EXPENSE_CATEGORIES.filter(c => bill.categories[c].claimedAmount > 0);
+    for (const catKey of activeCats) {
+      await this.rejectBillCategory(id, {
+        category: catKey,
+        rejectionReason: reasonText,
+        rejectedBy,
+        stage: 'verification'
+      });
+    }
 
-    bill.status = 'REJECTED';
-    bill.rejectedBy = rejectedBy || 'Admin';
-    bill.rejectedAt = nowIso;
-    bill.rejectionReason = reasonText;
-    bill.auditLog = auditLog;
-    bill.updatedAt = nowIso;
+    loadData();
+    const idx = (data.bills || []).findIndex(b => b.id === id);
+    if (idx !== -1) {
+      const nowIso = new Date().toISOString();
+      const existingLog = Array.isArray(data.bills[idx].auditLog) ? data.bills[idx].auditLog : [];
+      const auditLog = [...existingLog, {
+        action: 'REJECTED',
+        by: rejectedBy || 'Admin',
+        at: nowIso,
+        details: {
+          reason: reasonText,
+          billStatus: 'REJECTED'
+        }
+      }];
 
-    saveData();
-    return { ...bill };
+      data.bills[idx] = {
+        ...data.bills[idx],
+        rejectedBy,
+        rejectedAt: nowIso,
+        rejectionReason: reasonText,
+        status: 'REJECTED',
+        auditLog,
+        updatedAt: nowIso
+      };
+      saveData();
+    }
+    return this.getBillById(id);
   },
 
   async getBillStats() {
-    const bills = await this.getBills();
+    const rawBills = await this.getBills();
+    const bills = (rawBills || []).map(b => normalizeBillRecord(b));
     const totalBills = bills.length;
     let pendingVerification = 0;
+    let partiallyVerified = 0;
     let verified = 0;
+    let partiallyApproved = 0;
     let approved = 0;
     let rejected = 0;
     let totalClaimedAmount = 0;
+    let totalVerifiedAmount = 0;
     let totalApprovedAmount = 0;
 
     bills.forEach(b => {
       totalClaimedAmount += (Number(b.totalClaimedAmount) || 0);
-      if (b.status === 'PENDING_VERIFICATION') pendingVerification++;
+      totalVerifiedAmount += (Number(b.totalVerifiedAmount) || 0);
+      totalApprovedAmount += (Number(b.totalApprovedAmount) || 0);
+
+      if (b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION') pendingVerification++;
+      else if (b.status === 'PARTIALLY_VERIFIED') partiallyVerified++;
       else if (b.status === 'VERIFIED') verified++;
-      else if (b.status === 'APPROVED') {
-        approved++;
-        totalApprovedAmount += (Number(b.approvedAmount) || 0);
-      } else if (b.status === 'REJECTED') rejected++;
+      else if (b.status === 'PARTIALLY_APPROVED') partiallyApproved++;
+      else if (b.status === 'APPROVED') approved++;
+      else if (b.status === 'REJECTED') rejected++;
     });
 
     return {
       totalBills,
-      pendingVerification,
-      pendingVerificationCount: pendingVerification,
+      pendingVerification: pendingVerification + partiallyVerified,
+      pendingVerificationCount: pendingVerification + partiallyVerified,
+      partiallyVerified,
+      partiallyVerifiedCount: partiallyVerified,
       verified,
       verifiedCount: verified,
+      partiallyApproved,
+      partiallyApprovedCount: partiallyApproved,
       approved,
       approvedCount: approved,
       rejected,
       rejectedCount: rejected,
       totalClaimedAmount,
+      totalVerifiedAmount,
       totalApprovedAmount
     };
   }
 };
+
+const BILL_EXPENSE_CATEGORIES = ['transportation', 'material', 'labour', 'accommodation', 'other'];
+
+function computeBillTotalsAndStatus(categories, currentOverallStatus) {
+  let totalClaimed = 0;
+  let totalVerified = 0;
+  let totalApproved = 0;
+  let hasAnyVerified = false;
+  let hasAnyApproved = false;
+
+  let activeCount = 0;
+  let verifiedCount = 0;
+  let approvedCount = 0;
+  let rejectedAtVerificationCount = 0;
+  let rejectedAtApprovalCount = 0;
+
+  BILL_EXPENSE_CATEGORIES.forEach(c => {
+    const cat = categories[c];
+    if (!cat) return;
+    const claimed = Math.max(0, Number(cat.claimedAmount) || 0);
+    totalClaimed += claimed;
+
+    if (claimed > 0) {
+      activeCount++;
+
+      if (cat.verificationStatus === 'REJECTED') {
+        rejectedAtVerificationCount++;
+      } else if (cat.verificationStatus === 'VERIFIED') {
+        verifiedCount++;
+        const vAmt = Math.max(0, Number(cat.verifiedAmount) || 0);
+        totalVerified += vAmt;
+        hasAnyVerified = true;
+
+        if (cat.approvalStatus === 'REJECTED') {
+          rejectedAtApprovalCount++;
+        } else if (cat.approvalStatus === 'APPROVED') {
+          approvedCount++;
+          const aAmt = Math.max(0, Number(cat.approvedAmount) || 0);
+          totalApproved += aAmt;
+          hasAnyApproved = true;
+        }
+      }
+    }
+  });
+
+  if (currentOverallStatus === 'REJECTED' && approvedCount === 0 && verifiedCount === 0) {
+    return {
+      totalClaimedAmount: totalClaimed,
+      totalVerifiedAmount: 0,
+      totalApprovedAmount: 0,
+      status: 'REJECTED'
+    };
+  }
+
+  const resolvedVerificationCount = verifiedCount + rejectedAtVerificationCount;
+  let status = 'SUBMITTED';
+
+  if (activeCount > 0 && rejectedAtVerificationCount === activeCount) {
+    status = 'REJECTED';
+  } else if (activeCount > 0 && resolvedVerificationCount === activeCount) {
+    const resolvedApprovalCount = approvedCount + rejectedAtApprovalCount;
+    if (verifiedCount > 0 && approvedCount === verifiedCount) {
+      status = 'APPROVED';
+    } else if (approvedCount > 0) {
+      status = 'PARTIALLY_APPROVED';
+    } else if (verifiedCount > 0 && resolvedApprovalCount === verifiedCount && approvedCount === 0) {
+      status = 'REJECTED';
+    } else {
+      status = 'VERIFIED';
+    }
+  } else if (resolvedVerificationCount > 0) {
+    status = 'PARTIALLY_VERIFIED';
+  } else {
+    status = 'SUBMITTED';
+  }
+
+  return {
+    totalClaimedAmount: totalClaimed,
+    totalVerifiedAmount: hasAnyVerified ? totalVerified : 0,
+    totalApprovedAmount: hasAnyApproved ? totalApproved : 0,
+    status
+  };
+}
+
+function normalizeBillRecord(bill) {
+  if (!bill) return null;
+  const b = { ...bill };
+
+  const transportationExpense = Math.max(0, Number(b.transportationExpense) || 0);
+  const materialExpense = Math.max(0, Number(b.materialExpense) || 0);
+  const labourExpense = Math.max(0, Number(b.labourExpense) || 0);
+  const accommodationExpense = Math.max(0, Number(b.accommodationExpense) || 0);
+  const otherExpense = Math.max(0, Number(b.otherExpense) || 0);
+
+  b.transportationExpense = transportationExpense;
+  b.materialExpense = materialExpense;
+  b.labourExpense = labourExpense;
+  b.accommodationExpense = accommodationExpense;
+  b.otherExpense = otherExpense;
+
+  const claimMap = {
+    transportation: transportationExpense,
+    material: materialExpense,
+    labour: labourExpense,
+    accommodation: accommodationExpense,
+    other: otherExpense
+  };
+
+  let categories = b.categories;
+  if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
+    categories = {};
+    const isLegacyVerified = b.status === 'VERIFIED' || b.status === 'APPROVED';
+    const isLegacyApproved = b.status === 'APPROVED';
+    const isLegacyRejected = b.status === 'REJECTED';
+
+    BILL_EXPENSE_CATEGORIES.forEach(cat => {
+      const claimed = claimMap[cat];
+      if (claimed === 0) {
+        categories[cat] = {
+          claimedAmount: 0,
+          verifiedAmount: 0,
+          approvedAmount: 0,
+          verificationStatus: 'N/A',
+          approvalStatus: 'N/A',
+          verificationComment: '',
+          approvalComment: '',
+          verifiedBy: null,
+          verifiedAt: null,
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: ''
+        };
+      } else if (isLegacyRejected) {
+        categories[cat] = {
+          claimedAmount: claimed,
+          verifiedAmount: 0,
+          approvedAmount: 0,
+          verificationStatus: 'REJECTED',
+          approvalStatus: 'REJECTED',
+          verificationComment: '',
+          approvalComment: '',
+          verifiedBy: null,
+          verifiedAt: null,
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: b.rejectedBy || 'Admin',
+          rejectedAt: b.rejectedAt || b.updatedAt,
+          rejectionReason: b.rejectionReason || 'Legacy bill rejection'
+        };
+      } else {
+        categories[cat] = {
+          claimedAmount: claimed,
+          verifiedAmount: isLegacyVerified ? claimed : null,
+          approvedAmount: isLegacyApproved ? claimed : null,
+          verificationStatus: isLegacyVerified ? 'VERIFIED' : 'PENDING',
+          approvalStatus: isLegacyApproved ? 'APPROVED' : 'PENDING',
+          verificationComment: isLegacyVerified ? (b.verificationComment || b.verifiedComment || '') : '',
+          approvalComment: isLegacyApproved ? (b.approvalComment || b.approvedComment || '') : '',
+          verifiedBy: isLegacyVerified ? (b.verifiedBy || 'Admin') : null,
+          verifiedAt: isLegacyVerified ? (b.verifiedAt || b.updatedAt) : null,
+          approvedBy: isLegacyApproved ? (b.approvedBy || 'Senior Admin') : null,
+          approvedAt: isLegacyApproved ? (b.approvedAt || b.updatedAt) : null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: ''
+        };
+      }
+    });
+  } else {
+    const existing = { ...categories };
+    categories = {};
+    BILL_EXPENSE_CATEGORIES.forEach(cat => {
+      const claimed = claimMap[cat];
+      if (existing[cat]) {
+        const item = { ...existing[cat] };
+        item.claimedAmount = claimed;
+        if (claimed === 0) {
+          item.verificationStatus = 'N/A';
+          item.approvalStatus = 'N/A';
+          item.verifiedAmount = 0;
+          item.approvedAmount = 0;
+        } else {
+          item.verificationStatus = item.verificationStatus || 'PENDING';
+          item.approvalStatus = item.approvalStatus || 'PENDING';
+        }
+        categories[cat] = item;
+      } else {
+        categories[cat] = {
+          claimedAmount: claimed,
+          verifiedAmount: claimed === 0 ? 0 : null,
+          approvedAmount: claimed === 0 ? 0 : null,
+          verificationStatus: claimed === 0 ? 'N/A' : 'PENDING',
+          approvalStatus: claimed === 0 ? 'N/A' : 'PENDING',
+          verificationComment: '',
+          approvalComment: '',
+          verifiedBy: null,
+          verifiedAt: null,
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: ''
+        };
+      }
+    });
+  }
+
+  BILL_EXPENSE_CATEGORIES.forEach(cat => {
+    const c = categories[cat];
+    if (c) {
+      if (!c.name) c.name = cat.charAt(0).toUpperCase() + cat.slice(1);
+      if (!c.status) {
+        if (c.claimedAmount === 0) c.status = 'N/A';
+        else if (c.approvalStatus === 'APPROVED') c.status = 'APPROVED';
+        else if (c.verificationStatus === 'REJECTED' || c.approvalStatus === 'REJECTED') c.status = 'REJECTED';
+        else if (c.verificationStatus === 'VERIFIED') c.status = 'VERIFIED';
+        else c.status = 'SUBMITTED';
+      }
+    }
+  });
+
+  b.categories = categories;
+
+  const calc = computeBillTotalsAndStatus(categories, b.status);
+  b.totalClaimedAmount = calc.totalClaimedAmount;
+  b.totalVerifiedAmount = calc.totalVerifiedAmount;
+  b.totalApprovedAmount = calc.totalApprovedAmount;
+  b.verifiedAmount = calc.totalVerifiedAmount;
+  b.approvedAmount = calc.totalApprovedAmount;
+  b.status = calc.status;
+
+  return b;
+}
 
 // Load data on module init
 loadData();

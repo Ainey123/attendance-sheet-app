@@ -313,6 +313,13 @@ function handleSupabaseError(error, operation) {
 }
 
 const db = {
+  get useLocalFallback() {
+    return useLocalFallback;
+  },
+  set useLocalFallback(val) {
+    useLocalFallback = !!val;
+  },
+
   // --- Employee Methods ---
   async checkAndUpdateLinkCycle(emp) {
     if (!emp || emp.status === 'DELETED' || emp.isArchived) return emp;
@@ -2645,36 +2652,16 @@ const db = {
       let query = supabase.from('comments').select('*').order('createdAt', { ascending: true });
       if (employeeId) query = query.eq('employeeId', employeeId);
       const { data, error } = await query;
-      if (error) {
-        console.warn('Supabase fetch comments error:', error.message);
-        // If table doesn't exist, try to create it via RPC
-        if (error.message && (error.message.includes('does not exist') || error.message.includes('relation') || error.code === '42P01')) {
-          try {
-            await supabase.rpc('exec_sql', {
-              sql: `CREATE TABLE IF NOT EXISTS comments (
-                "id" TEXT PRIMARY KEY,
-                "employeeId" TEXT NOT NULL,
-                "employeeName" TEXT NOT NULL,
-                "sender" TEXT NOT NULL,
-                "senderName" TEXT NOT NULL,
-                "message" TEXT NOT NULL,
-                "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                "isRead" BOOLEAN DEFAULT TRUE
-              );
-              ALTER TABLE comments ADD COLUMN IF NOT EXISTS "isRead" BOOLEAN DEFAULT TRUE;`
-            });
-            console.log('comments table created via fallback RPC');
-          } catch (rpcErr) {
-            console.warn('Could not auto-create comments table:', rpcErr.message);
-          }
-        }
-        // Always fall through to local fallback on error
-        const dataLocal = loadLocalData();
-        let list = dataLocal.comments || [];
-        if (employeeId) list = list.filter(c => c.employeeId === employeeId);
-        return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      }
-      return data || [];
+      let list = (data && !error) ? [...data] : [];
+      // Also merge any locally saved fallback comments
+      const localData = loadLocalData();
+      let localList = localData.comments || [];
+      if (employeeId) localList = localList.filter(c => c.employeeId === employeeId);
+      const existingIds = new Set(list.map(c => c.id));
+      localList.forEach(c => {
+        if (!existingIds.has(c.id)) list.push(c);
+      });
+      return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     } catch (error) {
       console.warn('getComments error:', error.message);
       const dataLocal = loadLocalData();
@@ -2683,7 +2670,6 @@ const db = {
       return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     }
   },
-
 
   async addComment({ employeeId, employeeName, sender, senderName, message }) {
     const senderNorm = (sender || 'employee').toLowerCase();
@@ -2712,6 +2698,18 @@ const db = {
         .select()
         .single();
       if (error) {
+        if (error.message && error.message.includes('isRead')) {
+          const commentNoRead = { ...newComment };
+          delete commentNoRead.isRead;
+          const { data: retryData, error: retryErr } = await supabase
+            .from('comments')
+            .insert([commentNoRead])
+            .select()
+            .single();
+          if (!retryErr) {
+            return retryData || newComment;
+          }
+        }
         console.warn('Supabase insert comment failed, using local fallback:', error.message);
         const localData = loadLocalData();
         if (!localData.comments) localData.comments = [];
@@ -5129,6 +5127,37 @@ const db = {
       throw err;
     }
 
+    const claimMap = {
+      transportation: transportationExpense,
+      material: materialExpense,
+      labour: labourExpense,
+      accommodation: accommodationExpense,
+      other: otherExpense
+    };
+
+    const categories = {};
+    BILL_EXPENSE_CATEGORIES.forEach(cat => {
+      const claimed = claimMap[cat];
+      categories[cat] = {
+        name: cat.charAt(0).toUpperCase() + cat.slice(1),
+        claimedAmount: claimed,
+        verifiedAmount: claimed === 0 ? 0 : null,
+        approvedAmount: claimed === 0 ? 0 : null,
+        status: claimed === 0 ? 'N/A' : 'SUBMITTED',
+        verificationStatus: claimed === 0 ? 'N/A' : 'PENDING',
+        approvalStatus: claimed === 0 ? 'N/A' : 'PENDING',
+        verificationComment: '',
+        approvalComment: '',
+        verifiedBy: null,
+        verifiedAt: null,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        rejectionReason: ''
+      };
+    });
+
     // Process creation sequentially via atomic mutex lock
     return withBillLock(async () => {
       const nowIso = new Date().toISOString();
@@ -5140,7 +5169,7 @@ const db = {
         employeeId: String(billData.employeeId).trim(),
         employeeName: (billData.employeeName || 'Employee').trim(),
         siteName: billData.siteName.trim(),
-        billDate: billData.billDate || getLocalDateString(),
+        billDate: billData.billDate || billData.date || getLocalDateString(),
         submittedAt: nowIso,
         transportationExpense,
         materialExpense,
@@ -5148,9 +5177,12 @@ const db = {
         accommodationExpense,
         otherExpense,
         totalClaimedAmount,
+        totalVerifiedAmount: null,
+        totalApprovedAmount: null,
+        categories,
         description: (billData.description || '').trim(),
         attachments,
-        status: 'PENDING_VERIFICATION',
+        status: 'SUBMITTED',
         verifiedAmount: null,
         verifiedBy: null,
         verifiedAt: null,
@@ -5177,7 +5209,6 @@ const db = {
       if (useLocalFallback) {
         const data = loadLocalData();
         data.bills = data.bills || [];
-        // Ensure uniqueness
         if (data.bills.some(b => b.billNumber === newBill.billNumber)) {
           let maxNum = 0;
           data.bills.forEach(b => {
@@ -5200,7 +5231,6 @@ const db = {
             .single();
 
           if (error) {
-            // If duplicate key error on billNumber, retry with next increment
             if (error.code === '23505' || String(error.message).includes('duplicate key')) {
               console.warn('Concurrent billNumber collision detected, incrementing sequence...');
               const retryNum = await this.getNextBillNumber();
@@ -5243,7 +5273,7 @@ const db = {
         console.warn('Persistent notification creation failed (non-fatal):', e.message);
       }
 
-      return newBill;
+      return normalizeBillRecord(newBill);
     });
   },
 
@@ -5252,7 +5282,7 @@ const db = {
     let list = [];
     if (useLocalFallback) {
       const data = loadLocalData();
-      list = (data.bills || []).map(b => ({ ...b }));
+      list = (data.bills || []).map(b => normalizeBillRecord(b));
     } else {
       try {
         let query = supabase.from('bills').select('*').order('submittedAt', { ascending: false });
@@ -5260,16 +5290,20 @@ const db = {
           query = query.eq('employeeId', employeeId);
         }
         if (status && status !== 'ALL') {
-          query = query.eq('status', status);
+          if (status === 'PENDING_VERIFICATION' || status === 'SUBMITTED') {
+            query = query.in('status', ['SUBMITTED', 'PENDING_VERIFICATION', 'PARTIALLY_VERIFIED']);
+          } else {
+            query = query.eq('status', status);
+          }
         }
         const { data, error } = await query;
         if (error) throw error;
-        list = data || [];
+        list = (data || []).map(b => normalizeBillRecord(b));
       } catch (err) {
         if (isQuotaOrNetworkError(err)) {
           useLocalFallback = true;
           const data = loadLocalData();
-          list = (data.bills || []).map(b => ({ ...b }));
+          list = (data.bills || []).map(b => normalizeBillRecord(b));
         } else {
           handleSupabaseError(err, 'get bills');
           throw err;
@@ -5282,7 +5316,11 @@ const db = {
       list = list.filter(b => b.employeeId === employeeId);
     }
     if (status && status !== 'ALL') {
-      list = list.filter(b => b.status === status);
+      if (status === 'PENDING_VERIFICATION' || status === 'SUBMITTED') {
+        list = list.filter(b => b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION' || b.status === 'PARTIALLY_VERIFIED');
+      } else {
+        list = list.filter(b => b.status === status);
+      }
     }
     if (search && search.trim()) {
       const term = search.trim().toLowerCase();
@@ -5306,7 +5344,7 @@ const db = {
     if (useLocalFallback) {
       const data = loadLocalData();
       const found = (data.bills || []).find(b => b.id === id);
-      return found ? { ...found } : null;
+      return found ? normalizeBillRecord(found) : null;
     }
     try {
       const { data, error } = await supabase.from('bills').select('*').eq('id', id).single();
@@ -5314,296 +5352,861 @@ const db = {
         if (error.code === 'PGRST116') return null;
         throw error;
       }
-      return data;
+      return normalizeBillRecord(data);
     } catch (err) {
       if (isQuotaOrNetworkError(err)) {
         useLocalFallback = true;
         const data = loadLocalData();
         const found = (data.bills || []).find(b => b.id === id);
-        return found ? { ...found } : null;
+        return found ? normalizeBillRecord(found) : null;
       }
       handleSupabaseError(err, 'get bill by ID');
       throw err;
     }
   },
 
-  // Admin Verification
+  // Category-wise Admin Verification
+  async verifyBillCategory(id, { category, verifiedAmount, verificationComment = '', verifiedBy = 'Admin' } = {}) {
+    const catName = String(category || '').toLowerCase().trim();
+    if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
+      const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+
+    return withBillLock(async () => {
+      const maxRetries = 5;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const rawBill = await this.getBillById(id);
+        if (!rawBill) {
+          const err = new Error('Bill not found.');
+          err.status = 404;
+          throw err;
+        }
+
+        const bill = normalizeBillRecord(rawBill);
+        const cat = bill.categories[catName];
+        if (!cat) {
+          const err = new Error(`Category "${catName}" not found in bill.`);
+          err.status = 400;
+          throw err;
+        }
+
+        const numVerified = Number(verifiedAmount);
+        if (isNaN(numVerified) || numVerified < 0) {
+          const err = new Error('Verified amount must be a valid non-negative number.');
+          err.status = 400;
+          throw err;
+        }
+
+        if (numVerified > cat.claimedAmount) {
+          const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${cat.claimedAmount.toLocaleString()}) for ${catName}.`);
+          err.status = 400;
+          throw err;
+        }
+
+        const nowIso = new Date().toISOString();
+        const commentText = (verificationComment || '').trim();
+
+        // Update category state
+        cat.verifiedAmount = numVerified;
+        cat.verifiedBy = verifiedBy || 'Admin';
+        cat.verifiedAt = nowIso;
+        cat.verificationComment = commentText;
+        cat.verificationStatus = 'VERIFIED';
+        cat.status = 'VERIFIED';
+
+        // Recompute totals and status
+        const calc = computeBillTotalsAndStatus(bill.categories, bill.status);
+        bill.totalVerifiedAmount = calc.totalVerifiedAmount;
+        bill.totalApprovedAmount = calc.totalApprovedAmount;
+        bill.verifiedAmount = calc.totalVerifiedAmount;
+        bill.approvedAmount = calc.totalApprovedAmount;
+        bill.status = calc.status;
+
+        const auditEntry = {
+          action: 'CATEGORY_VERIFIED',
+          category: catName,
+          by: verifiedBy || 'Admin',
+          at: nowIso,
+          details: {
+            claimedAmount: cat.claimedAmount,
+            verifiedAmount: numVerified,
+            comment: commentText,
+            billStatus: bill.status
+          }
+        };
+        bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+        bill.updatedAt = nowIso;
+
+        const updates = {
+          categories: bill.categories,
+          totalVerifiedAmount: bill.totalVerifiedAmount,
+          totalApprovedAmount: bill.totalApprovedAmount,
+          verifiedAmount: bill.verifiedAmount,
+          approvedAmount: bill.approvedAmount,
+          status: bill.status,
+          auditLog: bill.auditLog,
+          updatedAt: nowIso
+        };
+
+        if (useLocalFallback) {
+          const data = loadLocalData();
+          const idx = (data.bills || []).findIndex(b => b.id === id);
+          if (idx !== -1) {
+            data.bills[idx] = { ...data.bills[idx], ...updates };
+            saveLocalData(data);
+            return normalizeBillRecord(data.bills[idx]);
+          }
+          throw new Error('Bill not found');
+        }
+
+        try {
+          let query = supabase.from('bills').update(updates).eq('id', id);
+          if (rawBill.updatedAt && attempt < maxRetries) {
+            query = query.eq('updatedAt', rawBill.updatedAt);
+          }
+          const { data, error } = await query.select().single();
+
+          if (error) {
+            if (error.code === 'PGRST116' && attempt < maxRetries) {
+              await new Promise(res => setTimeout(res, 50 * attempt));
+              continue;
+            }
+            throw error;
+          }
+
+          return normalizeBillRecord(data);
+        } catch (err) {
+          if (attempt === maxRetries || !isQuotaOrNetworkError(err)) {
+            if (isQuotaOrNetworkError(err)) {
+              useLocalFallback = true;
+              const data = loadLocalData();
+              const idx = (data.bills || []).findIndex(b => b.id === id);
+              if (idx !== -1) {
+                data.bills[idx] = { ...data.bills[idx], ...updates };
+                saveLocalData(data);
+                return normalizeBillRecord(data.bills[idx]);
+              }
+            }
+            handleSupabaseError(err, 'verify bill category');
+            throw err;
+          }
+        }
+      }
+    });
+  },
+
+  // Category-wise Rejection (Verification or Approval Stage)
+  async rejectBillCategory(id, { category, rejectionReason = '', reason = '', rejectedBy = 'Admin', stage = 'verification' } = {}) {
+    const catName = String(category || '').toLowerCase().trim();
+    if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
+      const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+
+    return withBillLock(async () => {
+      const maxRetries = 5;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const rawBill = await this.getBillById(id);
+        if (!rawBill) {
+          const err = new Error('Bill not found.');
+          err.status = 404;
+          throw err;
+        }
+
+        const bill = normalizeBillRecord(rawBill);
+        const cat = bill.categories[catName];
+        if (!cat) {
+          const err = new Error(`Category "${catName}" not found in bill.`);
+          err.status = 400;
+          throw err;
+        }
+
+        const nowIso = new Date().toISOString();
+        const reasonText = (rejectionReason || reason || 'Rejected by Admin').trim();
+
+        if (stage === 'approval') {
+          cat.approvalStatus = 'REJECTED';
+          cat.approvedAmount = 0;
+        } else {
+          cat.verificationStatus = 'REJECTED';
+          cat.verifiedAmount = 0;
+          cat.approvalStatus = 'REJECTED';
+          cat.approvedAmount = 0;
+        }
+        cat.status = 'REJECTED';
+        cat.rejectedBy = rejectedBy || 'Admin';
+        cat.rejectedAt = nowIso;
+        cat.rejectionReason = reasonText;
+
+        // Recompute totals and status
+        const calc = computeBillTotalsAndStatus(bill.categories, bill.status);
+        bill.totalVerifiedAmount = calc.totalVerifiedAmount;
+        bill.totalApprovedAmount = calc.totalApprovedAmount;
+        bill.verifiedAmount = calc.totalVerifiedAmount;
+        bill.approvedAmount = calc.totalApprovedAmount;
+        bill.status = calc.status;
+
+        const auditEntry = {
+          action: 'CATEGORY_REJECTED',
+          category: catName,
+          stage,
+          by: rejectedBy || 'Admin',
+          at: nowIso,
+          details: {
+            claimedAmount: cat.claimedAmount,
+            reason: reasonText,
+            billStatus: bill.status
+          }
+        };
+        bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+        bill.updatedAt = nowIso;
+
+        const updates = {
+          categories: bill.categories,
+          totalVerifiedAmount: bill.totalVerifiedAmount,
+          totalApprovedAmount: bill.totalApprovedAmount,
+          verifiedAmount: bill.verifiedAmount,
+          approvedAmount: bill.approvedAmount,
+          status: bill.status,
+          auditLog: bill.auditLog,
+          updatedAt: nowIso
+        };
+
+        if (useLocalFallback) {
+          const data = loadLocalData();
+          const idx = (data.bills || []).findIndex(b => b.id === id);
+          if (idx !== -1) {
+            data.bills[idx] = { ...data.bills[idx], ...updates };
+            saveLocalData(data);
+            return normalizeBillRecord(data.bills[idx]);
+          }
+          throw new Error('Bill not found');
+        }
+
+        try {
+          let query = supabase.from('bills').update(updates).eq('id', id);
+          if (rawBill.updatedAt && attempt < maxRetries) {
+            query = query.eq('updatedAt', rawBill.updatedAt);
+          }
+          const { data, error } = await query.select().single();
+
+          if (error) {
+            if (error.code === 'PGRST116' && attempt < maxRetries) {
+              await new Promise(res => setTimeout(res, 50 * attempt));
+              continue;
+            }
+            throw error;
+          }
+
+          return normalizeBillRecord(data);
+        } catch (err) {
+          if (attempt === maxRetries || !isQuotaOrNetworkError(err)) {
+            if (isQuotaOrNetworkError(err)) {
+              useLocalFallback = true;
+              const data = loadLocalData();
+              const idx = (data.bills || []).findIndex(b => b.id === id);
+              if (idx !== -1) {
+                data.bills[idx] = { ...data.bills[idx], ...updates };
+                saveLocalData(data);
+                return normalizeBillRecord(data.bills[idx]);
+              }
+            }
+            handleSupabaseError(err, 'reject bill category');
+            throw err;
+          }
+        }
+      }
+    });
+  },
+
+  // Category-wise Senior Admin Approval
+  async approveBillCategory(id, { category, approvedAmount, approvalComment = '', approvedBy = 'Senior Admin', seniorPasscode } = {}) {
+    if (seniorPasscode !== undefined) {
+      const settings = await this.getSettings();
+      const validPass = (settings && settings.seniorAdminPasscode) || '9999';
+      if (String(seniorPasscode).trim() !== validPass) {
+        const err = new Error('Invalid Senior Admin Passcode. Approval requires authorization.');
+        err.status = 401;
+        throw err;
+      }
+    }
+
+    const catName = String(category || '').toLowerCase().trim();
+    if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
+      const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+
+    return withBillLock(async () => {
+      const maxRetries = 5;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const rawBill = await this.getBillById(id);
+        if (!rawBill) {
+          const err = new Error('Bill not found.');
+          err.status = 404;
+          throw err;
+        }
+
+        const bill = normalizeBillRecord(rawBill);
+        const cat = bill.categories[catName];
+        if (!cat) {
+          const err = new Error(`Category "${catName}" not found in bill.`);
+          err.status = 400;
+          throw err;
+        }
+
+        if (cat.verificationStatus !== 'VERIFIED') {
+          const err = new Error(`Category "${catName}" cannot be approved because it is ${cat.verificationStatus || 'PENDING'}. It must be VERIFIED first.`);
+          err.status = 400;
+          throw err;
+        }
+
+        const numApproved = Number(approvedAmount);
+        if (isNaN(numApproved) || numApproved < 0) {
+          const err = new Error('Approved amount must be a valid non-negative number.');
+          err.status = 400;
+          throw err;
+        }
+
+        const maxAllowed = Number(cat.verifiedAmount);
+        if (numApproved > maxAllowed) {
+          const err = new Error(`Approved amount (Rs. ${numApproved.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}) for ${catName}.`);
+          err.status = 400;
+          throw err;
+        }
+
+        const nowIso = new Date().toISOString();
+        const commentText = (approvalComment || '').trim();
+
+        // Update category state
+        cat.approvedAmount = numApproved;
+        cat.approvedBy = approvedBy || 'Senior Admin';
+        cat.approvedAt = nowIso;
+        cat.approvalComment = commentText;
+        cat.approvalStatus = 'APPROVED';
+        cat.status = 'APPROVED';
+
+        // Recompute totals and status
+        const calc = computeBillTotalsAndStatus(bill.categories, bill.status);
+        bill.totalVerifiedAmount = calc.totalVerifiedAmount;
+        bill.totalApprovedAmount = calc.totalApprovedAmount;
+        bill.verifiedAmount = calc.totalVerifiedAmount;
+        bill.approvedAmount = calc.totalApprovedAmount;
+        bill.status = calc.status;
+
+        const auditEntry = {
+          action: 'CATEGORY_APPROVED',
+          category: catName,
+          by: approvedBy || 'Senior Admin',
+          at: nowIso,
+          details: {
+            verifiedAmount: cat.verifiedAmount,
+            approvedAmount: numApproved,
+            comment: commentText,
+            billStatus: bill.status
+          }
+        };
+        bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+        bill.updatedAt = nowIso;
+
+        const updates = {
+          categories: bill.categories,
+          totalVerifiedAmount: bill.totalVerifiedAmount,
+          totalApprovedAmount: bill.totalApprovedAmount,
+          verifiedAmount: bill.verifiedAmount,
+          approvedAmount: bill.approvedAmount,
+          status: bill.status,
+          auditLog: bill.auditLog,
+          updatedAt: nowIso
+        };
+
+        if (useLocalFallback) {
+          const data = loadLocalData();
+          const idx = (data.bills || []).findIndex(b => b.id === id);
+          if (idx !== -1) {
+            data.bills[idx] = { ...data.bills[idx], ...updates };
+            saveLocalData(data);
+            return normalizeBillRecord(data.bills[idx]);
+          }
+          throw new Error('Bill not found');
+        }
+
+        try {
+          let query = supabase.from('bills').update(updates).eq('id', id);
+          if (rawBill.updatedAt && attempt < maxRetries) {
+            query = query.eq('updatedAt', rawBill.updatedAt);
+          }
+          const { data, error } = await query.select().single();
+
+          if (error) {
+            if (error.code === 'PGRST116' && attempt < maxRetries) {
+              await new Promise(res => setTimeout(res, 50 * attempt));
+              continue;
+            }
+            throw error;
+          }
+
+          return normalizeBillRecord(data);
+        } catch (err) {
+          if (attempt === maxRetries || !isQuotaOrNetworkError(err)) {
+            if (isQuotaOrNetworkError(err)) {
+              useLocalFallback = true;
+              const data = loadLocalData();
+              const idx = (data.bills || []).findIndex(b => b.id === id);
+              if (idx !== -1) {
+                data.bills[idx] = { ...data.bills[idx], ...updates };
+                saveLocalData(data);
+                return normalizeBillRecord(data.bills[idx]);
+              }
+            }
+            handleSupabaseError(err, 'approve bill category');
+            throw err;
+          }
+        }
+      }
+    });
+  },
+
+  // Legacy Whole-Bill Verification (Backward Compatibility Batch)
   async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin' } = {}) {
-    const commentText = (verificationComment || verifiedComment || '').trim();
-    const bill = await this.getBillById(id);
-    if (!bill) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
       const err = new Error('Bill not found.');
       err.status = 404;
       throw err;
     }
-
+    const bill = normalizeBillRecord(rawBill);
     const numVerified = Number(verifiedAmount);
     if (isNaN(numVerified) || numVerified < 0) {
       const err = new Error('Verified amount must be a valid non-negative number.');
       err.status = 400;
       throw err;
     }
-    const claimedAmt = Number(bill.totalClaimedAmount) || 0;
-    if (numVerified > claimedAmt) {
-      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${claimedAmt.toLocaleString()}).`);
+    if (numVerified > bill.totalClaimedAmount) {
+      const err = new Error(`Verified amount (Rs. ${numVerified.toLocaleString()}) cannot exceed claimed amount (Rs. ${bill.totalClaimedAmount.toLocaleString()}).`);
       err.status = 400;
       throw err;
     }
 
-    const nowIso = new Date().toISOString();
-    const auditEntry = {
-      action: 'VERIFIED',
-      by: verifiedBy,
-      at: nowIso,
-      details: {
-        claimedAmount: claimedAmt,
-        verifiedAmount: numVerified,
-        comment: commentText
+    // Verify each active category up to claimed or proportionally
+    const ratio = bill.totalClaimedAmount > 0 ? (numVerified / bill.totalClaimedAmount) : 1;
+    let runningVerified = 0;
+    const activeCats = BILL_EXPENSE_CATEGORIES.filter(c => bill.categories[c].claimedAmount > 0);
+    for (let i = 0; i < activeCats.length; i++) {
+      const catKey = activeCats[i];
+      let catAmt = Math.round(bill.categories[catKey].claimedAmount * ratio);
+      if (i === activeCats.length - 1) {
+        catAmt = numVerified - runningVerified;
+      } else {
+        runningVerified += catAmt;
       }
-    };
-    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
-
-    const updates = {
-      verifiedAmount: numVerified,
-      verifiedBy: verifiedBy || 'Admin',
-      verifiedAt: nowIso,
-      verificationComment: commentText,
-      verifiedComment: commentText,
-      status: 'VERIFIED',
-      auditLog,
-      updatedAt: nowIso
-    };
-
-    if (useLocalFallback) {
-      const data = loadLocalData();
-      const idx = (data.bills || []).findIndex(b => b.id === id);
-      if (idx !== -1) {
-        data.bills[idx] = { ...data.bills[idx], ...updates };
-        saveLocalData(data);
-        return data.bills[idx];
-      }
-      throw new Error('Bill not found');
+      catAmt = Math.min(catAmt, bill.categories[catKey].claimedAmount);
+      await this.verifyBillCategory(id, {
+        category: catKey,
+        verifiedAmount: Math.max(0, catAmt),
+        verificationComment: verificationComment || verifiedComment || '',
+        verifiedBy
+      });
     }
-
-    try {
-      const { data, error } = await supabase
-        .from('bills')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    } catch (err) {
-      if (isQuotaOrNetworkError(err)) {
-        useLocalFallback = true;
-        const data = loadLocalData();
-        const idx = (data.bills || []).findIndex(b => b.id === id);
-        if (idx !== -1) {
-          data.bills[idx] = { ...data.bills[idx], ...updates };
-          saveLocalData(data);
-          return data.bills[idx];
-        }
-      }
-      handleSupabaseError(err, 'verify bill');
-      throw err;
-    }
+    return this.getBillById(id);
   },
 
-  // Senior Admin Approval
+  // Legacy Whole-Bill Approval (Backward Compatibility Batch)
   async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin' } = {}) {
-    const commentText = (approvalComment || approvedComment || '').trim();
-    const bill = await this.getBillById(id);
-    if (!bill) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
       const err = new Error('Bill not found.');
       err.status = 404;
       throw err;
     }
-
+    const bill = normalizeBillRecord(rawBill);
     const numApproved = Number(approvedAmount);
     if (isNaN(numApproved) || numApproved < 0) {
       const err = new Error('Approved amount must be a valid non-negative number.');
       err.status = 400;
       throw err;
     }
-
-    // Strict validation: cannot exceed verified amount (or claimed amount if verification was skipped)
-    const maxAllowed = (bill.verifiedAmount !== null && bill.verifiedAmount !== undefined)
-      ? Number(bill.verifiedAmount)
-      : Number(bill.totalClaimedAmount);
-
+    const maxAllowed = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.totalClaimedAmount;
     if (numApproved > maxAllowed) {
       const err = new Error(`Approved amount (Rs. ${numApproved.toLocaleString()}) cannot exceed verified amount (Rs. ${maxAllowed.toLocaleString()}).`);
       err.status = 400;
       throw err;
     }
 
-    const nowIso = new Date().toISOString();
-    const auditEntry = {
-      action: 'APPROVED',
-      by: approvedBy,
-      at: nowIso,
-      details: {
-        claimedAmount: Number(bill.totalClaimedAmount),
-        verifiedAmount: bill.verifiedAmount,
-        approvedAmount: numApproved,
-        comment: commentText
+    const ratio = maxAllowed > 0 ? (numApproved / maxAllowed) : 1;
+    let runningApproved = 0;
+    const verifiedCats = BILL_EXPENSE_CATEGORIES.filter(c => bill.categories[c].verificationStatus === 'VERIFIED');
+    for (let i = 0; i < verifiedCats.length; i++) {
+      const catKey = verifiedCats[i];
+      let catAmt = Math.round(bill.categories[catKey].verifiedAmount * ratio);
+      if (i === verifiedCats.length - 1) {
+        catAmt = numApproved - runningApproved;
+      } else {
+        runningApproved += catAmt;
       }
-    };
-    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
-
-    const updates = {
-      approvedAmount: numApproved,
-      approvedBy: approvedBy || 'Senior Admin',
-      approvedAt: nowIso,
-      approvalComment: commentText,
-      approvedComment: commentText,
-      status: 'APPROVED',
-      auditLog,
-      updatedAt: nowIso
-    };
-
-    if (useLocalFallback) {
-      const data = loadLocalData();
-      const idx = (data.bills || []).findIndex(b => b.id === id);
-      if (idx !== -1) {
-        data.bills[idx] = { ...data.bills[idx], ...updates };
-        saveLocalData(data);
-        return data.bills[idx];
-      }
-      throw new Error('Bill not found');
+      catAmt = Math.min(catAmt, bill.categories[catKey].verifiedAmount);
+      await this.approveBillCategory(id, {
+        category: catKey,
+        approvedAmount: Math.max(0, catAmt),
+        approvalComment: approvalComment || approvedComment || '',
+        approvedBy
+      });
     }
-
-    try {
-      const { data, error } = await supabase
-        .from('bills')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    } catch (err) {
-      if (isQuotaOrNetworkError(err)) {
-        useLocalFallback = true;
-        const data = loadLocalData();
-        const idx = (data.bills || []).findIndex(b => b.id === id);
-        if (idx !== -1) {
-          data.bills[idx] = { ...data.bills[idx], ...updates };
-          saveLocalData(data);
-          return data.bills[idx];
-        }
-      }
-      handleSupabaseError(err, 'approve bill');
-      throw err;
-    }
+    return this.getBillById(id);
   },
 
-  // Admin / Senior Admin Rejection (Audited & Non-Destructive)
+  // Whole-Bill Rejection (Audited & Non-Destructive)
   async rejectBill(id, { rejectionReason = '', reason = '', rejectedBy = 'Admin' } = {}) {
-    const bill = await this.getBillById(id);
-    if (!bill) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
       const err = new Error('Bill not found.');
       err.status = 404;
       throw err;
     }
-
-    const nowIso = new Date().toISOString();
+    const bill = normalizeBillRecord(rawBill);
     const reasonText = (rejectionReason || reason || 'Rejected by Admin').trim();
 
-    const auditEntry = {
+    // Reject all active categories
+    const activeCats = BILL_EXPENSE_CATEGORIES.filter(c => bill.categories[c].claimedAmount > 0);
+    for (const catKey of activeCats) {
+      await this.rejectBillCategory(id, {
+        category: catKey,
+        rejectionReason: reasonText,
+        rejectedBy,
+        stage: 'verification'
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const currentBill = await this.getBillById(id);
+    const existingLog = Array.isArray(currentBill.auditLog) ? currentBill.auditLog : [];
+    const auditLog = [...existingLog, {
       action: 'REJECTED',
-      by: rejectedBy,
+      by: rejectedBy || 'Admin',
       at: nowIso,
       details: {
-        claimedAmount: Number(bill.totalClaimedAmount),
-        verifiedAmount: bill.verifiedAmount,
-        reason: reasonText
+        reason: reasonText,
+        billStatus: 'REJECTED'
       }
-    };
-    const auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
+    }];
 
     const updates = {
-      rejectedBy: rejectedBy || 'Admin',
+      rejectedBy,
       rejectedAt: nowIso,
       rejectionReason: reasonText,
       status: 'REJECTED',
       auditLog,
       updatedAt: nowIso
     };
-
     if (useLocalFallback) {
       const data = loadLocalData();
       const idx = (data.bills || []).findIndex(b => b.id === id);
       if (idx !== -1) {
         data.bills[idx] = { ...data.bills[idx], ...updates };
         saveLocalData(data);
-        return data.bills[idx];
       }
-      throw new Error('Bill not found');
+    } else {
+      await supabase.from('bills').update(updates).eq('id', id);
     }
-
-    try {
-      const { data, error } = await supabase
-        .from('bills')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    } catch (err) {
-      if (isQuotaOrNetworkError(err)) {
-        useLocalFallback = true;
-        const data = loadLocalData();
-        const idx = (data.bills || []).findIndex(b => b.id === id);
-        if (idx !== -1) {
-          data.bills[idx] = { ...data.bills[idx], ...updates };
-          saveLocalData(data);
-          return data.bills[idx];
-        }
-      }
-      handleSupabaseError(err, 'reject bill');
-      throw err;
-    }
+    const finalBill = await this.getBillById(id);
+    return finalBill.bill || finalBill;
   },
 
   // Bill Statistics
   async getBillStats() {
-    const bills = await this.getBills();
+    const rawBills = await this.getBills();
+    const bills = (rawBills || []).map(b => normalizeBillRecord(b));
     const totalBills = bills.length;
     let pendingVerification = 0;
+    let partiallyVerified = 0;
     let verified = 0;
+    let partiallyApproved = 0;
     let approved = 0;
     let rejected = 0;
     let totalClaimedAmount = 0;
+    let totalVerifiedAmount = 0;
     let totalApprovedAmount = 0;
 
     bills.forEach(b => {
       totalClaimedAmount += (Number(b.totalClaimedAmount) || 0);
-      if (b.status === 'PENDING_VERIFICATION') pendingVerification++;
+      totalVerifiedAmount += (Number(b.totalVerifiedAmount) || 0);
+      totalApprovedAmount += (Number(b.totalApprovedAmount) || 0);
+
+      if (b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION') pendingVerification++;
+      else if (b.status === 'PARTIALLY_VERIFIED') partiallyVerified++;
       else if (b.status === 'VERIFIED') verified++;
-      else if (b.status === 'APPROVED') {
-        approved++;
-        totalApprovedAmount += (Number(b.approvedAmount) || 0);
-      } else if (b.status === 'REJECTED') rejected++;
+      else if (b.status === 'PARTIALLY_APPROVED') partiallyApproved++;
+      else if (b.status === 'APPROVED') approved++;
+      else if (b.status === 'REJECTED') rejected++;
     });
 
     return {
       totalBills,
-      pendingVerification,
-      pendingVerificationCount: pendingVerification,
+      pendingVerification: pendingVerification + partiallyVerified,
+      pendingVerificationCount: pendingVerification + partiallyVerified,
+      partiallyVerified,
+      partiallyVerifiedCount: partiallyVerified,
       verified,
       verifiedCount: verified,
+      partiallyApproved,
+      partiallyApprovedCount: partiallyApproved,
       approved,
       approvedCount: approved,
       rejected,
       rejectedCount: rejected,
       totalClaimedAmount,
+      totalVerifiedAmount,
       totalApprovedAmount
     };
   },
 };
+
+const BILL_EXPENSE_CATEGORIES = ['transportation', 'material', 'labour', 'accommodation', 'other'];
+
+function computeBillTotalsAndStatus(categories, currentOverallStatus) {
+  let totalClaimed = 0;
+  let totalVerified = 0;
+  let totalApproved = 0;
+  let hasAnyVerified = false;
+  let hasAnyApproved = false;
+
+  let activeCount = 0;
+  let verifiedCount = 0;
+  let approvedCount = 0;
+  let rejectedAtVerificationCount = 0;
+  let rejectedAtApprovalCount = 0;
+
+  BILL_EXPENSE_CATEGORIES.forEach(c => {
+    const cat = categories[c];
+    if (!cat) return;
+    const claimed = Math.max(0, Number(cat.claimedAmount) || 0);
+    totalClaimed += claimed;
+
+    if (claimed > 0) {
+      activeCount++;
+
+      if (cat.verificationStatus === 'REJECTED') {
+        rejectedAtVerificationCount++;
+      } else if (cat.verificationStatus === 'VERIFIED') {
+        verifiedCount++;
+        const vAmt = Math.max(0, Number(cat.verifiedAmount) || 0);
+        totalVerified += vAmt;
+        hasAnyVerified = true;
+
+        if (cat.approvalStatus === 'REJECTED') {
+          rejectedAtApprovalCount++;
+        } else if (cat.approvalStatus === 'APPROVED') {
+          approvedCount++;
+          const aAmt = Math.max(0, Number(cat.approvedAmount) || 0);
+          totalApproved += aAmt;
+          hasAnyApproved = true;
+        }
+      }
+    }
+  });
+
+  if (currentOverallStatus === 'REJECTED' && approvedCount === 0 && verifiedCount === 0) {
+    return {
+      totalClaimedAmount: totalClaimed,
+      totalVerifiedAmount: 0,
+      totalApprovedAmount: 0,
+      status: 'REJECTED'
+    };
+  }
+
+  const resolvedVerificationCount = verifiedCount + rejectedAtVerificationCount;
+  let status = 'SUBMITTED';
+
+  if (activeCount > 0 && rejectedAtVerificationCount === activeCount) {
+    // Case E: All active categories are rejected and none is approved
+    status = 'REJECTED';
+  } else if (activeCount > 0 && resolvedVerificationCount === activeCount) {
+    // All active categories are resolved at verification stage (either VERIFIED or REJECTED)
+    const resolvedApprovalCount = approvedCount + rejectedAtApprovalCount;
+    if (verifiedCount > 0 && approvedCount === verifiedCount) {
+      // Case A: All verified categories are APPROVED (and at least 1 is approved)
+      status = 'APPROVED';
+    } else if (approvedCount > 0) {
+      // Case B: Some categories are APPROVED and some are still pending
+      status = 'PARTIALLY_APPROVED';
+    } else if (verifiedCount > 0 && resolvedApprovalCount === verifiedCount && approvedCount === 0) {
+      // All verified categories were rejected during approval
+      status = 'REJECTED';
+    } else {
+      // Case C: All active categories are VERIFIED or REJECTED, but no category has been approved yet
+      status = 'VERIFIED';
+    }
+  } else if (resolvedVerificationCount > 0) {
+    // Case D: Some categories are verified/rejected but others are still pending verification
+    status = 'PARTIALLY_VERIFIED';
+  } else {
+    status = 'SUBMITTED';
+  }
+
+  return {
+    totalClaimedAmount: totalClaimed,
+    totalVerifiedAmount: hasAnyVerified ? totalVerified : 0,
+    totalApprovedAmount: hasAnyApproved ? totalApproved : 0,
+    status
+  };
+}
+
+function normalizeBillRecord(bill) {
+  if (!bill) return null;
+  const b = { ...bill };
+
+  const transportationExpense = Math.max(0, Number(b.transportationExpense) || 0);
+  const materialExpense = Math.max(0, Number(b.materialExpense) || 0);
+  const labourExpense = Math.max(0, Number(b.labourExpense) || 0);
+  const accommodationExpense = Math.max(0, Number(b.accommodationExpense) || 0);
+  const otherExpense = Math.max(0, Number(b.otherExpense) || 0);
+
+  b.transportationExpense = transportationExpense;
+  b.materialExpense = materialExpense;
+  b.labourExpense = labourExpense;
+  b.accommodationExpense = accommodationExpense;
+  b.otherExpense = otherExpense;
+
+  const claimMap = {
+    transportation: transportationExpense,
+    material: materialExpense,
+    labour: labourExpense,
+    accommodation: accommodationExpense,
+    other: otherExpense
+  };
+
+  let categories = b.categories;
+  if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
+    categories = {};
+    const isLegacyVerified = b.status === 'VERIFIED' || b.status === 'APPROVED';
+    const isLegacyApproved = b.status === 'APPROVED';
+    const isLegacyRejected = b.status === 'REJECTED';
+
+    BILL_EXPENSE_CATEGORIES.forEach(cat => {
+      const claimed = claimMap[cat];
+      if (claimed === 0) {
+        categories[cat] = {
+          claimedAmount: 0,
+          verifiedAmount: 0,
+          approvedAmount: 0,
+          verificationStatus: 'N/A',
+          approvalStatus: 'N/A',
+          verificationComment: '',
+          approvalComment: '',
+          verifiedBy: null,
+          verifiedAt: null,
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: ''
+        };
+      } else if (isLegacyRejected) {
+        categories[cat] = {
+          claimedAmount: claimed,
+          verifiedAmount: 0,
+          approvedAmount: 0,
+          verificationStatus: 'REJECTED',
+          approvalStatus: 'REJECTED',
+          verificationComment: '',
+          approvalComment: '',
+          verifiedBy: null,
+          verifiedAt: null,
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: b.rejectedBy || 'Admin',
+          rejectedAt: b.rejectedAt || b.updatedAt,
+          rejectionReason: b.rejectionReason || 'Legacy bill rejection'
+        };
+      } else {
+        categories[cat] = {
+          claimedAmount: claimed,
+          verifiedAmount: isLegacyVerified ? claimed : null,
+          approvedAmount: isLegacyApproved ? claimed : null,
+          verificationStatus: isLegacyVerified ? 'VERIFIED' : 'PENDING',
+          approvalStatus: isLegacyApproved ? 'APPROVED' : 'PENDING',
+          verificationComment: isLegacyVerified ? (b.verificationComment || b.verifiedComment || '') : '',
+          approvalComment: isLegacyApproved ? (b.approvalComment || b.approvedComment || '') : '',
+          verifiedBy: isLegacyVerified ? (b.verifiedBy || 'Admin') : null,
+          verifiedAt: isLegacyVerified ? (b.verifiedAt || b.updatedAt) : null,
+          approvedBy: isLegacyApproved ? (b.approvedBy || 'Senior Admin') : null,
+          approvedAt: isLegacyApproved ? (b.approvedAt || b.updatedAt) : null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: ''
+        };
+      }
+    });
+  } else {
+    // Backfill missing fields while preserving existing claims and states
+    const existing = { ...categories };
+    categories = {};
+    BILL_EXPENSE_CATEGORIES.forEach(cat => {
+      const claimed = claimMap[cat];
+      if (existing[cat]) {
+        const item = { ...existing[cat] };
+        item.claimedAmount = claimed; // Preserved original claim
+        if (claimed === 0) {
+          item.verificationStatus = 'N/A';
+          item.approvalStatus = 'N/A';
+          item.verifiedAmount = 0;
+          item.approvedAmount = 0;
+        } else {
+          item.verificationStatus = item.verificationStatus || 'PENDING';
+          item.approvalStatus = item.approvalStatus || 'PENDING';
+        }
+        categories[cat] = item;
+      } else {
+        categories[cat] = {
+          claimedAmount: claimed,
+          verifiedAmount: claimed === 0 ? 0 : null,
+          approvedAmount: claimed === 0 ? 0 : null,
+          verificationStatus: claimed === 0 ? 'N/A' : 'PENDING',
+          approvalStatus: claimed === 0 ? 'N/A' : 'PENDING',
+          verificationComment: '',
+          approvalComment: '',
+          verifiedBy: null,
+          verifiedAt: null,
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: ''
+        };
+      }
+    });
+  }
+
+  BILL_EXPENSE_CATEGORIES.forEach(cat => {
+    const c = categories[cat];
+    if (c) {
+      if (!c.name) c.name = cat.charAt(0).toUpperCase() + cat.slice(1);
+      if (!c.status) {
+        if (c.claimedAmount === 0) c.status = 'N/A';
+        else if (c.approvalStatus === 'APPROVED') c.status = 'APPROVED';
+        else if (c.verificationStatus === 'REJECTED' || c.approvalStatus === 'REJECTED') c.status = 'REJECTED';
+        else if (c.verificationStatus === 'VERIFIED') c.status = 'VERIFIED';
+        else c.status = 'SUBMITTED';
+      }
+    }
+  });
+
+  b.categories = categories;
+
+  const calc = computeBillTotalsAndStatus(categories, b.status);
+  b.totalClaimedAmount = calc.totalClaimedAmount;
+  b.totalVerifiedAmount = calc.totalVerifiedAmount;
+  b.totalApprovedAmount = calc.totalApprovedAmount;
+  b.verifiedAmount = calc.totalVerifiedAmount;
+  b.approvedAmount = calc.totalApprovedAmount;
+  b.status = calc.status;
+
+  return b;
+}
 
 // Global Concurrency Mutex for safe sequential operations
 let _billLock = Promise.resolve();

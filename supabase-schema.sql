@@ -175,7 +175,10 @@ CREATE TABLE IF NOT EXISTS bills (
   "totalClaimedAmount"    NUMERIC NOT NULL DEFAULT 0 CHECK ("totalClaimedAmount" >= 0),
   "description"           TEXT,
   "attachments"           JSONB DEFAULT '[]'::jsonb,
-  "status"                TEXT NOT NULL DEFAULT 'PENDING_VERIFICATION' CHECK ("status" IN ('PENDING_VERIFICATION', 'VERIFIED', 'APPROVED', 'REJECTED')),
+  "status"                TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK ("status" IN ('SUBMITTED', 'PENDING_VERIFICATION', 'PARTIALLY_VERIFIED', 'VERIFIED', 'PARTIALLY_APPROVED', 'APPROVED', 'REJECTED')),
+  "categories"            JSONB DEFAULT '{}'::jsonb,
+  "totalVerifiedAmount"   NUMERIC DEFAULT NULL,
+  "totalApprovedAmount"   NUMERIC DEFAULT NULL,
   "verifiedAmount"        NUMERIC CHECK ("verifiedAmount" IS NULL OR "verifiedAmount" >= 0),
   "verifiedBy"            TEXT,
   "verifiedAt"            TIMESTAMP WITH TIME ZONE,
@@ -191,6 +194,13 @@ CREATE TABLE IF NOT EXISTS bills (
   "createdAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   "updatedAt"             TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Additive migrations for existing bills table
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS "categories" JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS "totalVerifiedAmount" NUMERIC DEFAULT NULL;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS "totalApprovedAmount" NUMERIC DEFAULT NULL;
+ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check;
+ALTER TABLE bills ADD CONSTRAINT bills_status_check CHECK ("status" IN ('SUBMITTED', 'PENDING_VERIFICATION', 'PARTIALLY_VERIFIED', 'VERIFIED', 'PARTIALLY_APPROVED', 'APPROVED', 'REJECTED'));
 
 CREATE INDEX IF NOT EXISTS idx_bills_employee_id ON bills("employeeId");
 CREATE INDEX IF NOT EXISTS idx_bills_bill_number ON bills("billNumber");

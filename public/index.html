@@ -2444,29 +2444,141 @@
           </div>
         </div>
 
-        <!-- Section 2: Expense Breakdown -->
+        <!-- Section 2: Category Breakdown Table -->
         <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
-          <h4 style="font-size: 0.95rem; color: #fff; margin: 0 0 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
-            💰 Expense Breakdown
-          </h4>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; font-size: 0.85rem; margin-bottom: 0.75rem;">
-            <div><span class="text-muted">Transportation:</span> <strong id="admin-bill-modal-trans">Rs. 0</strong></div>
-            <div><span class="text-muted">Material:</span> <strong id="admin-bill-modal-mat">Rs. 0</strong></div>
-            <div><span class="text-muted">Labour:</span> <strong id="admin-bill-modal-lab">Rs. 0</strong></div>
-            <div><span class="text-muted">Accommodation:</span> <strong id="admin-bill-modal-acc">Rs. 0</strong></div>
-            <div><span class="text-muted">Other:</span> <strong id="admin-bill-modal-oth">Rs. 0</strong></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
+            <h4 style="font-size: 0.95rem; color: #fff; margin: 0;">
+              💰 Expense Categories Breakdown
+            </h4>
+            <span class="text-muted" style="font-size: 0.75rem;">Independently verified &amp; approved per category</span>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
-            <span style="font-weight: 700; color: #fff; font-size: 0.95rem;">Total Claimed Amount:</span>
-            <span style="font-size: 1.25rem; font-weight: 800; color: #4ade80;">Rs. <span id="admin-bill-modal-total-claimed">0</span></span>
+
+          <div style="overflow-x: auto;">
+            <table class="data-table" style="width: 100%; font-size: 0.85rem; margin-bottom: 0.5rem;" id="admin-bill-categories-table">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">Category</th>
+                  <th style="text-align: right;">Claimed</th>
+                  <th style="text-align: right;">Verified</th>
+                  <th style="text-align: right;">Approved</th>
+                  <th id="th-bill-cat-actions" style="text-align: center; width: 190px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-bill-categories-tbody">
+                <!-- JS populated category rows -->
+              </tbody>
+              <tfoot>
+                <tr style="font-weight: 800; background: rgba(15, 23, 42, 0.7); border-top: 2px solid var(--border-color);">
+                  <td style="color: #fff;">TOTAL</td>
+                  <td style="text-align: right; color: #fff;">Rs. <span id="admin-bill-modal-total-claimed">0</span></td>
+                  <td style="text-align: right; color: #60a5fa;">Rs. <span id="admin-bill-modal-total-verified">0</span></td>
+                  <td style="text-align: right; color: #4ade80;">Rs. <span id="admin-bill-modal-total-approved">0</span></td>
+                  <td style="text-align: center;"><span id="admin-bill-modal-total-status-badge" class="badge" style="font-size:0.75rem;">—</span></td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
+
           <div id="admin-bill-modal-desc-box" style="margin-top: 0.75rem; font-size: 0.85rem;">
-            <span class="text-muted">Description:</span>
+            <span class="text-muted">Description / Notes:</span>
             <p id="admin-bill-modal-desc" style="margin: 0.25rem 0 0; color: #cbd5e1; font-style: italic; background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 6px;">No description provided.</p>
           </div>
         </div>
 
-        <!-- Section 3: Attachments Gallery -->
+        <!-- Section 3: Interactive Category Action Box (Verify / Approve / Reject) -->
+        <div id="admin-bill-cat-action-box" class="hidden" style="background: rgba(30, 41, 59, 0.75); border: 1px solid #38bdf8; border-radius: 10px; padding: 1.25rem; transition: all 0.25s ease;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">
+            <h4 id="cat-action-title" style="margin: 0; font-size: 1rem; color: #38bdf8; display: flex; align-items: center; gap: 0.4rem;">
+              Action on Category
+            </h4>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="closeCategoryActionBox()">Cancel</button>
+          </div>
+
+          <div id="cat-action-summary" style="display: flex; gap: 1.5rem; background: rgba(0,0,0,0.25); padding: 0.6rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">
+            <div><span class="text-muted">Category:</span> <strong id="cat-action-catname">—</strong></div>
+            <div><span class="text-muted">Claimed:</span> <strong id="cat-action-claimed" style="color:#fff;">Rs. 0</strong></div>
+            <div id="cat-action-verified-wrapper"><span class="text-muted">Verified:</span> <strong id="cat-action-verified" style="color:#38bdf8;">Rs. 0</strong></div>
+          </div>
+
+          <!-- Fields for Verification -->
+          <div id="cat-action-verify-fields" class="hidden">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 0.75rem;">
+              <div class="form-group">
+                <label for="cat-verify-amount-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                  Verified Amount (Rs.) * <small class="text-muted">(Max: <span id="cat-verify-max-claimed">0</span>)</small>
+                </label>
+                <input type="number" id="cat-verify-amount-input" min="0" step="1" placeholder="Enter verified amount" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700; font-size: 1rem;">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+              <label for="cat-verify-comment-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                Verification Comment / Note
+              </label>
+              <input type="text" id="cat-verify-comment-input" placeholder="e.g. Receipt verified in full" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" id="btn-submit-cat-verification" class="btn btn-primary" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+                SAVE VERIFICATION
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="closeCategoryActionBox()">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <!-- Fields for Approval -->
+          <div id="cat-action-approve-fields" class="hidden">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 0.75rem;">
+              <div class="form-group">
+                <label for="cat-approve-amount-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                  Approved Amount (Rs.) * <small class="text-muted">(Max: <span id="cat-approve-max-verified">0</span>)</small>
+                </label>
+                <input type="number" id="cat-approve-amount-input" min="0" step="1" placeholder="Enter approved amount" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700; font-size: 1rem;">
+              </div>
+              <div class="form-group">
+                <label for="cat-approve-senior-passcode" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                  Senior Admin Passcode *
+                </label>
+                <input type="password" id="cat-approve-senior-passcode" placeholder="Enter Senior Passcode (9999)" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+              <label for="cat-approve-comment-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
+                Approval Comment / Note
+              </label>
+              <input type="text" id="cat-approve-comment-input" placeholder="e.g. Approved for accounts disbursement" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" id="btn-submit-cat-approval" class="btn btn-success" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+                APPROVE CATEGORY
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="closeCategoryActionBox()">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <!-- Fields for Category Rejection -->
+          <div id="cat-action-reject-fields" class="hidden">
+            <div class="form-group" style="margin-bottom: 1rem;">
+              <label for="cat-reject-reason-input" style="font-size: 0.85rem; font-weight: 600; color: #f87171; margin-bottom: 0.25rem; display: block;">
+                Reason for Rejecting This Category *
+              </label>
+              <input type="text" id="cat-reject-reason-input" placeholder="e.g. Receipt unreadable / unauthorized travel" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid rgba(239,68,68,0.4); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" id="btn-submit-cat-rejection" class="btn btn-danger" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+                CONFIRM REJECTION
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="closeCategoryActionBox()">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Section 4: Attachments Gallery -->
         <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
             <h4 style="font-size: 0.95rem; color: #fff; margin: 0;">
@@ -2479,88 +2591,11 @@
           </div>
         </div>
 
-        <!-- Section 4: Admin Verification Interface -->
-        <div id="admin-bill-verify-section" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 10px; padding: 1.25rem;">
-          <h4 style="font-size: 1rem; color: #60a5fa; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-            🔍 Step 1: Admin Verification
-          </h4>
-          <p class="text-muted" style="font-size: 0.82rem; margin: 0 0 1rem;">
-            Inspect receipts and manually enter the amount you actually verify. The original claimed amount is always preserved.
-          </p>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-            <div>
-              <span class="text-muted" style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Employee Claimed:</span>
-              <div style="font-size: 1.15rem; font-weight: 700; color: #fff;">Rs. <span id="admin-bill-claimed-val">0</span></div>
-            </div>
-            <div class="form-group">
-              <label for="admin-bill-verify-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
-                Verified Amount (Rs.) *
-              </label>
-              <input type="number" id="admin-bill-verify-input" min="0" step="1" placeholder="Enter verified amount" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700; font-size: 1rem;">
-            </div>
-          </div>
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="admin-bill-verify-comment-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
-              Admin Comment / Explanation
-            </label>
-            <textarea id="admin-bill-verify-comment-input" rows="2" placeholder="e.g. Transportation verified. Material receipt was incomplete, therefore Rs. 8,000 verified." style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem; resize: vertical;"></textarea>
-          </div>
-          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button type="button" id="btn-admin-verify-bill-submit" class="btn btn-primary" style="padding: 0.65rem 1.25rem; font-weight: 600;">
-              VERIFY BILL
-            </button>
-            <button type="button" id="btn-admin-verify-reject-bill-submit" class="btn btn-danger" style="padding: 0.65rem 1.25rem; font-weight: 600;">
-              REJECT BILL
-            </button>
-          </div>
-        </div>
-
-        <!-- Section 5: Senior Admin Approval Interface -->
-        <div id="admin-bill-approve-section" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 10px; padding: 1.25rem;">
-          <h4 style="font-size: 1rem; color: #34d399; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-            ⭐ Step 2: Senior Admin Approval
-          </h4>
-          <p class="text-muted" style="font-size: 0.82rem; margin: 0 0 1rem;">
-            Authorized Senior Admin enters the final approved amount and passcode. Approved amount cannot exceed verified amount.
-          </p>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-            <div>
-              <span class="text-muted" style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Claimed Amount:</span>
-              <div style="font-size: 1.1rem; font-weight: 700; color: #cbd5e1;">Rs. <span id="admin-bill-appr-claimed">0</span></div>
-            </div>
-            <div>
-              <span class="text-muted" style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Verified Amount:</span>
-              <div style="font-size: 1.1rem; font-weight: 700; color: #38bdf8;">Rs. <span id="admin-bill-appr-verified">0</span></div>
-            </div>
-            <div class="form-group">
-              <label for="admin-bill-approve-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
-                Approved Amount (Rs.) *
-              </label>
-              <input type="number" id="admin-bill-approve-input" min="0" step="1" placeholder="Enter approved amount" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700; font-size: 1rem;">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-            <div class="form-group">
-              <label for="admin-bill-approve-comment-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
-                Approval Comment
-              </label>
-              <input type="text" id="admin-bill-approve-comment-input" placeholder="e.g. Final approval granted" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-            </div>
-            <div class="form-group">
-              <label for="admin-bill-senior-passcode-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
-                Senior Admin Passcode *
-              </label>
-              <input type="password" id="admin-bill-senior-passcode-input" placeholder="Enter Senior Passcode (9999)" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-            </div>
-          </div>
-          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button type="button" id="btn-admin-approve-bill-submit" class="btn btn-success" style="padding: 0.65rem 1.25rem; font-weight: 600;">
-              APPROVE BILL
-            </button>
-            <button type="button" id="btn-admin-reject-bill-submit" class="btn btn-danger" style="padding: 0.65rem 1.25rem; font-weight: 600;">
-              REJECT BILL
-            </button>
-          </div>
+        <!-- Section 5: Overall Bill Actions (Admin Rejection Option) -->
+        <div id="admin-bill-overall-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.5rem 0;">
+          <button type="button" id="btn-admin-reject-bill-submit" class="btn btn-danger btn-sm" style="font-weight: 600;">
+            ✖ Reject Entire Bill
+          </button>
         </div>
 
         <!-- Section 6: Audit History Log -->
