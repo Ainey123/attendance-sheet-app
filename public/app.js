@@ -1139,22 +1139,31 @@ function handleClockOut() {
   openClockOutModal();
 }
 
+let isSubmittingClockOut = false;
+
 async function submitClockOutDetails(e) {
   if (e && e.preventDefault) e.preventDefault();
-  if (!selectedEmployee) return;
+  if (isSubmittingClockOut) return;
 
-  let performanceNotes = (document.getElementById('performance-notes').value || '').trim();
+  if (!selectedEmployee) {
+    showToast('Please select an employee profile first', 'error');
+    return;
+  }
+
+  isSubmittingClockOut = true;
+
+  let performanceNotes = (document.getElementById('performance-notes')?.value || '').trim();
   if (!performanceNotes) {
     performanceNotes = 'Shift Completed';
   }
-  const receivedAmount = document.getElementById('clockout-received').value || 0;
-  const expenseAmount = document.getElementById('clockout-expense').value || 0;
+  const receivedAmount = Number(document.getElementById('clockout-received')?.value) || 0;
+  const expenseAmount = Number(document.getElementById('clockout-expense')?.value) || 0;
 
-  const submitBtn = document.querySelector('#form-clockout-details button[type="submit"]');
+  const submitBtn = document.getElementById('btn-submit-clockout') || document.querySelector('#form-clockout-details button[type="submit"]');
   const originalBtnText = submitBtn ? submitBtn.innerText : 'Submit Clock Out';
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerText = 'Submitting...';
+    submitBtn.innerText = 'Submitting Clock Out...';
   }
 
   updateClockButtonsDisabledState(true);
@@ -1168,7 +1177,7 @@ async function submitClockOutDetails(e) {
       expenseAmount,
       selectedClockOutPhotoBase64
     );
-    if (res.success) {
+    if (res && res.success) {
       showToast(`Clock out successful for ${selectedEmployee.name}`, 'success');
       closeClockOutModal();
       selectedEmployee.status = 'OUT';
@@ -1179,13 +1188,14 @@ async function submitClockOutDetails(e) {
       // Prompt employee if they have a bill to submit
       openClockOutBillPrompt();
     } else {
-      showToast(res.error || 'Clock out failed', 'error');
+      showToast((res && res.error) || 'Clock out failed', 'error');
       updateClockButtonsDisabledState(false);
     }
   } catch (err) {
     showToast('Error during clock out: ' + (err.message || 'Network error'), 'error');
     updateClockButtonsDisabledState(false);
   } finally {
+    isSubmittingClockOut = false;
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerText = originalBtnText;
@@ -3797,6 +3807,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-clock-in').addEventListener('click', handleClockIn);
   document.getElementById('btn-clock-out').addEventListener('click', handleClockOut);
   document.getElementById('form-clockout-details').addEventListener('submit', submitClockOutDetails);
+  const btnSubmitClockOut = document.getElementById('btn-submit-clockout');
+  if (btnSubmitClockOut) {
+    btnSubmitClockOut.addEventListener('click', (e) => {
+      e.preventDefault();
+      submitClockOutDetails(e);
+    });
+  }
   document.getElementById('btn-close-clockout-modal').addEventListener('click', closeClockOutModal);
 
   // Admin lock modal close
