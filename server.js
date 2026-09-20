@@ -895,6 +895,30 @@ app.post('/api/salary/expense/verify', async (req, res) => {
   }
 });
 
+// POST /api/salary/expense/reject (Admin rejection)
+app.post('/api/salary/expense/reject', async (req, res) => {
+  try {
+    const { employeeId, employeeName, salaryMonth, month, rejectionReason, reason, rejectedBy, notes, passcode } = req.body;
+    const settings = await db.getSettings();
+    const provided = passcode || req.headers['x-admin-passcode'];
+    if (provided !== settings.adminPasscode && provided !== settings.seniorAdminPasscode) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+    }
+
+    const verification = await db.rejectExpense({
+      employeeId,
+      employeeName,
+      salaryMonth: salaryMonth || month,
+      rejectionReason: rejectionReason || reason || notes || '',
+      rejectedBy: rejectedBy || 'Admin 1',
+      notes: notes || rejectionReason || reason || ''
+    });
+    res.json({ success: true, verification });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // POST /api/salary/expense/approve (Senior Admin approval)
 app.post('/api/salary/expense/approve', async (req, res) => {
   try {

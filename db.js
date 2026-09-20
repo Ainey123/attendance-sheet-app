@@ -3069,10 +3069,11 @@ const db = {
 
     const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
     
-    const [allAttendance, allWorkRecords, employees] = await Promise.all([
+    const [allAttendance, allWorkRecords, employees, allBills] = await Promise.all([
       this.getAttendance().catch(() => []),
       this.getWorkRecords(null, month).catch(() => []),
-      this.getEmployees(true).catch(() => [])
+      this.getEmployees(true).catch(() => []),
+      this.getBills({ employeeId: null }).catch(() => [])
     ]);
 
     const attendanceLogs = (allAttendance || []).filter(a =>
@@ -3095,6 +3096,7 @@ const db = {
           date: a.date,
           amount: exp,
           description: a.performanceNotes || 'Clock-Out Expense',
+          category: 'Daily Shift Expense',
           source: 'Attendance Clock-Out'
         });
       }
@@ -3113,9 +3115,64 @@ const db = {
             date: wr.date,
             amount: exp,
             description: wr.performedWork || 'Work Record Expense',
+            category: 'Work Record',
             source: 'Work Record'
           });
         }
+      }
+    });
+
+    // Include submitted & approved employee bills (including materials, transport, supplies, etc.)
+    (allBills || []).forEach(bill => {
+      const empId = bill.employeeId;
+      if (!empId) return;
+      const bDate = bill.billDate || bill.date || (bill.createdAt ? bill.createdAt.split('T')[0] : '');
+      if (!bDate || !bDate.startsWith(month)) return;
+      if (bill.status === 'REJECTED') return;
+
+      const exp = Number(bill.totalAmount) || (
+        (Number(bill.transportationExpense) || 0) +
+        (Number(bill.materialExpense) || 0) +
+        (Number(bill.labourExpense) || 0) +
+        (Number(bill.accommodationExpense) || 0) +
+        (Number(bill.otherExpense) || 0)
+      );
+
+      if (exp > 0) {
+        if (!map[empId]) map[empId] = { totalExpense: 0, entries: [] };
+        const key = `bill_${bill.id}`;
+        const alreadyAdded = map[empId].entries.some(e => e.billId === bill.id || e.key === key);
+        if (!alreadyAdded) {
+          map[empId].totalExpense += exp;
+          let cat = 'Bill Expense';
+          if (bill.materialExpense > 0 || (bill.categories && bill.categories.material && bill.categories.material.claimedAmount > 0)) {
+            cat = 'Materials & Supplies';
+          } else if (bill.transportationExpense > 0) {
+            cat = 'Transportation';
+          } else if (bill.category) {
+            cat = bill.category;
+          }
+          map[empId].entries.push({
+            key,
+            id: bill.id,
+            billId: bill.id,
+            isBill: true,
+            billNumber: bill.billNumber || 'Bill',
+            date: bDate,
+            amount: exp,
+            category: cat,
+            description: bill.description || bill.notes || `Bill #${bill.billNumber || bill.id}`,
+            status: bill.status || 'SUBMITTED',
+            attachments: bill.attachments || [],
+            source: 'Employee Bill'
+          });
+        }
+      }
+    });
+
+    Object.values(map).forEach(empData => {
+      if (Array.isArray(empData.entries)) {
+        empData.entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
       }
     });
 
@@ -3848,6 +3905,29 @@ const db = {
       }
     }
 
+    // Synchronize submitted employee bills for this month: if verified, verify them with admin comments
+    if (vAmt > 0) {
+      try {
+        const bills = await this.getBills({ employeeId });
+        const pendingBills = (bills || []).filter(b => {
+          const bDate = b.billDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : '');
+          return bDate && bDate.startsWith(salaryMonth) && (b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION' || b.status === 'PARTIALLY_VERIFIED');
+        });
+        for (const bill of pendingBills) {
+          const billClaimed = Number(bill.totalClaimedAmount) || Number(bill.totalAmount) || 0;
+          if (billClaimed > 0) {
+            await this.verifyBill(bill.id, {
+              verifiedAmount: billClaimed,
+              verificationComment: notes || 'Verified with monthly salary sheet',
+              verifiedBy
+            }).catch(e => console.warn(`Notice verifying bill ${bill.id}:`, e.message));
+          }
+        }
+      } catch (bErr) {
+        console.warn('Notice synchronizing bills in verifyExpense:', bErr.message);
+      }
+    }
+
     return existing;
   },
 
@@ -3942,6 +4022,109 @@ const db = {
       } catch (err) {
         console.warn('Supabase expense_verifications sync notice:', err.message);
       }
+    }
+
+    return existing;
+  },
+
+  async rejectExpense({ employeeId, employeeName, salaryMonth, rejectionReason = '', rejectedBy = 'Admin 1', notes = '' }) {
+    if (!employeeId || !salaryMonth) {
+      throw new Error('employeeId and salaryMonth are required');
+    }
+    const reasonText = (rejectionReason || notes || 'Expense rejected by Admin').trim();
+    const nowIso = new Date().toISOString();
+    const data = loadLocalData();
+    if (!data.expenseVerifications) data.expenseVerifications = [];
+
+    let existing = data.expenseVerifications.find(v => v.employeeId === employeeId && v.salaryMonth === salaryMonth);
+    const auditEntry = {
+      action: 'REJECTED',
+      verifiedAmount: 0,
+      approvedAmount: 0,
+      by: rejectedBy,
+      at: nowIso,
+      rejectionReason: reasonText,
+      notes: reasonText
+    };
+
+    if (existing) {
+      existing.employeeName = employeeName || existing.employeeName;
+      existing.verifiedAmount = 0;
+      existing.approvedAmount = 0;
+      existing.verifiedBy = rejectedBy;
+      existing.verifiedAt = nowIso;
+      existing.verificationStatus = 'REJECTED';
+      existing.approvalStatus = 'REJECTED';
+      existing.notes = reasonText;
+      existing.updatedAt = nowIso;
+      if (!existing.auditLog) existing.auditLog = [];
+      existing.auditLog.push(auditEntry);
+    } else {
+      existing = {
+        id: generateId('expv'),
+        employeeId,
+        employeeName: employeeName || '',
+        salaryMonth,
+        claimedAmount: 0,
+        verifiedAmount: 0,
+        verifiedBy: rejectedBy,
+        verifiedAt: nowIso,
+        verificationStatus: 'REJECTED',
+        approvedAmount: 0,
+        approvedBy: null,
+        approvedAt: null,
+        approvalStatus: 'REJECTED',
+        notes: reasonText,
+        auditLog: [auditEntry],
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      data.expenseVerifications.push(existing);
+    }
+
+    saveLocalData(data);
+
+    if (!useLocalFallback && supabase) {
+      try {
+        await supabase.from('expense_verifications').upsert({
+          id: existing.id,
+          employeeId: existing.employeeId,
+          employeeName: existing.employeeName,
+          salaryMonth: existing.salaryMonth,
+          claimedAmount: existing.claimedAmount,
+          verifiedAmount: existing.verifiedAmount,
+          verifiedBy: existing.verifiedBy,
+          verifiedAt: existing.verifiedAt,
+          verificationStatus: existing.verificationStatus,
+          approvedAmount: existing.approvedAmount,
+          approvedBy: existing.approvedBy,
+          approvedAt: existing.approvedAt,
+          approvalStatus: existing.approvalStatus,
+          notes: existing.notes,
+          auditLog: existing.auditLog,
+          createdAt: existing.createdAt,
+          updatedAt: existing.updatedAt
+        });
+      } catch (err) {
+        console.warn('Supabase expense_verifications sync notice:', err.message);
+      }
+    }
+
+    // Also reject any active bills submitted by this employee for this month
+    try {
+      const bills = await this.getBills({ employeeId });
+      const monthBills = (bills || []).filter(b => {
+        const bDate = b.billDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : '');
+        return bDate && bDate.startsWith(salaryMonth) && b.status !== 'REJECTED';
+      });
+      for (const bill of monthBills) {
+        await this.rejectBill(bill.id, {
+          rejectionReason: reasonText,
+          rejectedBy
+        }).catch(e => console.warn(`Notice rejecting bill ${bill.id}:`, e.message));
+      }
+    } catch (bErr) {
+      console.warn('Notice querying bills for expense rejection:', bErr.message);
     }
 
     return existing;
@@ -4369,7 +4552,7 @@ const db = {
       month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides, manualSundayOverrides] = await Promise.all([
+    const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides, manualSundayOverrides, allBills] = await Promise.all([
       this.getEmployees(false),
       this.getAttendance().catch(() => []),
       this.getWorkRecords(null, month).catch(() => []),
@@ -4388,7 +4571,8 @@ const db = {
       this.getExpenseVerifications(month).catch(() => []),
       this.getSettings().catch(() => ({})),
       this.getManualPresentDays(month).catch(() => ({})),
-      this.getManualSundayBonuses(month).catch(() => ({}))
+      this.getManualSundayBonuses(month).catch(() => ({})),
+      this.getBills({ employeeId: null }).catch(() => [])
     ]);
 
     const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
@@ -4545,6 +4729,49 @@ const db = {
         }
       });
 
+      // From employee bills (including materials, transport, supplies, etc.)
+      (allBills || []).forEach(bill => {
+        if (bill.employeeId === empId) {
+          const bDate = bill.billDate || bill.date || (bill.createdAt ? bill.createdAt.split('T')[0] : '');
+          if (bDate && bDate.startsWith(month) && bill.status !== 'REJECTED') {
+            const amt = Number(bill.totalAmount) || (
+              (Number(bill.transportationExpense) || 0) +
+              (Number(bill.materialExpense) || 0) +
+              (Number(bill.labourExpense) || 0) +
+              (Number(bill.accommodationExpense) || 0) +
+              (Number(bill.otherExpense) || 0)
+            );
+            if (amt > 0) {
+              const key = `bill_${bill.id}`;
+              if (!processedExpenseKeys.has(key)) {
+                processedExpenseKeys.add(key);
+                let cat = 'Bill Expense';
+                if (bill.materialExpense > 0 || (bill.categories && bill.categories.material && bill.categories.material.claimedAmount > 0)) {
+                  cat = 'Materials & Supplies';
+                } else if (bill.transportationExpense > 0) {
+                  cat = 'Transportation';
+                } else if (bill.category) {
+                  cat = bill.category;
+                }
+                itemizedExpenses.push({
+                  id: bill.id,
+                  billId: bill.id,
+                  isBill: true,
+                  billNumber: bill.billNumber || 'Bill',
+                  date: bDate,
+                  amount: amt,
+                  description: bill.description || bill.notes || `Bill #${bill.billNumber || bill.id}`,
+                  category: cat,
+                  status: bill.status || 'SUBMITTED',
+                  attachments: bill.attachments || [],
+                  source: 'Employee Bill'
+                });
+              }
+            }
+          }
+        }
+      });
+
       itemizedExpenses.sort((a, b) => a.date.localeCompare(b.date));
       const totalExpenses = itemizedExpenses.reduce((sum, e) => sum + e.amount, 0);
 
@@ -4552,18 +4779,21 @@ const db = {
       const expVer = verificationsMap[empId] || null;
       const appr = approvalsMap[empId] || null;
 
-      const isExpVerified = Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
-      const verifiedAmount = isExpVerified ? Number(expVer.verifiedAmount) : null;
-      const verifiedBy = isExpVerified ? (expVer.verifiedBy || 'Admin 1') : null;
-      const verifiedAt = isExpVerified ? expVer.verifiedAt : null;
+      const isExpRejected = Boolean(expVer && expVer.verificationStatus === 'REJECTED');
+      const isExpVerified = Boolean(!isExpRejected && expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
+      const verifiedAmount = isExpVerified ? Number(expVer.verifiedAmount) : (isExpRejected ? 0 : null);
+      const verifiedBy = isExpVerified ? (expVer.verifiedBy || 'Admin 1') : (isExpRejected ? (expVer.verifiedBy || 'Admin 1') : null);
+      const verifiedAt = isExpVerified ? expVer.verifiedAt : (isExpRejected ? expVer.verifiedAt : null);
 
-      const isExpApproved = Boolean((expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined))) || (appr && appr.approvalStatus === 'APPROVED'));
-      const approvedAmount = (expVer && expVer.approvedAmount !== null && expVer.approvedAmount !== undefined) ? Number(expVer.approvedAmount) : (appr ? Number(appr.approvedAmount) : null);
+      const isExpApproved = Boolean(!isExpRejected && ((expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined))) || (appr && appr.approvalStatus === 'APPROVED')));
+      const approvedAmount = (isExpApproved && expVer && expVer.approvedAmount !== null && expVer.approvedAmount !== undefined) ? Number(expVer.approvedAmount) : (appr ? Number(appr.approvedAmount) : null);
       const approvedBy = isExpApproved ? (expVer?.approvedBy || appr?.approvedBy || 'Senior Admin') : null;
       const approvedAt = isExpApproved ? (expVer?.approvedAt || appr?.approvedAt) : null;
 
       let effectiveExpense = totalExpenses;
-      if (isExpApproved && approvedAmount !== null) {
+      if (isExpRejected) {
+        effectiveExpense = 0;
+      } else if (isExpApproved && approvedAmount !== null) {
         effectiveExpense = approvedAmount;
       } else if (isExpVerified && verifiedAmount !== null) {
         effectiveExpense = verifiedAmount;
@@ -4629,6 +4859,7 @@ const db = {
         itemizedExpenses,
         totalExpenses,
         isExpVerified,
+        isExpRejected,
         verifiedAmount,
         verifiedBy,
         verifiedAt,

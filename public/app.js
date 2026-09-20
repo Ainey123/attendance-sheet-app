@@ -270,6 +270,11 @@ const API = {
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
     body: JSON.stringify(data)
   }),
+  rejectExpense: (data) => fetchJson('/api/salary/expense/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    body: JSON.stringify(data)
+  }),
   approveExpense: (data) => fetchJson('/api/salary/expense/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode, 'X-Senior-Passcode': (data && (data.passcode || data.seniorPasscode)) || '' },
@@ -7225,12 +7230,15 @@ async function loadSalarySheet(monthOverride, force = false) {
 
       // Expense Verification & Senior Admin Approval integration
       const expVer = expVerMap[emp.id];
-      const isExpVerified = emp.isExpVerified !== undefined ? emp.isExpVerified : Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)));
-      const isExpApproved = emp.isExpApproved !== undefined ? emp.isExpApproved : Boolean(expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined)));
+      const isExpRejected = emp.isExpRejected !== undefined ? emp.isExpRejected : Boolean(expVer && expVer.verificationStatus === 'REJECTED');
+      const isExpVerified = Boolean(!isExpRejected && (emp.isExpVerified !== undefined ? emp.isExpVerified : Boolean(expVer && (expVer.verificationStatus === 'VERIFIED' || (expVer.verifiedAmount !== null && expVer.verifiedAmount !== undefined)))));
+      const isExpApproved = Boolean(!isExpRejected && (emp.isExpApproved !== undefined ? emp.isExpApproved : Boolean(expVer && (expVer.approvalStatus === 'APPROVED' || (expVer.approvedAmount !== null && expVer.approvedAmount !== undefined)))));
 
       let effectiveExpense = expenses;
       if (emp.effectiveExpense !== undefined) {
         effectiveExpense = emp.effectiveExpense;
+      } else if (isExpRejected) {
+        effectiveExpense = 0;
       } else if (isExpApproved && expVer && typeof expVer.approvedAmount === 'number') {
         effectiveExpense = expVer.approvedAmount;
       } else if (isExpVerified && expVer && typeof expVer.verifiedAmount === 'number') {
@@ -7322,7 +7330,14 @@ async function loadSalarySheet(monthOverride, force = false) {
       // Expense Section Action Buttons
       let verifyBtnHtml = '';
       const verifiedDisplayAmt = emp.verifiedAmount !== null && emp.verifiedAmount !== undefined ? emp.verifiedAmount : (expVer && expVer.verifiedAmount);
-      if (isExpVerified) {
+      if (isExpRejected) {
+        verifyBtnHtml = `
+          <button type="button" class="btn btn-sm" style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.5); font-size:0.72rem; font-weight:700; padding:0.22rem 0.45rem; border-radius:4px; cursor:pointer; white-space:nowrap;"
+            onclick="openExpenseVerifyModal('${emp.id}')" title="Rejected by ${escapeHtml((expVer && expVer.verifiedBy) || emp.verifiedBy || 'Admin 1')}: PKR 0">
+            ✖ Rej: PKR 0
+          </button>
+        `;
+      } else if (isExpVerified) {
         verifyBtnHtml = `
           <button type="button" class="btn btn-sm" style="background:rgba(59,130,246,0.18); color:#60a5fa; border:1px solid rgba(59,130,246,0.5); font-size:0.72rem; font-weight:700; padding:0.22rem 0.45rem; border-radius:4px; cursor:pointer; white-space:nowrap;"
             onclick="openExpenseVerifyModal('${emp.id}')" title="Verified by ${escapeHtml((expVer && expVer.verifiedBy) || emp.verifiedBy || 'Admin 1')}: PKR ${fmtNum(verifiedDisplayAmt)}">
@@ -9284,6 +9299,24 @@ async function exportSalarySheetCSV(monthOverride) {
 let currentExpVerifyEmpId = null;
 let currentExpApproveEmpId = null;
 
+function previewExpenseAttachment(encodedDataUrl, name) {
+  const dataUrl = decodeURIComponent(encodedDataUrl || '');
+  if (!dataUrl) {
+    showToast('No receipt file available.', 'warning');
+    return;
+  }
+  const isPdf = dataUrl.startsWith('data:application/pdf') || (name && name.toLowerCase().endsWith('.pdf'));
+  if (isPdf) {
+    const w = window.open();
+    if (w) {
+      w.document.write('<iframe src="' + dataUrl + '" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>');
+    }
+  } else {
+    openPhotoModal(dataUrl);
+  }
+}
+window.previewExpenseAttachment = previewExpenseAttachment;
+
 async function openExpenseVerifyModal(empId) {
   currentExpVerifyEmpId = empId;
   const emp = (currentSalaryEmployees || []).find(e => e.id === empId);
@@ -9297,6 +9330,7 @@ async function openExpenseVerifyModal(empId) {
   const claimedEl = document.getElementById('exp-verify-claimed');
   const periodEl = document.getElementById('exp-verify-period');
   const itemizedEl = document.getElementById('exp-verify-itemized-container');
+  const itemCountEl = document.getElementById('exp-verify-item-count');
   const amtInput = document.getElementById('exp-verify-amount-input');
   const adminNameInput = document.getElementById('exp-verify-admin-name');
   const passcodeInput = document.getElementById('exp-verify-passcode');
@@ -9308,7 +9342,9 @@ async function openExpenseVerifyModal(empId) {
   if (periodEl) periodEl.textContent = currentSalaryMonth;
 
   let claimed = 0;
-  if (expVer && typeof expVer.claimedAmount === 'number') {
+  if (emp && typeof emp.totalExpenses === 'number' && emp.totalExpenses > 0) {
+    claimed = emp.totalExpenses;
+  } else if (expVer && typeof expVer.claimedAmount === 'number' && expVer.claimedAmount > 0) {
     claimed = expVer.claimedAmount;
   } else if (salRow) {
     const input = salRow.querySelector('.salary-basic-input');
@@ -9316,38 +9352,81 @@ async function openExpenseVerifyModal(empId) {
   }
   if (claimedEl) claimedEl.textContent = 'PKR ' + claimed.toLocaleString();
 
-  // Itemized breakdown from server
+  // Itemized breakdown & bills from server
   if (itemizedEl) {
-    itemizedEl.innerHTML = '<div style="color:var(--text-muted); text-align:center;">Loading daily expense breakdown...</div>';
+    itemizedEl.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem 0;">Loading claims and attached receipts...</div>';
     try {
       const res = await API.getEmployeeExpensesDetail(empId, currentSalaryMonth);
       const entries = (res && res.details && res.details.entries) || [];
+      const totalFromDetails = (res && res.details && res.details.totalExpense) || 0;
+      if (totalFromDetails > 0) {
+        claimed = totalFromDetails;
+        if (claimedEl) claimedEl.textContent = 'PKR ' + claimed.toLocaleString();
+        if (amtInput && (!amtInput.value || amtInput.value === '0')) {
+          amtInput.value = claimed;
+        }
+      }
+      if (itemCountEl) itemCountEl.textContent = `${entries.length} items`;
+
       if (entries.length === 0) {
-        itemizedEl.innerHTML = '<div style="color:var(--text-muted); text-align:center;">No individual expense entries recorded for this month.</div>';
+        itemizedEl.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem 0;">No individual expense entries or bills recorded for this month.</div>';
       } else {
         itemizedEl.innerHTML = `
-          <table style="width:100%; border-collapse:collapse; font-size:0.75rem;">
-            <thead>
-              <tr style="color:var(--text-muted); border-bottom:1px solid rgba(255,255,255,0.06);">
-                <th style="text-align:left; padding:3px 6px;">Date</th>
-                <th style="text-align:left; padding:3px 6px;">Description</th>
-                <th style="text-align:right; padding:3px 6px;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${entries.map(e => `
-                <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
-                  <td style="padding:3px 6px; color:#cbd5e1;">${escapeHtml(e.date)}</td>
-                  <td style="padding:3px 6px; color:var(--text-muted);">${escapeHtml(e.description || e.source || 'Expense')}</td>
-                  <td style="padding:3px 6px; text-align:right; font-family:monospace; color:#f87171;">PKR ${(e.amount||0).toLocaleString()}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            ${entries.map((e, idx) => {
+              const isBill = Boolean(e.isBill || e.billId);
+              const hasAtts = Array.isArray(e.attachments) && e.attachments.length > 0;
+              const badgeColor = isBill ? '#3b82f6' : (e.source && e.source.includes('Clock-Out') ? '#10b981' : '#f59e0b');
+              const badgeLabel = isBill ? `📄 Bill #${escapeHtml(e.billNumber || e.billId || (idx + 1))}` : (e.source || 'Expense');
+              const statusBadge = isBill && e.status ? `
+                <span style="font-size:0.68rem; padding:1px 5px; border-radius:3px; background:${e.status === 'VERIFIED' ? 'rgba(59,130,246,0.2)' : (e.status === 'REJECTED' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)')}; color:${e.status === 'VERIFIED' ? '#60a5fa' : (e.status === 'REJECTED' ? '#f87171' : '#fbbf24')}; border:1px solid currentColor; font-weight:700;">
+                  ${escapeHtml(e.status)}
+                </span>
+              ` : '';
+              
+              let attsHtml = '';
+              if (hasAtts) {
+                attsHtml = `
+                  <div style="display:flex; gap:6px; margin-top:5px; flex-wrap:wrap; align-items:center;">
+                    <span style="font-size:0.7rem; color:var(--text-muted);">Receipts:</span>
+                    ${e.attachments.map((att, aIdx) => `
+                      <button type="button" class="btn btn-sm" onclick="previewExpenseAttachment('${encodeURIComponent(att.dataUrl || '')}', '${escapeHtml(att.name || 'Receipt')}')" style="background:rgba(59,130,246,0.18); color:#60a5fa; border:1px solid rgba(59,130,246,0.4); font-size:0.7rem; padding:2px 7px; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; gap:3px;" title="Click to view full receipt photo">
+                        <span>📎</span> ${escapeHtml(att.name || `Receipt ${aIdx + 1}`)}
+                      </button>
+                    `).join('')}
+                  </div>
+                `;
+              }
+
+              return `
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.55rem 0.75rem;">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+                    <div style="flex:1;">
+                      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span style="font-size:0.7rem; font-weight:700; color:#fff; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:3px; border:1px solid ${badgeColor};">
+                          ${badgeLabel}
+                        </span>
+                        ${statusBadge}
+                        <span style="font-size:0.72rem; color:#94a3b8;">${escapeHtml(e.date || '')}</span>
+                        ${e.category ? `<span style="font-size:0.68rem; color:#cbd5e1; background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px;">${escapeHtml(e.category)}</span>` : ''}
+                      </div>
+                      <div style="font-size:0.78rem; color:#e2e8f0; margin-top:3px;">
+                        ${escapeHtml(e.description || e.notes || 'No description provided')}
+                      </div>
+                      ${attsHtml}
+                    </div>
+                    <div style="text-align:right; font-family:monospace; font-weight:700; color:#f87171; font-size:0.85rem; white-space:nowrap;">
+                      PKR ${(Number(e.amount)||0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
         `;
       }
     } catch (e) {
-      itemizedEl.innerHTML = `<div style="color:#f87171; text-align:center;">Error loading details: ${escapeHtml(e.message)}</div>`;
+      itemizedEl.innerHTML = `<div style="color:#f87171; text-align:center; padding:1rem 0;">Error loading details: ${escapeHtml(e.message)}</div>`;
     }
   }
 
@@ -9375,7 +9454,9 @@ async function openExpenseVerifyModal(empId) {
     if (expVer && Array.isArray(expVer.auditLog) && expVer.auditLog.length > 0) {
       auditBox.classList.remove('hidden');
       const last = expVer.auditLog[expVer.auditLog.length - 1];
-      auditBox.innerHTML = `<strong>Last Activity:</strong> ${escapeHtml(last.action || 'VERIFIED')} by ${escapeHtml(last.by || 'Admin')} on ${new Date(last.at).toLocaleString()}${last.notes ? ` (Note: ${escapeHtml(last.notes)})` : ''}`;
+      const isRej = last.action === 'REJECTED' || expVer.verificationStatus === 'REJECTED';
+      const actionColor = isRej ? '#f87171' : '#60a5fa';
+      auditBox.innerHTML = `<strong>Last Activity:</strong> <span style="color:${actionColor}; font-weight:700;">${escapeHtml(last.action || 'VERIFIED')}</span> by ${escapeHtml(last.by || 'Admin')} on ${new Date(last.at).toLocaleString()}${last.notes || last.rejectionReason ? ` (Reason/Note: ${escapeHtml(last.notes || last.rejectionReason)})` : ''}`;
     } else {
       auditBox.classList.add('hidden');
     }
@@ -9434,7 +9515,7 @@ async function submitExpenseVerification() {
     });
 
     if (res && res.success) {
-      showToast(`✓ Expense verified by ${adminName}: PKR ${amt.toLocaleString()}`, 'success');
+      showToast(`✓ Expenses & bills verified by ${adminName}: PKR ${amt.toLocaleString()}`, 'success');
       const verifiedId = currentExpVerifyEmpId;
       closeExpenseVerifyModal();
       window.currentFinalizedSalaryReport = null;
@@ -9460,9 +9541,86 @@ async function submitExpenseVerification() {
   } catch (err) {
     showToast('Verification failed: ' + err.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Confirm Verification'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>✓</span> Approve &amp; Verify'; }
   }
 }
+
+async function rejectExpenseFromSalaryModal() {
+  if (!currentExpVerifyEmpId) return;
+
+  const passcodeInput = document.getElementById('exp-verify-passcode');
+  const adminNameInput = document.getElementById('exp-verify-admin-name');
+  const notesInput = document.getElementById('exp-verify-notes');
+
+  const passcode = passcodeInput ? passcodeInput.value.trim() : '';
+  if (!passcode) {
+    showToast('Please enter the Admin passcode to reject.', 'warning');
+    if (passcodeInput) passcodeInput.focus();
+    return;
+  }
+
+  const adminName = (adminNameInput && adminNameInput.value.trim()) || 'Admin 1';
+  const notes = notesInput ? notesInput.value.trim() : '';
+  if (!notes) {
+    showToast('Please enter a comment or reason for rejection in Admin Comments.', 'warning');
+    if (notesInput) notesInput.focus();
+    return;
+  }
+
+  const emp = (currentSalaryEmployees || []).find(e => e.id === currentExpVerifyEmpId);
+  const empName = emp ? emp.name : 'Employee';
+
+  if (!confirm(`Are you sure you want to REJECT all claimed expenses and bills for ${empName} for ${currentSalaryMonth}? This will reset verified expenses to PKR 0 and mark bills as REJECTED.`)) {
+    return;
+  }
+
+  const btn = document.getElementById('btn-reject-expense-verify');
+  if (btn) { btn.disabled = true; btn.textContent = 'Rejecting...'; }
+
+  try {
+    const res = await API.rejectExpense({
+      employeeId: currentExpVerifyEmpId,
+      employeeName: empName,
+      salaryMonth: currentSalaryMonth,
+      rejectionReason: notes,
+      rejectedBy: adminName,
+      notes,
+      passcode
+    });
+
+    if (res && res.success) {
+      showToast(`✖ Claimed expenses & bills rejected by ${adminName}`, 'success');
+      const verifiedId = currentExpVerifyEmpId;
+      closeExpenseVerifyModal();
+      window.currentFinalizedSalaryReport = null;
+
+      const tr = document.getElementById(`sal-row-${verifiedId}`);
+      if (tr) {
+        const basicInput = tr.querySelector('.salary-basic-input');
+        if (basicInput) basicInput.dataset.expenses = 0;
+        const verifyBtn = tr.querySelector('.cell-expenses button[onclick*="openExpenseVerifyModal"]');
+        if (verifyBtn) {
+          verifyBtn.style.background = 'rgba(239,68,68,0.18)';
+          verifyBtn.style.color = '#f87171';
+          verifyBtn.style.border = '1px solid rgba(239,68,68,0.5)';
+          verifyBtn.style.fontWeight = '700';
+          verifyBtn.textContent = '✖ Rej: PKR 0';
+          verifyBtn.title = `Rejected by ${adminName}: ${notes}`;
+        }
+        updateRowSalaryLive(tr);
+      } else {
+        await loadSalarySheet(currentSalaryMonth, true);
+      }
+    } else {
+      showToast((res && res.error) || 'Failed to reject expense', 'error');
+    }
+  } catch (err) {
+    showToast('Rejection failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>✖</span> Reject Expense / Bills'; }
+  }
+}
+window.rejectExpenseFromSalaryModal = rejectExpenseFromSalaryModal;
 
 async function openExpenseApproveModal(empId) {
   currentExpApproveEmpId = empId;

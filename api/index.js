@@ -800,6 +800,28 @@ module.exports = async (req, res) => {
       }
     }
 
+    if (path === 'salary/expense/reject' && method === 'POST') {
+      const settings = await db.getSettings();
+      const body = await parseBody(req);
+      const providedPasscode = body.passcode || adminPasscode;
+      if (providedPasscode !== settings.adminPasscode && providedPasscode !== settings.seniorAdminPasscode) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+      }
+      try {
+        const verification = await db.rejectExpense({
+          employeeId: body.employeeId,
+          employeeName: body.employeeName,
+          salaryMonth: body.salaryMonth || body.month,
+          rejectionReason: body.rejectionReason || body.reason || body.notes || '',
+          rejectedBy: body.rejectedBy || 'Admin 1',
+          notes: body.notes || body.rejectionReason || body.reason || ''
+        });
+        return res.json({ success: true, verification });
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+
     if (path === 'salary/expense/approve' && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);

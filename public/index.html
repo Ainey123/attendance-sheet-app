@@ -35,7 +35,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=270">
+  <link rel="stylesheet" href="style.css?v=271">
 
   <!-- html2pdf.js for generating monthly expense flow PDF reports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -3107,69 +3107,82 @@
     </div>
   </div>
 
-  <!-- MODAL: ADMIN 1 EXPENSE VERIFICATION -->
+  <!-- MODAL: ADMIN 1 EXPENSE VERIFICATION & APPROVAL / REJECTION -->
   <div id="modal-expense-verify" class="modal-overlay hidden" style="z-index: 10000;">
-    <div class="modal-content" style="max-width: 520px; background: #161a23; border: 1px solid rgba(59,130,246,0.3); border-radius: 12px; padding: 1.5rem;">
+    <div class="modal-content" style="max-width: 640px; background: #161a23; border: 1px solid rgba(59,130,246,0.35); border-radius: 12px; padding: 1.5rem; box-shadow: 0 20px 45px rgba(0,0,0,0.7);">
       <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h3 style="color:#fff; font-size:1.15rem; margin:0; display:flex; align-items:center; gap:0.5rem;">
-            <span>🔍</span> Admin 1 — Verify Expense
+            <span>🔍</span> Admin 1 — Verify &amp; Review Expenses
           </h3>
-          <p id="exp-verify-subtitle" style="font-size:0.82rem; color:var(--text-secondary); margin:0.25rem 0 0 0;">Employee Expense Verification</p>
+          <p id="exp-verify-subtitle" style="font-size:0.82rem; color:var(--text-secondary); margin:0.25rem 0 0 0;">Employee Bills, Shift Expenses &amp; Materials Verification</p>
         </div>
-        <button type="button" class="btn-close" onclick="closeExpenseVerifyModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&times;</button>
+        <button type="button" class="btn-close" onclick="closeExpenseVerifyModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.3rem;">&times;</button>
       </div>
 
       <div class="modal-body" style="display:flex; flex-direction:column; gap:1rem;">
-        <!-- Employee & Claimed Overview -->
-        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:0.75rem 1rem; display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+        <!-- Employee & Claimed Overview Cards -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:0.75rem 1rem; display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
           <div>
-            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Claimed by Employee</div>
-            <div id="exp-verify-claimed" style="font-size:1.1rem; font-weight:700; color:#f87171; font-family:monospace;">PKR 0</div>
+            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Total Claimed (All Sources)</div>
+            <div id="exp-verify-claimed" style="font-size:1.2rem; font-weight:700; color:#f87171; font-family:monospace; margin-top:2px;">PKR 0</div>
           </div>
           <div>
-            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Selected Period</div>
-            <div id="exp-verify-period" style="font-size:0.95rem; font-weight:600; color:#fff;">August 2026</div>
+            <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Salary Month</div>
+            <div id="exp-verify-period" style="font-size:1rem; font-weight:600; color:#fff; margin-top:2px;">August 2026</div>
           </div>
         </div>
 
-        <!-- Itemized Entries Container -->
-        <div id="exp-verify-itemized-container" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); border-radius:6px; padding:0.5rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.05);">
-          <div style="color:var(--text-muted); text-align:center;">Loading daily expense breakdown...</div>
+        <!-- Itemized Entries & Attached Receipts Container -->
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+            <label style="font-size:0.82rem; color:#cbd5e1; font-weight:600; margin:0;">
+              Itemized Claims, Bills &amp; Attached Receipts
+            </label>
+            <span id="exp-verify-item-count" style="font-size:0.75rem; color:var(--text-muted);">0 items</span>
+          </div>
+          <div id="exp-verify-itemized-container" style="max-height:210px; overflow-y:auto; background:rgba(0,0,0,0.28); border-radius:8px; padding:0.6rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.07);">
+            <div style="color:var(--text-muted); text-align:center; padding:1rem 0;">Loading claims and attached receipts...</div>
+          </div>
         </div>
 
         <!-- Form Inputs -->
         <div>
           <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem; font-weight:600;">Verified Amount (PKR) *</label>
           <input type="number" id="exp-verify-amount-input" class="form-input" min="0" step="any" placeholder="Enter verified amount" style="width:100%; background:#0f172a; border:1px solid #3b82f6; color:#fff; padding:0.55rem 0.75rem; border-radius:6px; font-size:1rem; font-family:monospace;" />
-          <small style="color:var(--text-muted); font-size:0.72rem;">Enter the cross-checked amount verified by Admin 1.</small>
+          <small style="color:var(--text-muted); font-size:0.72rem;">Enter verified amount to accept into salary sheet. If rejecting, amount will be set to PKR 0.</small>
         </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
           <div>
-            <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Admin 1 Name</label>
+            <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Admin Name</label>
             <input type="text" id="exp-verify-admin-name" class="form-input" placeholder="Admin 1" value="Admin 1" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
           </div>
           <div>
             <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Admin Passcode *</label>
-            <input type="password" id="exp-verify-passcode" class="form-input" placeholder="Passcode (e.g. 1289)" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+            <input type="password" id="exp-verify-passcode" class="form-input" placeholder="Passcode (1290)" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
           </div>
         </div>
 
         <div>
-          <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Verification Notes (Optional)</label>
-          <input type="text" id="exp-verify-notes" class="form-input" placeholder="e.g. Cross-checked with attendance receipts" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+          <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem; font-weight:600;">Admin Comment / Reason *</label>
+          <textarea id="exp-verify-notes" class="form-input" rows="2" placeholder="Write comment about this expense or reason for approval / rejection..." style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem; resize:vertical;"></textarea>
         </div>
 
         <!-- Audit trail if already verified -->
-        <div id="exp-verify-audit-box" class="hidden" style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.02); padding:0.5rem; border-radius:4px;"></div>
+        <div id="exp-verify-audit-box" class="hidden" style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.02); padding:0.5rem 0.75rem; border-radius:6px; border:1px solid rgba(255,255,255,0.05);"></div>
       </div>
 
-      <div class="modal-footer" style="margin-top:1.25rem; display:flex; justify-content:flex-end; gap:0.75rem;">
+      <div class="modal-footer" style="margin-top:1.25rem; display:flex; justify-content:space-between; align-items:center; gap:0.75rem; border-top:1px solid rgba(255,255,255,0.08); padding-top:0.85rem;">
         <button type="button" class="btn btn-secondary" onclick="closeExpenseVerifyModal()" style="padding:0.5rem 1rem;">Cancel</button>
-        <button type="button" id="btn-submit-expense-verify" class="btn btn-primary" onclick="submitExpenseVerification()" style="background:#3b82f6; padding:0.5rem 1.25rem; font-weight:600;">
-          ✓ Confirm Verification
-        </button>
+        <div style="display:flex; gap:0.6rem;">
+          <button type="button" id="btn-reject-expense-verify" class="btn" onclick="rejectExpenseFromSalaryModal()" style="background:#dc2626; color:#fff; padding:0.55rem 1.1rem; font-weight:600; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; gap:0.35rem;">
+            <span>✖</span> Reject Expense / Bills
+          </button>
+          <button type="button" id="btn-submit-expense-verify" class="btn btn-primary" onclick="submitExpenseVerification()" style="background:#3b82f6; color:#fff; padding:0.55rem 1.25rem; font-weight:600; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; gap:0.35rem;">
+            <span>✓</span> Approve &amp; Verify
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -3360,6 +3373,6 @@ This action cannot be undone.</p>
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=270"></script>
+  <script src="app.js?v=271"></script>
 </body>
 </html>
