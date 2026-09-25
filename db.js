@@ -291,6 +291,10 @@ function isQuotaOrNetworkError(error) {
     msg.includes('quota') ||
     msg.includes('failed to fetch') ||
     msg.includes('fetch_error') ||
+    msg.includes('terminated') ||
+    msg.includes('timeout') ||
+    msg.includes('econnreset') ||
+    msg.includes('socket') ||
     msg.includes('service unavailable') ||
     msg.includes('schema cache') ||
     msg.includes('could not find the table') ||
@@ -311,6 +315,8 @@ function handleSupabaseError(error, operation) {
   }
   throw new Error(`Failed to ${operation}: ${error ? (error.message || error) : 'Unknown error'}`);
 }
+
+let _lastAllocatedBillNum = 0;
 
 const db = {
   get useLocalFallback() {
@@ -774,7 +780,13 @@ const db = {
     if (useLocalFallback) {
       const data = loadLocalData();
       let records = data.attendance || [];
-      if (filterDate) records = records.filter(r => r.date === filterDate);
+      if (filterDate) {
+        if (/^\d{4}-\d{2}$/.test(filterDate)) {
+          records = records.filter(r => r.date && r.date.startsWith(filterDate));
+        } else {
+          records = records.filter(r => r.date === filterDate);
+        }
+      }
       return records.sort((a, b) => new Date(b.clockInTime) - new Date(a.clockInTime));
     }
     try {
@@ -783,7 +795,13 @@ const db = {
         .select('*')
         .order('clockInTime', { ascending: false });
 
-      if (filterDate) query = query.eq('date', filterDate);
+      if (filterDate) {
+        if (/^\d{4}-\d{2}$/.test(filterDate)) {
+          query = query.gte('date', `${filterDate}-01`).lte('date', `${filterDate}-31`);
+        } else {
+          query = query.eq('date', filterDate);
+        }
+      }
 
       const { data, error } = await query;
       if (error) handleSupabaseError(error, 'fetch attendance');
@@ -3070,7 +3088,7 @@ const db = {
     const isLeave = (r) => Boolean(r && String(r.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
     
     const [allAttendance, allWorkRecords, employees, allBills] = await Promise.all([
-      this.getAttendance().catch(() => []),
+      this.getAttendance(month).catch(() => []),
       this.getWorkRecords(null, month).catch(() => []),
       this.getEmployees(true).catch(() => []),
       this.getBills({ employeeId: null }).catch(() => [])
@@ -3130,7 +3148,7 @@ const db = {
       if (!bDate || !bDate.startsWith(month)) return;
       if (bill.status === 'REJECTED') return;
 
-      const exp = Number(bill.totalAmount) || (
+      const exp = Number(bill.totalClaimedAmount) || Number(bill.totalAmount) || (
         (Number(bill.transportationExpense) || 0) +
         (Number(bill.materialExpense) || 0) +
         (Number(bill.labourExpense) || 0) +
@@ -4554,7 +4572,7 @@ const db = {
 
     const [employees, allAttendance, workRecords, rawSalaries, accountsPdf, approvals, verifications, settings, manualOverrides, manualSundayOverrides, allBills] = await Promise.all([
       this.getEmployees(false),
-      this.getAttendance().catch(() => []),
+      this.getAttendance(month).catch(() => []),
       this.getWorkRecords(null, month).catch(() => []),
       (async () => {
         if (!useLocalFallback && supabase) {
@@ -4734,7 +4752,7 @@ const db = {
         if (bill.employeeId === empId) {
           const bDate = bill.billDate || bill.date || (bill.createdAt ? bill.createdAt.split('T')[0] : '');
           if (bDate && bDate.startsWith(month) && bill.status !== 'REJECTED') {
-            const amt = Number(bill.totalAmount) || (
+            const amt = Number(bill.totalClaimedAmount) || Number(bill.totalAmount) || (
               (Number(bill.transportationExpense) || 0) +
               (Number(bill.materialExpense) || 0) +
               (Number(bill.labourExpense) || 0) +
@@ -5285,10 +5303,10 @@ const db = {
   // Concurrency-safe Next Bill Number preview
   async getNextBillNumber() {
     try {
+      let maxNum = _lastAllocatedBillNum;
       if (useLocalFallback) {
         const data = loadLocalData();
         const bills = data.bills || [];
-        let maxNum = 0;
         bills.forEach(b => {
           const m = String(b.billNumber || '').match(/^BILL-(\d+)$/i);
           if (m) {
@@ -5296,17 +5314,17 @@ const db = {
             if (!isNaN(val) && val > maxNum) maxNum = val;
           }
         });
-        return `BILL-${String(maxNum + 1).padStart(6, '0')}`;
+        _lastAllocatedBillNum = Math.max(_lastAllocatedBillNum + 1, maxNum + 1);
+        return `BILL-${String(_lastAllocatedBillNum).padStart(6, '0')}`;
       }
 
       const { data, error } = await supabase
         .from('bills')
         .select('billNumber')
         .order('billNumber', { ascending: false })
-        .limit(50);
+        .limit(100);
 
       if (error) throw error;
-      let maxNum = 0;
       (data || []).forEach(b => {
         const m = String(b.billNumber || '').match(/^BILL-(\d+)$/i);
         if (m) {
@@ -5314,13 +5332,15 @@ const db = {
           if (!isNaN(val) && val > maxNum) maxNum = val;
         }
       });
-      return `BILL-${String(maxNum + 1).padStart(6, '0')}`;
+      _lastAllocatedBillNum = Math.max(_lastAllocatedBillNum + 1, maxNum + 1);
+      return `BILL-${String(_lastAllocatedBillNum).padStart(6, '0')}`;
     } catch (err) {
       if (isQuotaOrNetworkError(err)) {
         useLocalFallback = true;
         return this.getNextBillNumber();
       }
-      return 'BILL-000001';
+      _lastAllocatedBillNum = Math.max(_lastAllocatedBillNum + 1, 1);
+      return `BILL-${String(_lastAllocatedBillNum).padStart(6, '0')}`;
     }
   },
 
@@ -5515,7 +5535,7 @@ const db = {
   },
 
   // Get Bills with optional scoping & filters
-  async getBills({ employeeId = null, status = null, search = null } = {}) {
+  async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null } = {}) {
     let list = [];
     if (useLocalFallback) {
       const data = loadLocalData();
@@ -5532,6 +5552,12 @@ const db = {
           } else {
             query = query.eq('status', status);
           }
+        }
+        if (startDate) {
+          query = query.gte('billDate', startDate);
+        }
+        if (endDate) {
+          query = query.lte('billDate', endDate);
         }
         const { data, error } = await query;
         if (error) throw error;
@@ -5558,6 +5584,18 @@ const db = {
       } else {
         list = list.filter(b => b.status === status);
       }
+    }
+    if (startDate) {
+      list = list.filter(b => {
+        const bDate = b.billDate || b.date || (b.submittedAt ? b.submittedAt.slice(0, 10) : '');
+        return !bDate || bDate >= startDate;
+      });
+    }
+    if (endDate) {
+      list = list.filter(b => {
+        const bDate = b.billDate || b.date || (b.submittedAt ? b.submittedAt.slice(0, 10) : '');
+        return !bDate || bDate <= endDate;
+      });
     }
     if (search && search.trim()) {
       const term = search.trim().toLowerCase();
@@ -6552,6 +6590,7 @@ function normalizeBillRecord(bill) {
 
   const calc = computeBillTotalsAndStatus(categories, b.status);
   b.totalClaimedAmount = calc.totalClaimedAmount;
+  b.totalAmount = calc.totalClaimedAmount;
   b.totalVerifiedAmount = calc.totalVerifiedAmount;
   b.totalApprovedAmount = calc.totalApprovedAmount;
   b.verifiedAmount = calc.totalVerifiedAmount;

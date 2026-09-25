@@ -1030,7 +1030,9 @@ module.exports = async (req, res) => {
         const bills = await db.getBills({
           employeeId,
           status: query.status || null,
-          search: query.search || null
+          search: query.search || null,
+          startDate: query.startDate || null,
+          endDate: query.endDate || null
         });
         return res.json({ success: true, bills });
       } catch (err) {

@@ -1077,7 +1077,9 @@ app.get('/api/bills', async (req, res) => {
     const bills = await db.getBills({
       employeeId,
       status: req.query.status || null,
-      search: req.query.search || null
+      search: req.query.search || null,
+      startDate: req.query.startDate || null,
+      endDate: req.query.endDate || null
     });
 
     res.json({ success: true, bills });

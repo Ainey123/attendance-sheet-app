@@ -1215,7 +1215,7 @@ const db = {
       if (!bDate || !bDate.startsWith(month)) return;
       if (bill.status === 'REJECTED') return;
 
-      const exp = Number(bill.totalAmount) || (
+      const exp = Number(bill.totalClaimedAmount) || Number(bill.totalAmount) || (
         (Number(bill.transportationExpense) || 0) +
         (Number(bill.materialExpense) || 0) +
         (Number(bill.labourExpense) || 0) +
@@ -2343,7 +2343,7 @@ const db = {
         if (bill.employeeId === empId) {
           const bDate = bill.billDate || bill.date || (bill.createdAt ? bill.createdAt.split('T')[0] : '');
           if (bDate && bDate.startsWith(month) && bill.status !== 'REJECTED') {
-            const amt = Number(bill.totalAmount) || (
+            const amt = Number(bill.totalClaimedAmount) || Number(bill.totalAmount) || (
               (Number(bill.transportationExpense) || 0) +
               (Number(bill.materialExpense) || 0) +
               (Number(bill.labourExpense) || 0) +
@@ -2651,7 +2651,7 @@ const db = {
     return normalizeBillRecord(newBill);
   },
 
-  async getBills({ employeeId = null, status = null, search = null } = {}) {
+  async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null } = {}) {
     loadData();
     let list = (data.bills || []).map(b => normalizeBillRecord(b));
 
@@ -2664,6 +2664,18 @@ const db = {
       } else {
         list = list.filter(b => b.status === status);
       }
+    }
+    if (startDate) {
+      list = list.filter(b => {
+        const bDate = b.billDate || b.date || (b.submittedAt ? b.submittedAt.slice(0, 10) : '');
+        return !bDate || bDate >= startDate;
+      });
+    }
+    if (endDate) {
+      list = list.filter(b => {
+        const bDate = b.billDate || b.date || (b.submittedAt ? b.submittedAt.slice(0, 10) : '');
+        return !bDate || bDate <= endDate;
+      });
     }
     if (search && search.trim()) {
       const term = search.trim().toLowerCase();
@@ -3380,6 +3392,7 @@ function normalizeBillRecord(bill) {
 
   const calc = computeBillTotalsAndStatus(categories, b.status);
   b.totalClaimedAmount = calc.totalClaimedAmount;
+  b.totalAmount = calc.totalClaimedAmount;
   b.totalVerifiedAmount = calc.totalVerifiedAmount;
   b.totalApprovedAmount = calc.totalApprovedAmount;
   b.verifiedAmount = calc.totalVerifiedAmount;

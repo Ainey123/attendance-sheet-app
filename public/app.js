@@ -5981,35 +5981,106 @@ function getBillStatusBadgeHtml(status) {
   }
 }
 
+async function populateAdminBillEmployeeDropdown() {
+  const select = document.getElementById('admin-bill-employee-select');
+  if (!select) return;
+
+  if (!allEmployees || !allEmployees.length) {
+    try {
+      const res = await API.getEmployees();
+      if (res && res.employees) allEmployees = res.employees;
+      else if (Array.isArray(res)) allEmployees = res;
+    } catch (e) {}
+  }
+
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">All Employees</option>';
+
+  const employees = (Array.isArray(allEmployees) && allEmployees.length) ? allEmployees : [];
+  const sorted = [...employees].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  sorted.forEach(emp => {
+    const opt = document.createElement('option');
+    opt.value = emp.id;
+    opt.textContent = `${emp.name}${emp.role ? ' (' + emp.role + ')' : ''}`;
+    if (opt.value === currentVal) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+function applyBillTenurePreset(preset) {
+  const fromInput = document.getElementById('admin-bill-date-from');
+  const toInput = document.getElementById('admin-bill-date-to');
+  if (!fromInput || !toInput) return;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-indexed
+
+  const pad = n => String(n).padStart(2, '0');
+  const formatYMD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (preset === 'ALL') {
+    fromInput.value = '';
+    toInput.value = '';
+  } else if (preset === 'THIS_MONTH') {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    fromInput.value = formatYMD(firstDay);
+    toInput.value = formatYMD(lastDay);
+  } else if (preset === 'LAST_MONTH') {
+    const firstDay = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0);
+    fromInput.value = formatYMD(firstDay);
+    toInput.value = formatYMD(lastDay);
+  } else if (preset === 'LAST_3_MONTHS') {
+    const firstDay = new Date(year, month - 2, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    fromInput.value = formatYMD(firstDay);
+    toInput.value = formatYMD(lastDay);
+  } else if (preset === 'THIS_YEAR') {
+    fromInput.value = `${year}-01-01`;
+    toInput.value = `${year}-12-31`;
+  }
+}
+
+function previewBillPdfFromTable(billId, idx) {
+  const bill = currentAdminBills.find(b => String(b.id) === String(billId));
+  if (!bill || !bill.attachments || !bill.attachments[idx]) return;
+  const att = bill.attachments[idx];
+  if (att.dataUrl) {
+    try {
+      const w = window.open();
+      if (w) {
+        w.document.write('<!DOCTYPE html><html><head><title>' + escapeHtml(att.name || 'Bill Receipt PDF') + '</title><style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0f172a;}</style></head><body><iframe src="' + att.dataUrl + '" frameborder="0" style="width:100%;height:100%;border:none;" allowfullscreen></iframe></body></html>');
+      } else {
+        window.open(att.dataUrl, '_blank');
+      }
+    } catch (e) {
+      window.open(att.dataUrl, '_blank');
+    }
+  }
+}
+
 async function loadAdminBills() {
+  await populateAdminBillEmployeeDropdown();
+
   try {
     const statsRes = await API.getBillStats();
     const stats = (statsRes && statsRes.stats) ? statsRes.stats : (statsRes || {});
-    const totalEl = document.getElementById('bill-stat-total');
-    if (totalEl) totalEl.innerText = stats.totalBills || 0;
-    const pendingEl = document.getElementById('bill-stat-pending');
-    if (pendingEl) pendingEl.innerText = stats.pendingVerificationCount || 0;
-    const verifiedEl = document.getElementById('bill-stat-verified');
-    if (verifiedEl) verifiedEl.innerText = stats.verifiedCount || 0;
-    const approvedEl = document.getElementById('bill-stat-approved');
-    if (approvedEl) approvedEl.innerText = stats.approvedCount || 0;
-    const totalAmtEl = document.getElementById('bill-stat-total-amount');
-    if (totalAmtEl) totalAmtEl.innerText = 'PKR ' + (stats.totalClaimedAmount || 0).toLocaleString();
-
     updateAdminPendingBillsBadgeAndAlert(stats);
   } catch (err) {
     console.warn('Error loading bill stats:', err);
   }
 
   const tbody = document.querySelector('#admin-bills-table tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Loading bills...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Loading bills...</td></tr>';
 
   try {
     const res = await API.getBills();
     currentAdminBills = (res && res.bills) ? res.bills : (Array.isArray(res) ? res : []);
     renderAdminBillsTable();
   } catch (err) {
-    if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="table-empty text-danger">Failed to load bills: ' + escapeHtml(err.message || '') + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="table-empty text-danger">Failed to load bills: ' + escapeHtml(err.message || '') + '</td></tr>';
   }
 }
 
@@ -6018,38 +6089,140 @@ function renderAdminBillsTable() {
   if (!tbody) return;
   tbody.innerHTML = '';
 
+  const selectedEmpId = document.getElementById('admin-bill-employee-select')?.value || '';
+  const dateFrom = document.getElementById('admin-bill-date-from')?.value || '';
+  const dateTo = document.getElementById('admin-bill-date-to')?.value || '';
   const query = (document.getElementById('admin-bill-search')?.value || '').toLowerCase().trim();
 
+  // 1. Filter by Employee, Tenure Dates, and Text Query
   let filtered = currentAdminBills;
-  if (currentAdminBillFilter === 'PENDING_VERIFICATION') {
-    filtered = filtered.filter(b => b.status === 'PENDING_VERIFICATION' || b.status === 'SUBMITTED' || b.status === 'PARTIALLY_VERIFIED');
-  } else if (currentAdminBillFilter === 'VERIFIED') {
-    filtered = filtered.filter(b => b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED');
-  } else if (currentAdminBillFilter !== 'ALL') {
-    filtered = filtered.filter(b => b.status === currentAdminBillFilter);
+
+  if (selectedEmpId) {
+    filtered = filtered.filter(b => b.employeeId === selectedEmpId || (b.employeeName && b.employeeName.toLowerCase().includes(selectedEmpId.toLowerCase())));
   }
+
+  if (dateFrom || dateTo) {
+    filtered = filtered.filter(b => {
+      const bDate = b.billDate || b.date || (b.createdAt ? b.createdAt.slice(0, 10) : '');
+      if (!bDate) return true;
+      if (dateFrom && bDate < dateFrom) return false;
+      if (dateTo && bDate > dateTo) return false;
+      return true;
+    });
+  }
+
   if (query) {
     filtered = filtered.filter(b => {
       const billDateStr = b.billDate || b.date || '';
       return (b.billNumber && b.billNumber.toLowerCase().includes(query)) ||
         (b.employeeName && b.employeeName.toLowerCase().includes(query)) ||
+        (b.employeeId && b.employeeId.toLowerCase().includes(query)) ||
         (b.siteName && b.siteName.toLowerCase().includes(query)) ||
-        (billDateStr && billDateStr.toLowerCase().includes(query));
+        (billDateStr && billDateStr.toLowerCase().includes(query)) ||
+        (b.status && b.status.toLowerCase().includes(query));
     });
   }
 
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">No bills found matching current filter.</td></tr>';
+  // 2. Compute dynamic stats on filtered set (Total, Pending, Verified, Approved, Rejected)
+  const totalBillsCount = filtered.length;
+  let totalClaimedAmount = 0;
+  let pendingCount = 0;
+  let pendingClaimedAmount = 0;
+  let verifiedCount = 0;
+  let verifiedApprovedAmount = 0;
+  let approvedCount = 0;
+  let approvedAmount = 0;
+  let rejectedCount = 0;
+  let rejectedAmount = 0;
+
+  filtered.forEach(b => {
+    const claimed = Number(b.totalClaimedAmount || 0);
+    const verified = Number(b.totalVerifiedAmount !== null && b.totalVerifiedAmount !== undefined ? b.totalVerifiedAmount : (b.verifiedAmount || 0));
+    const approved = Number(b.totalApprovedAmount !== null && b.totalApprovedAmount !== undefined ? b.totalApprovedAmount : (b.approvedAmount || 0));
+
+    totalClaimedAmount += claimed;
+
+    if (b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION' || b.status === 'PARTIALLY_VERIFIED') {
+      pendingCount++;
+      pendingClaimedAmount += claimed;
+    } else if (b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED') {
+      verifiedCount++;
+      verifiedApprovedAmount += verified;
+    } else if (b.status === 'APPROVED') {
+      approvedCount++;
+      approvedAmount += approved;
+    } else if (b.status === 'REJECTED') {
+      rejectedCount++;
+      rejectedAmount += claimed;
+    }
+  });
+
+  // Update stat cards in DOM
+  const totalEl = document.getElementById('bill-stat-total');
+  if (totalEl) totalEl.innerText = totalBillsCount.toLocaleString();
+  const totalAmtEl = document.getElementById('bill-stat-total-amount');
+  if (totalAmtEl) totalAmtEl.innerText = 'PKR ' + totalClaimedAmount.toLocaleString();
+
+  const pendingEl = document.getElementById('bill-stat-pending');
+  if (pendingEl) pendingEl.innerText = pendingCount.toLocaleString();
+  const pendingAmtEl = document.getElementById('bill-stat-pending-amount');
+  if (pendingAmtEl) pendingAmtEl.innerText = 'PKR ' + pendingClaimedAmount.toLocaleString();
+
+  const verifiedEl = document.getElementById('bill-stat-verified');
+  if (verifiedEl) verifiedEl.innerText = verifiedCount.toLocaleString();
+  const verifiedAmtEl = document.getElementById('bill-stat-verified-amount');
+  if (verifiedAmtEl) verifiedAmtEl.innerText = 'PKR ' + verifiedApprovedAmount.toLocaleString();
+
+  const approvedEl = document.getElementById('bill-stat-approved');
+  if (approvedEl) approvedEl.innerText = approvedCount.toLocaleString();
+  const approvedAmtEl = document.getElementById('bill-stat-approved-amount');
+  if (approvedAmtEl) approvedAmtEl.innerText = 'PKR ' + approvedAmount.toLocaleString();
+
+  const rejectedEl = document.getElementById('bill-stat-rejected');
+  if (rejectedEl) rejectedEl.innerText = rejectedCount.toLocaleString();
+  const rejectedAmtEl = document.getElementById('bill-stat-rejected-amount');
+  if (rejectedAmtEl) rejectedAmtEl.innerText = 'PKR ' + rejectedAmount.toLocaleString();
+
+  // 3. Filter by Status tab
+  let rowsToRender = filtered;
+  if (currentAdminBillFilter === 'PENDING_VERIFICATION') {
+    rowsToRender = rowsToRender.filter(b => b.status === 'PENDING_VERIFICATION' || b.status === 'SUBMITTED' || b.status === 'PARTIALLY_VERIFIED');
+  } else if (currentAdminBillFilter === 'VERIFIED') {
+    rowsToRender = rowsToRender.filter(b => b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED');
+  } else if (currentAdminBillFilter !== 'ALL') {
+    rowsToRender = rowsToRender.filter(b => b.status === currentAdminBillFilter);
+  }
+
+  if (!rowsToRender.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="table-empty">No bills found matching current filter.</td></tr>';
     return;
   }
 
-  filtered.forEach(bill => {
+  // 4. Render rows
+  rowsToRender.forEach(bill => {
     const tr = document.createElement('tr');
     const badgeHtml = getBillStatusBadgeHtml(bill.status);
     const verifiedAmt = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.verifiedAmount;
     const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
     const approvedAmt = bill.totalApprovedAmount !== null && bill.totalApprovedAmount !== undefined ? bill.totalApprovedAmount : bill.approvedAmount;
     const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
+
+    // Receipt previews
+    let attachmentsHtml = '<span class="text-muted" style="font-size:0.8rem;">—</span>';
+    const atts = Array.isArray(bill.attachments) ? bill.attachments : [];
+    if (atts.length > 0) {
+      const badges = atts.map((att, idx) => {
+        const isPdf = att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+        if (isPdf) {
+          return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); previewBillPdfFromTable('${bill.id}', ${idx})" title="${escapeHtml(att.name || 'PDF Document')}" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
+            <span>📄</span> PDF
+          </button>`;
+        } else {
+          return `<img src="${att.dataUrl}" alt="${escapeHtml(att.name || 'Receipt')}" onclick="event.stopPropagation(); openPhotoModal('${att.dataUrl}')" title="${escapeHtml(att.name || 'Click to view receipt')}" style="width:34px; height:34px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.25); cursor:pointer; vertical-align:middle; transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'" />`;
+        }
+      });
+      attachmentsHtml = `<div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">${badges.join('')}</div>`;
+    }
 
     let btnLabel = 'View Details';
     if (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED') {
@@ -6066,6 +6239,7 @@ function renderAdminBillsTable() {
       <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
       <td style="color:#60a5fa;">${verifiedTxt}</td>
       <td style="color:#4ade80;">${approvedTxt}</td>
+      <td>${attachmentsHtml}</td>
       <td>${badgeHtml}</td>
       <td>
         <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${bill.id}')">
@@ -6741,6 +6915,59 @@ function initBillEventListeners() {
   const btnRefreshAdminBills = document.getElementById('btn-refresh-admin-bills');
   if (btnRefreshAdminBills) {
     btnRefreshAdminBills.addEventListener('click', loadAdminBills);
+  }
+
+  const empSelect = document.getElementById('admin-bill-employee-select');
+  if (empSelect) {
+    empSelect.addEventListener('change', () => {
+      renderAdminBillsTable();
+    });
+  }
+
+  const tenurePreset = document.getElementById('admin-bill-tenure-preset');
+  if (tenurePreset) {
+    tenurePreset.addEventListener('change', () => {
+      applyBillTenurePreset(tenurePreset.value);
+      renderAdminBillsTable();
+    });
+  }
+
+  const dateFrom = document.getElementById('admin-bill-date-from');
+  const dateTo = document.getElementById('admin-bill-date-to');
+  if (dateFrom) {
+    dateFrom.addEventListener('change', () => {
+      if (tenurePreset) tenurePreset.value = 'CUSTOM';
+      renderAdminBillsTable();
+    });
+  }
+  if (dateTo) {
+    dateTo.addEventListener('change', () => {
+      if (tenurePreset) tenurePreset.value = 'CUSTOM';
+      renderAdminBillsTable();
+    });
+  }
+
+  const btnResetFilters = document.getElementById('btn-reset-bill-filters');
+  if (btnResetFilters) {
+    btnResetFilters.addEventListener('click', () => {
+      if (empSelect) empSelect.value = '';
+      if (tenurePreset) tenurePreset.value = 'ALL';
+      if (dateFrom) dateFrom.value = '';
+      if (dateTo) dateTo.value = '';
+      const adminSearch = document.getElementById('admin-bill-search');
+      if (adminSearch) adminSearch.value = '';
+      document.querySelectorAll('.bill-filter-btn').forEach(b => {
+        b.classList.remove('active', 'btn-primary');
+        b.classList.add('btn-secondary');
+      });
+      const allBtn = document.querySelector('.bill-filter-btn[data-filter="ALL"]');
+      if (allBtn) {
+        allBtn.classList.add('active', 'btn-primary');
+        allBtn.classList.remove('btn-secondary');
+      }
+      currentAdminBillFilter = 'ALL';
+      renderAdminBillsTable();
+    });
   }
 
   document.querySelectorAll('.bill-filter-btn').forEach(btn => {
