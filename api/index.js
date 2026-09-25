@@ -1027,12 +1027,14 @@ module.exports = async (req, res) => {
       }
 
       try {
+        const lightweight = query.full !== 'true';
         const bills = await db.getBills({
           employeeId,
           status: query.status || null,
           search: query.search || null,
           startDate: query.startDate || null,
-          endDate: query.endDate || null
+          endDate: query.endDate || null,
+          lightweight
         });
         return res.json({ success: true, bills });
       } catch (err) {

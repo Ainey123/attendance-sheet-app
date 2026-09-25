@@ -5528,6 +5528,7 @@ let currentAdminBills = [];
 let currentAdminBillFilter = 'ALL';
 let currentActiveAdminBillId = null;
 let currentActiveAdminBillData = null;
+let isAdminBillsLoading = false;
 
 function openClockOutBillPrompt() {
   const modal = document.getElementById('modal-clockout-bill-prompt');
@@ -6043,25 +6044,49 @@ function applyBillTenurePreset(preset) {
   }
 }
 
-function previewBillPdfFromTable(billId, idx) {
-  const bill = currentAdminBills.find(b => String(b.id) === String(billId));
-  if (!bill || !bill.attachments || !bill.attachments[idx]) return;
-  const att = bill.attachments[idx];
-  if (att.dataUrl) {
+async function previewBillPdfFromTable(billId, idx) {
+  let bill = currentAdminBills.find(b => String(b.id) === String(billId));
+  let att = bill && bill.attachments && bill.attachments[idx];
+  if (!att || !att.dataUrl) {
     try {
-      const w = window.open();
-      if (w) {
-        w.document.write('<!DOCTYPE html><html><head><title>' + escapeHtml(att.name || 'Bill Receipt PDF') + '</title><style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0f172a;}</style></head><body><iframe src="' + att.dataUrl + '" frameborder="0" style="width:100%;height:100%;border:none;" allowfullscreen></iframe></body></html>');
-      } else {
-        window.open(att.dataUrl, '_blank');
+      const res = await API.getBillById(billId);
+      if (res && res.bill && res.bill.attachments && res.bill.attachments[idx]) {
+        att = res.bill.attachments[idx];
       }
-    } catch (e) {
+    } catch (e) {}
+  }
+  if (!att || !att.dataUrl) {
+    openAdminBillModal(billId);
+    return;
+  }
+  try {
+    const w = window.open();
+    if (w) {
+      w.document.write('<!DOCTYPE html><html><head><title>' + escapeHtml(att.name || 'Bill Receipt PDF') + '</title><style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0f172a;}</style></head><body><iframe src="' + att.dataUrl + '" frameborder="0" style="width:100%;height:100%;border:none;" allowfullscreen></iframe></body></html>');
+    } else {
       window.open(att.dataUrl, '_blank');
     }
+  } catch (e) {
+    window.open(att.dataUrl, '_blank');
   }
 }
 
+function normalizeDateToYMD(val) {
+  if (!val) return '';
+  val = String(val).trim();
+  const dmy = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  const ymd = val.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (ymd) {
+    return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+  }
+  return val.slice(0, 10);
+}
+
 async function loadAdminBills() {
+  isAdminBillsLoading = true;
   await populateAdminBillEmployeeDropdown();
 
   try {
@@ -6073,7 +6098,9 @@ async function loadAdminBills() {
   }
 
   const tbody = document.querySelector('#admin-bills-table tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Loading bills...</td></tr>';
+  if (tbody && (!currentAdminBills || !currentAdminBills.length)) {
+    tbody.innerHTML = '<tr><td colspan="10" class="table-empty"><div style="padding:1.5rem; text-align:center;"><span style="font-size:1.1rem; color:#38bdf8;">⏳ Loading bills...</span></div></td></tr>';
+  }
 
   try {
     const res = await API.getBills();
@@ -6081,15 +6108,27 @@ async function loadAdminBills() {
     renderAdminBillsTable();
   } catch (err) {
     if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="table-empty text-danger">Failed to load bills: ' + escapeHtml(err.message || '') + '</td></tr>';
+  } finally {
+    isAdminBillsLoading = false;
   }
 }
 
 function renderAdminBillsTable() {
   const tbody = document.querySelector('#admin-bills-table tbody');
   if (!tbody) return;
+
+  if (isAdminBillsLoading && (!currentAdminBills || !currentAdminBills.length)) {
+    tbody.innerHTML = '<tr><td colspan="10" class="table-empty"><div style="padding:1.5rem; text-align:center;"><span style="font-size:1.1rem; color:#38bdf8;">⏳ Loading bills...</span></div></td></tr>';
+    return;
+  }
+
   tbody.innerHTML = '';
 
-  const selectedEmpId = document.getElementById('admin-bill-employee-select')?.value || '';
+  const empSelect = document.getElementById('admin-bill-employee-select');
+  const selectedEmpId = empSelect?.value || '';
+  const selectedEmpText = empSelect?.selectedOptions?.[0]?.textContent || '';
+  const selectedEmpCleanName = selectedEmpText.replace(/\s*\(.*?\)\s*$/, '').trim().toLowerCase();
+
   const dateFrom = document.getElementById('admin-bill-date-from')?.value || '';
   const dateTo = document.getElementById('admin-bill-date-to')?.value || '';
   const query = (document.getElementById('admin-bill-search')?.value || '').toLowerCase().trim();
@@ -6098,15 +6137,25 @@ function renderAdminBillsTable() {
   let filtered = currentAdminBills;
 
   if (selectedEmpId) {
-    filtered = filtered.filter(b => b.employeeId === selectedEmpId || (b.employeeName && b.employeeName.toLowerCase().includes(selectedEmpId.toLowerCase())));
+    filtered = filtered.filter(b => {
+      if (b.employeeId && b.employeeId === selectedEmpId) return true;
+      const bName = (b.employeeName || '').toLowerCase().trim();
+      if (selectedEmpCleanName && bName && (bName === selectedEmpCleanName || bName.includes(selectedEmpCleanName) || selectedEmpCleanName.includes(bName))) return true;
+      if (b.employeeId && b.employeeId.toLowerCase() === selectedEmpId.toLowerCase()) return true;
+      return false;
+    });
   }
 
-  if (dateFrom || dateTo) {
+  const normDateFrom = normalizeDateToYMD(dateFrom);
+  const normDateTo = normalizeDateToYMD(dateTo);
+
+  if (normDateFrom || normDateTo) {
     filtered = filtered.filter(b => {
-      const bDate = b.billDate || b.date || (b.createdAt ? b.createdAt.slice(0, 10) : '');
-      if (!bDate) return true;
-      if (dateFrom && bDate < dateFrom) return false;
-      if (dateTo && bDate > dateTo) return false;
+      const rawDate = b.billDate || b.date || b.createdAt || '';
+      const normBDate = normalizeDateToYMD(rawDate);
+      if (!normBDate) return true;
+      if (normDateFrom && normBDate < normDateFrom) return false;
+      if (normDateTo && normBDate > normDateTo) return false;
       return true;
     });
   }
@@ -6212,13 +6261,17 @@ function renderAdminBillsTable() {
     const atts = Array.isArray(bill.attachments) ? bill.attachments : [];
     if (atts.length > 0) {
       const badges = atts.map((att, idx) => {
-        const isPdf = att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+        const isPdf = att.isPdf || att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
         if (isPdf) {
           return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); previewBillPdfFromTable('${bill.id}', ${idx})" title="${escapeHtml(att.name || 'PDF Document')}" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
             <span>📄</span> PDF
           </button>`;
-        } else {
+        } else if (att.dataUrl) {
           return `<img src="${att.dataUrl}" alt="${escapeHtml(att.name || 'Receipt')}" onclick="event.stopPropagation(); openPhotoModal('${att.dataUrl}')" title="${escapeHtml(att.name || 'Click to view receipt')}" style="width:34px; height:34px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.25); cursor:pointer; vertical-align:middle; transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'" />`;
+        } else {
+          return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); openAdminBillModal('${bill.id}')" title="Click to view attachment in details modal" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#7dd3fc; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
+            <span>📎</span> ${escapeHtml(att.name || 'Receipt')}
+          </button>`;
         }
       });
       attachmentsHtml = `<div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">${badges.join('')}</div>`;

@@ -5535,7 +5535,7 @@ const db = {
   },
 
   // Get Bills with optional scoping & filters
-  async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null } = {}) {
+  async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null, lightweight = false } = {}) {
     let list = [];
     if (useLocalFallback) {
       const data = loadLocalData();
@@ -5610,6 +5610,26 @@ const db = {
     }
 
     list.sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
+
+    if (lightweight) {
+      list = list.map(b => {
+        if (!b.attachments || !b.attachments.length) return b;
+        return {
+          ...b,
+          attachments: b.attachments.map(att => {
+            const isPdf = att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+            if (isPdf) {
+              return { name: att.name, type: att.type, isPdf: true };
+            }
+            if (att.dataUrl && att.dataUrl.length > 40000) {
+              return { name: att.name, type: att.type, isLarge: true };
+            }
+            return att;
+          })
+        };
+      });
+    }
+
     return list;
   },
 

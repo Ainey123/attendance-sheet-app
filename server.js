@@ -1074,12 +1074,14 @@ app.get('/api/bills', async (req, res) => {
       employeeId = clientEmpId;
     }
 
+    const lightweight = req.query.full !== 'true';
     const bills = await db.getBills({
       employeeId,
       status: req.query.status || null,
       search: req.query.search || null,
       startDate: req.query.startDate || null,
-      endDate: req.query.endDate || null
+      endDate: req.query.endDate || null,
+      lightweight
     });
 
     res.json({ success: true, bills });
