@@ -6247,60 +6247,95 @@ function renderAdminBillsTable() {
     return;
   }
 
-  // 4. Render rows
+  // 4. Render rows (grouped by employee)
+  const groupedBills = {};
   rowsToRender.forEach(bill => {
-    const tr = document.createElement('tr');
-    const badgeHtml = getBillStatusBadgeHtml(bill.status);
-    const verifiedAmt = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.verifiedAmount;
-    const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
-    const approvedAmt = bill.totalApprovedAmount !== null && bill.totalApprovedAmount !== undefined ? bill.totalApprovedAmount : bill.approvedAmount;
-    const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
+    const empId = bill.employeeId || 'unknown';
+    if (!groupedBills[empId]) groupedBills[empId] = [];
+    groupedBills[empId].push(bill);
+  });
 
-    // Receipt previews
-    let attachmentsHtml = '<span class="text-muted" style="font-size:0.8rem;">—</span>';
-    const atts = Array.isArray(bill.attachments) ? bill.attachments : [];
-    if (atts.length > 0) {
-      const badges = atts.map((att, idx) => {
-        const isPdf = att.isPdf || att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
-        if (isPdf) {
-          return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); previewBillPdfFromTable('${bill.id}', ${idx})" title="${escapeHtml(att.name || 'PDF Document')}" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
-            <span>📄</span> PDF
-          </button>`;
-        } else if (att.dataUrl) {
-          return `<img src="${att.dataUrl}" alt="${escapeHtml(att.name || 'Receipt')}" onclick="event.stopPropagation(); openPhotoModal('${att.dataUrl}')" title="${escapeHtml(att.name || 'Click to view receipt')}" style="width:34px; height:34px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.25); cursor:pointer; vertical-align:middle; transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'" />`;
-        } else {
-          return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); openAdminBillModal('${bill.id}')" title="Click to view attachment in details modal" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#7dd3fc; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
-            <span>📎</span> ${escapeHtml(att.name || 'Receipt')}
-          </button>`;
-        }
-      });
-      attachmentsHtml = `<div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">${badges.join('')}</div>`;
-    }
+  Object.keys(groupedBills).forEach(empId => {
+    let empTotalClaimed = 0;
+    let empTotalVerified = 0;
+    let empTotalApproved = 0;
+    let empName = 'Unknown Employee';
 
-    let btnLabel = 'View Details';
-    if (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED') {
-      btnLabel = 'Review & Verify';
-    } else if (bill.status === 'VERIFIED' || bill.status === 'PARTIALLY_APPROVED') {
-      btnLabel = 'Approve / Review';
-    }
+    groupedBills[empId].forEach(bill => {
+      empName = bill.employeeName || empName;
+      const claimed = Number(bill.totalClaimedAmount || 0);
+      const verifiedAmt = bill.totalVerifiedAmount !== null && bill.totalVerifiedAmount !== undefined ? bill.totalVerifiedAmount : bill.verifiedAmount;
+      const verified = Number(verifiedAmt || 0);
+      const approvedAmt = bill.totalApprovedAmount !== null && bill.totalApprovedAmount !== undefined ? bill.totalApprovedAmount : bill.approvedAmount;
+      const approved = Number(approvedAmt || 0);
+      
+      empTotalClaimed += claimed;
+      empTotalVerified += verified;
+      empTotalApproved += approved;
 
-    tr.innerHTML = `
-      <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
-      <td>${bill.billDate || bill.date || '—'}</td>
-      <td>${escapeHtml(bill.employeeName)}</td>
-      <td>${escapeHtml(bill.siteName || '—')}</td>
-      <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
-      <td style="color:#60a5fa;">${verifiedTxt}</td>
-      <td style="color:#4ade80;">${approvedTxt}</td>
-      <td>${attachmentsHtml}</td>
-      <td>${badgeHtml}</td>
-      <td>
-        <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${bill.id}')">
-          ${btnLabel}
-        </button>
-      </td>
+      const tr = document.createElement('tr');
+      const badgeHtml = getBillStatusBadgeHtml(bill.status);
+      const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
+      const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
+
+      // Receipt previews
+      let attachmentsHtml = '<span class="text-muted" style="font-size:0.8rem;">—</span>';
+      const atts = Array.isArray(bill.attachments) ? bill.attachments : [];
+      if (atts.length > 0) {
+        const badges = atts.map((att, idx) => {
+          const isPdf = att.isPdf || att.type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+          if (isPdf) {
+            return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); previewBillPdfFromTable('${bill.id}', ${idx})" title="${escapeHtml(att.name || 'PDF Document')}" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
+              <span>📄</span> PDF
+            </button>`;
+          } else if (att.dataUrl) {
+            return `<img src="${att.dataUrl}" alt="${escapeHtml(att.name || 'Receipt')}" onclick="event.stopPropagation(); openPhotoModal('${att.dataUrl}')" title="${escapeHtml(att.name || 'Click to view receipt')}" style="width:34px; height:34px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.25); cursor:pointer; vertical-align:middle; transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'" />`;
+          } else {
+            return `<button type="button" class="btn btn-sm" onclick="event.stopPropagation(); openAdminBillModal('${bill.id}')" title="Click to view attachment in details modal" style="padding:0.2rem 0.45rem; font-size:0.75rem; background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#7dd3fc; border-radius:6px; display:inline-flex; align-items:center; gap:0.25rem; font-weight:600; cursor:pointer;">
+              <span>📎</span> ${escapeHtml(att.name || 'Receipt')}
+            </button>`;
+          }
+        });
+        attachmentsHtml = `<div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">${badges.join('')}</div>`;
+      }
+
+      let btnLabel = 'View Details';
+      if (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED') {
+        btnLabel = 'Review & Verify';
+      } else if (bill.status === 'VERIFIED' || bill.status === 'PARTIALLY_APPROVED') {
+        btnLabel = 'Approve / Review';
+      }
+
+      tr.innerHTML = `
+        <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
+        <td>${bill.billDate || bill.date || '—'}</td>
+        <td>${escapeHtml(bill.employeeName)}</td>
+        <td>${escapeHtml(bill.siteName || '—')}</td>
+        <td><strong>Rs. ${(bill.totalClaimedAmount || 0).toLocaleString()}</strong></td>
+        <td style="color:#60a5fa;">${verifiedTxt}</td>
+        <td style="color:#4ade80;">${approvedTxt}</td>
+        <td>${attachmentsHtml}</td>
+        <td>${badgeHtml}</td>
+        <td>
+          <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${bill.id}')">
+            ${btnLabel}
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Add summary row for this employee
+    const summaryTr = document.createElement('tr');
+    summaryTr.style.backgroundColor = 'rgba(56, 189, 248, 0.05)';
+    summaryTr.innerHTML = `
+      <td colspan="4" style="text-align: right; font-weight: bold; color: #38bdf8; padding-right: 1rem;">Total for ${escapeHtml(empName)}:</td>
+      <td style="font-weight: bold; color: #f8fafc;">Rs. ${empTotalClaimed.toLocaleString()}</td>
+      <td style="font-weight: bold; color: #60a5fa;">Rs. ${empTotalVerified.toLocaleString()}</td>
+      <td style="font-weight: bold; color: #4ade80;">Rs. ${empTotalApproved.toLocaleString()}</td>
+      <td colspan="3"></td>
     `;
-    tbody.appendChild(tr);
+    tbody.appendChild(summaryTr);
   });
 }
 
