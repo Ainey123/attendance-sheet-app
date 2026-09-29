@@ -53,7 +53,7 @@ async function fetchJson(url, options = {}) {
 const API = {
   getSettings: () => fetchJson('/api/settings'),
   getEmployees: () => fetchJson('/api/employees', {
-    headers: { 'X-Admin-Passcode': adminPasscode }
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
   }),
   verifyPasscode: (passcode) => fetchJson('/api/settings/verify', {
     method: 'POST',
@@ -62,36 +62,36 @@ const API = {
   }),
   updateSettings: (data) => fetchJson('/api/settings/update', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
     body: JSON.stringify(data)
   }),
   getEmployeeByToken: (token) => fetchJson(`/api/employees/token/${token}`),
   addEmployee: (name, role) => fetchJson('/api/employees', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
     body: JSON.stringify({ name, role })
   }),
   deleteEmployee: (id) => fetchJson(`/api/employees/${id}`, {
     method: 'DELETE',
-    headers: { 'X-Admin-Passcode': adminPasscode }
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
   }),
   resetEmployeeToken: (id) => fetchJson(`/api/employees/${id}/reset-token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode }
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() }
   }),
   getComments: (employeeId = null) => {
     let url = '/api/comments';
     if (employeeId) url += `?employeeId=${encodeURIComponent(employeeId)}`;
-    return fetchJson(url, { headers: { 'X-Admin-Passcode': adminPasscode } });
+    return fetchJson(url, { headers: { 'X-Admin-Passcode': getAdminPasscode() } });
   },
   addComment: (data) => fetchJson('/api/comments', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': adminPasscode },
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
     body: JSON.stringify(data)
   }),
   deleteComment: (id) => fetchJson(`/api/comments/${id}`, {
     method: 'DELETE',
-    headers: { 'X-Admin-Passcode': adminPasscode }
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
   }),
   getUnreadMessages: (employeeId) => fetchJson(`/api/comments/unread?employeeId=${encodeURIComponent(employeeId)}`),
   markMessagesRead: (employeeId) => fetchJson('/api/comments/mark-read', {
@@ -1624,25 +1624,36 @@ function confirmDeleteEmployeeModal(name) {
     const textEl = document.getElementById('delete-employee-modal-text');
 
     if (!modal || !cancelBtn || !confirmBtn) {
-      const ok = window.confirm("Are you sure you want to delete this employee?\nThis action cannot be undone.");
+      const ok = window.confirm(`Are you sure you want to delete "${name || 'this employee'}"?\n\n• They will be removed from the active roster and salary sheets.\n• All past historical records will remain safely preserved.\n\nClick OK to confirm.`);
       return resolve(ok);
     }
 
     if (textEl) {
-      textEl.textContent = "Are you sure you want to delete this employee?\nThis action cannot be undone.";
+      textEl.innerHTML = `Are you sure you want to delete <strong>${escapeHtml(name || 'this employee')}</strong>?<br><br><span style="font-size:0.85rem; color:#fca5a5;">They will be removed from the active roster and salary sheet. All past historical records will remain safely preserved.</span>`;
     }
 
     modal.classList.remove('hidden');
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') cleanup(false);
+    };
+    const onBackdrop = (e) => {
+      if (e.target === modal) cleanup(false);
+    };
 
     const cleanup = (result) => {
       modal.classList.add('hidden');
       cancelBtn.onclick = null;
       confirmBtn.onclick = null;
+      modal.removeEventListener('click', onBackdrop);
+      window.removeEventListener('keydown', onKeydown);
       resolve(result);
     };
 
     cancelBtn.onclick = () => cleanup(false);
     confirmBtn.onclick = () => cleanup(true);
+    modal.addEventListener('click', onBackdrop);
+    window.addEventListener('keydown', onKeydown);
   });
 }
 
@@ -1661,11 +1672,34 @@ async function handleDeleteEmployee(id, name) {
     if (res && res.success) {
       showToast(`✅ ${name || 'Employee'} deleted successfully. All past data is preserved.`, 'success');
       
-      // 1. Refresh admin roster table
-      await loadAdminRoster();
-      
-      // 2. Refresh portal employee list
-      await loadEmployeesList();
+      // 1. Immediately remove row from salary sheet if open and recalculate in-place
+      const salRow = document.getElementById(`sal-row-${id}`);
+      if (salRow) {
+        salRow.remove();
+        // Re-number remaining SR column sequentially
+        const remainingRows = document.querySelectorAll('#salary-table-body tr[id^="sal-row-"]');
+        remainingRows.forEach((row, index) => {
+          const srCell = row.querySelector('td:first-child');
+          if (srCell) srCell.textContent = index + 1;
+        });
+        updateSalarySummaryCards();
+      }
+      clearEmployeeSalaryDirty(id);
+
+      // Clean local salary memory
+      if (Array.isArray(currentSalaryEmployees)) {
+        currentSalaryEmployees = currentSalaryEmployees.filter(e => e.id !== id);
+      }
+      if (window.currentFinalizedSalaryReport && Array.isArray(window.currentFinalizedSalaryReport.employees)) {
+        window.currentFinalizedSalaryReport.employees = window.currentFinalizedSalaryReport.employees.filter(e => e.id !== id);
+      }
+
+      // 2. Also remove from admin roster table immediately if rendered
+      const rosterBtn = document.querySelector(`#admin-roster-table [data-id="${id}"]`);
+      if (rosterBtn) {
+        const rosterTr = rosterBtn.closest('tr');
+        if (rosterTr) rosterTr.remove();
+      }
 
       // 3. Clear selected employee if this was the one open
       if (selectedEmployee && selectedEmployee.id === id) {
@@ -1684,13 +1718,9 @@ async function handleDeleteEmployee(id, name) {
         if (opt) opt.remove();
       }
 
-      // 5. If salary sheet row exists, remove row in-place immediately and update summary
-      const salRow = document.getElementById(`sal-row-${id}`);
-      if (salRow) {
-        salRow.remove();
-        updateSalarySummaryCards();
-      }
-      clearEmployeeSalaryDirty(id);
+      // 5. Refresh background lists
+      loadAdminRoster().catch(() => {});
+      loadEmployeesList().catch(() => {});
     } else {
       const msg = (res && res.error) ? res.error : 'Failed to delete employee';
       showToast(`Error: ${msg}`, 'error');
@@ -7729,7 +7759,8 @@ async function loadSalarySheet(monthOverride, force = false) {
           <div style="display:flex; align-items:center; gap:8px;">
             <span>${escapeHtml(emp.name)}</span>
             <button type="button" class="btn-delete-emp-sal"
-              onclick="handleDeleteEmployee('${emp.id}', '${escapeHtml(emp.name)}')"
+              data-empid="${emp.id}" data-empname="${escapeHtml(emp.name)}"
+              onclick="handleDeleteSalaryRow(this)"
               title="Delete ${escapeHtml(emp.name)}"
               style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); border-radius:4px; padding:2px 7px; font-size:0.75rem; font-weight:600; cursor:pointer; flex-shrink:0;">
               🗑️ Delete
@@ -7816,8 +7847,9 @@ async function loadSalarySheet(monthOverride, force = false) {
             <button type="button" class="salary-generate-btn" onclick="handleGenerateSingleSalary('${emp.id}', '${month}')"
               title="Recalculate from attendance">⚡ Recalc</button>
             <button type="button" class="btn btn-sm btn-delete-emp-action"
+              data-empid="${emp.id}" data-empname="${escapeHtml(emp.name)}"
               style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); font-size:0.75rem; font-weight:600; padding:0.25rem 0.55rem; border-radius:4px; cursor:pointer;"
-              onclick="handleDeleteEmployee('${emp.id}', '${escapeHtml(emp.name)}')"
+              onclick="handleDeleteSalaryRow(this)"
               title="Delete ${escapeHtml(emp.name)}">🗑️ Delete</button>
           </div>
         </td>
@@ -9103,6 +9135,13 @@ async function handleResetPresentDays(empId, month, btn) {
       btn.textContent = '↺ Reset';
     }
   }
+}
+
+function handleDeleteSalaryRow(btn) {
+  if (!btn) return;
+  const empId = btn.dataset.empid;
+  const empName = btn.dataset.empname || 'Employee';
+  handleDeleteEmployee(empId, empName);
 }
 
 async function handleArchiveSalaryEmployee(empId, empName, month) {
@@ -10934,6 +10973,7 @@ window.handleResetPresentDays = handleResetPresentDays;
 window.handleSaveSundayBonus = handleSaveSundayBonus;
 window.handleResetSundayBonus = handleResetSundayBonus;
 window.handleDeleteEmployee = handleDeleteEmployee;
+window.handleDeleteSalaryRow = handleDeleteSalaryRow;
 window.confirmDeleteEmployeeModal = confirmDeleteEmployeeModal;
 window.handleArchiveSalaryEmployee = handleArchiveSalaryEmployee;
 window.exportSalarySheetCSV = exportSalarySheetCSV;
