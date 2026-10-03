@@ -421,9 +421,47 @@ async function runAllTests() {
     assert.ok(stats.totalClaimedAmount > 0, 'Total claimed amount must be positive');
   });
 
+  // 10. Category Approval on Partially Verified Bill (No Constraint Violation)
+  await runTest('Test 10: Category approval when other categories are pending verification (PARTIALLY_VERIFIED) persists safely without check constraint violation', async () => {
+    const multiCatBill = await db.createBill({
+      employeeId: 'test-emp-partver',
+      employeeName: 'Partial Ver Test Employee',
+      siteName: 'Site Delta',
+      date: '2026-09-19',
+      transportationExpense: 900,
+      materialExpense: 100,
+      labourExpense: 0,
+      accommodationExpense: 0,
+      otherExpense: 600,
+      description: 'Partial verification approval test',
+      attachments: [{ name: 'rec.jpg', type: 'image/jpeg', dataUrl: 'data:image/jpeg;base64,rec' }]
+    });
+
+    // Admin only verifies material (100). Transportation (900) & Other (600) remain pending!
+    const verified = await db.verifyBillCategory(multiCatBill.id, {
+      category: 'material',
+      verifiedAmount: 100,
+      verifiedBy: 'Admin Auditor'
+    });
+    assert.strictEqual(verified.status, 'PARTIALLY_VERIFIED');
+
+    // Senior Admin approves material (100) while other categories are STILL pending
+    const approved = await db.approveBillCategory(multiCatBill.id, {
+      category: 'material',
+      approvedAmount: 100,
+      seniorPasscode: '9999',
+      approvedBy: 'Senior Admin'
+    });
+
+    assert.strictEqual(approved.status, 'PARTIALLY_VERIFIED', 'Bill overall status remains PARTIALLY_VERIFIED');
+    assert.strictEqual(approved.categories.material.status, 'APPROVED', 'Material category is approved');
+    assert.strictEqual(approved.categories.material.approvedAmount, 100);
+    assert.strictEqual(approved.totalApprovedAmount, 100);
+  });
+
   // Cleanup test bills so the production database stays pristine
   try {
-    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance', 'emp-acceptance'];
+    const testEmpIds = ['test-emp-001', 'test-emp-002', 'test-emp-race', 'test-emp-acceptance', 'emp-acceptance', 'test-emp-partver'];
     const { createClient } = require('@supabase/supabase-js');
     const path = require('path');
     require('dotenv').config({ path: path.join(__dirname, '../.env.local') });

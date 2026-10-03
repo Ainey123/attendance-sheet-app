@@ -5474,9 +5474,7 @@ const db = {
           delete rowToInsert.categories;
           delete rowToInsert.totalVerifiedAmount;
           delete rowToInsert.totalApprovedAmount;
-          if (rowToInsert.status === 'SUBMITTED') {
-            rowToInsert.status = 'PENDING_VERIFICATION';
-          }
+          rowToInsert.status = sanitizeLegacyBillStatus(rowToInsert.status);
         }
 
         try {
@@ -5763,9 +5761,7 @@ const db = {
           delete updatesToPersist.categories;
           delete updatesToPersist.totalVerifiedAmount;
           delete updatesToPersist.totalApprovedAmount;
-          if (updatesToPersist.status === 'PARTIALLY_VERIFIED' || updatesToPersist.status === 'SUBMITTED') {
-            updatesToPersist.status = 'PENDING_VERIFICATION';
-          }
+          updatesToPersist.status = sanitizeLegacyBillStatus(updatesToPersist.status);
         }
 
         try {
@@ -5916,9 +5912,7 @@ const db = {
           delete updatesToPersist.categories;
           delete updatesToPersist.totalVerifiedAmount;
           delete updatesToPersist.totalApprovedAmount;
-          if (updatesToPersist.status === 'PARTIALLY_VERIFIED' || updatesToPersist.status === 'SUBMITTED') {
-            updatesToPersist.status = 'PENDING_VERIFICATION';
-          }
+          updatesToPersist.status = sanitizeLegacyBillStatus(updatesToPersist.status);
         }
 
         try {
@@ -6093,9 +6087,7 @@ const db = {
           delete updatesToPersist.categories;
           delete updatesToPersist.totalVerifiedAmount;
           delete updatesToPersist.totalApprovedAmount;
-          if (updatesToPersist.status === 'PARTIALLY_APPROVED') {
-            updatesToPersist.status = 'PENDING_VERIFICATION';
-          }
+          updatesToPersist.status = sanitizeLegacyBillStatus(updatesToPersist.status);
         }
 
         try {
@@ -6364,6 +6356,14 @@ async function checkBillsTableNativeCategories() {
     billsTableHasNativeCategories = false;
   }
   return billsTableHasNativeCategories;
+}
+
+function sanitizeLegacyBillStatus(status) {
+  const LEGACY_ALLOWED_STATUSES = ['PENDING_VERIFICATION', 'VERIFIED', 'APPROVED', 'REJECTED'];
+  if (LEGACY_ALLOWED_STATUSES.includes(status)) {
+    return status;
+  }
+  return 'PENDING_VERIFICATION';
 }
 
 function computeBillTotalsAndStatus(categories, currentOverallStatus) {
