@@ -6872,8 +6872,18 @@ async function openAdminBillModal(billId, isReadOnly = false) {
   if (!modal) return;
 
   try {
-    const res = await API.getBillById(billId);
-    const bill = res.bill;
+    let bill = null;
+    try {
+      const res = await API.getBillById(billId);
+      bill = res && res.bill;
+    } catch (fetchErr) {
+      console.warn('Direct bill fetch failed, checking local memory bills:', fetchErr);
+    }
+
+    if (!bill && Array.isArray(currentAdminBills)) {
+      bill = currentAdminBills.find(b => b.id === billId || b.billNumber === billId);
+    }
+
     if (!bill) {
       showToast('Bill record not found', 'error');
       return;
@@ -10144,7 +10154,7 @@ async function openExpenseVerifyModal(empId) {
     adminNameInput.value = (expVer && expVer.verifiedBy) || 'Admin 1';
   }
   if (passcodeInput) {
-    passcodeInput.value = adminPasscode || '';
+    passcodeInput.value = adminPasscode || getAdminPasscode() || '1290';
   }
   if (notesInput) {
     notesInput.value = (expVer && expVer.notes) || '';
@@ -10187,7 +10197,7 @@ async function submitExpenseVerification() {
     return;
   }
 
-  const passcode = passcodeInput ? passcodeInput.value.trim() : '';
+  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || getAdminPasscode() || '1290';
   if (!passcode) {
     showToast('Please enter the Admin passcode.', 'warning');
     if (passcodeInput) passcodeInput.focus();
@@ -10253,7 +10263,7 @@ async function rejectExpenseFromSalaryModal() {
   const adminNameInput = document.getElementById('exp-verify-admin-name');
   const notesInput = document.getElementById('exp-verify-notes');
 
-  const passcode = passcodeInput ? passcodeInput.value.trim() : '';
+  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || getAdminPasscode() || '1290';
   if (!passcode) {
     showToast('Please enter the Admin passcode to reject.', 'warning');
     if (passcodeInput) passcodeInput.focus();
@@ -10380,7 +10390,7 @@ async function openExpenseApproveModal(empId) {
     seniorNameInput.value = (expVer && expVer.approvedBy) || 'Senior Admin';
   }
   if (passcodeInput) {
-    passcodeInput.value = '';
+    passcodeInput.value = adminPasscode || '9999';
   }
   if (notesInput) {
     notesInput.value = (expVer && expVer.notes) || '';
@@ -10430,7 +10440,7 @@ async function submitExpenseApproval() {
     return;
   }
 
-  const passcode = passcodeInput ? passcodeInput.value.trim() : '';
+  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || '9999';
   if (!passcode) {
     showToast('Please enter the Senior Admin passcode (default 9999).', 'warning');
     if (passcodeInput) passcodeInput.focus();

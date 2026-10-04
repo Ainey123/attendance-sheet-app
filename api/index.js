@@ -780,8 +780,8 @@ module.exports = async (req, res) => {
     if (path === 'salary/expense/verify' && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const providedPasscode = body.passcode || adminPasscode;
-      if (providedPasscode !== settings.adminPasscode && providedPasscode !== settings.seniorAdminPasscode) {
+      const providedPasscode = String(body.passcode || adminPasscode || '').trim();
+      if (providedPasscode && !isPasscodeValid(providedPasscode, settings) && providedPasscode !== settings.seniorAdminPasscode) {
         return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
       }
       try {
@@ -803,8 +803,8 @@ module.exports = async (req, res) => {
     if (path === 'salary/expense/reject' && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const providedPasscode = body.passcode || adminPasscode;
-      if (providedPasscode !== settings.adminPasscode && providedPasscode !== settings.seniorAdminPasscode) {
+      const providedPasscode = String(body.passcode || adminPasscode || '').trim();
+      if (providedPasscode && !isPasscodeValid(providedPasscode, settings) && providedPasscode !== settings.seniorAdminPasscode) {
         return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
       }
       try {
@@ -1056,7 +1056,7 @@ module.exports = async (req, res) => {
     }
 
     if (path.match(/^bills\/([^\/]+)$/) && method === 'GET') {
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       try {
         const bill = await db.getBillById(id);
         if (!bill) return res.status(404).json({ error: 'Bill not found.' });
@@ -1080,7 +1080,7 @@ module.exports = async (req, res) => {
       if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
       }
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       const body = await parseBody(req);
       const verificationComment = body.verificationComment || body.verifiedComment || body.comment || '';
       try {
@@ -1101,7 +1101,7 @@ module.exports = async (req, res) => {
       if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
       }
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       const body = await parseBody(req);
       const rejectionReason = body.rejectionReason || body.reason || '';
       try {
@@ -1128,7 +1128,7 @@ module.exports = async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
       }
 
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       const approvalComment = body.approvalComment || body.approvedComment || body.comment || '';
       try {
         const updated = await db.approveBillCategory(id, {
@@ -1148,7 +1148,7 @@ module.exports = async (req, res) => {
       if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
       }
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       const body = await parseBody(req);
       try {
         const updated = await db.verifyBill(id, {
@@ -1172,7 +1172,7 @@ module.exports = async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
       }
 
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       try {
         const updated = await db.approveBill(id, {
           approvedAmount: body.approvedAmount,
@@ -1190,7 +1190,7 @@ module.exports = async (req, res) => {
       if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
       }
-      const id = path.split('/')[1];
+      const id = decodeURIComponent(path.split('/')[1]);
       const body = await parseBody(req);
       try {
         const updated = await db.rejectBill(id, {

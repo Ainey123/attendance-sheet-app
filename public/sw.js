@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-portal-v276-nocache';
+const CACHE_NAME = 'attendance-portal-v277-nocache';
 
 // Install Event - skip waiting immediately
 self.addEventListener('install', (e) => {

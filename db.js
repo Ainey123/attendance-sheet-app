@@ -2455,7 +2455,8 @@ const db = {
       let empSummary = null;
       if (log.employeeId) {
         empSummary = summaryMap.get(log.employeeId);
-      } else if (log.employeeName) {
+      }
+      if (!empSummary && log.employeeName) {
         empSummary = empNameMap.get(log.employeeName.trim().toLowerCase());
       }
       if (!empSummary && log.employeeId) {
@@ -4639,8 +4640,8 @@ const db = {
       const empId = emp.id;
       const empName = emp.name;
 
-      // Filter attendance records for this employee in this month
-      const empAtt = monthAttendance.filter(a => a.employeeId === empId);
+      // Filter attendance records for this employee in this month (matches by ID or name fallback)
+      const empAtt = monthAttendance.filter(a => a.employeeId === empId || ((a.employeeName || '').trim().toLowerCase() === (empName || '').trim().toLowerCase()));
       const presentDates = new Set();
       empAtt.forEach(a => presentDates.add(a.date));
 
@@ -5500,6 +5501,13 @@ const db = {
               throw error;
             }
           }
+          // Mirror into local data cache
+          try {
+            const localData = loadLocalData();
+            localData.bills = localData.bills || [];
+            localData.bills.push(newBill);
+            saveLocalData(localData);
+          } catch (e) {}
         } catch (err) {
           if (isQuotaOrNetworkError(err)) {
             useLocalFallback = true;
@@ -5533,14 +5541,17 @@ const db = {
   },
 
   // Get Bills with optional scoping & filters
-  async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null, lightweight = false } = {}) {
+  async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null, lightweight = true } = {}) {
     let list = [];
-    if (useLocalFallback) {
+    if (useLocalFallback && !supabase) {
       const data = loadLocalData();
       list = (data.bills || []).map(b => normalizeBillRecord(b));
     } else {
       try {
-        let query = supabase.from('bills').select('*').order('submittedAt', { ascending: false });
+        const listCols = lightweight
+          ? 'id, billNumber, employeeId, employeeName, siteName, billDate, submittedAt, transportationExpense, materialExpense, labourExpense, accommodationExpense, otherExpense, totalClaimedAmount, description, status, verifiedAmount, verifiedBy, verifiedAt, verificationComment, approvedAmount, approvedBy, approvedAt, approvalComment, rejectedBy, rejectedAt, rejectionReason, createdAt, updatedAt'
+          : '*';
+        let query = supabase.from('bills').select(listCols).order('submittedAt', { ascending: false, nullsFirst: false }).range(0, 9999);
         if (employeeId) {
           query = query.eq('employeeId', employeeId);
         }
@@ -5560,9 +5571,32 @@ const db = {
         const { data, error } = await query;
         if (error) throw error;
         list = (data || []).map(b => normalizeBillRecord(b));
+
+        // When lightweight, merge attachment metadata from local cache so PDF/receipt badges render
+        if (lightweight) {
+          try {
+            const localData = loadLocalData();
+            const localAttMap = new Map();
+            (localData.bills || []).forEach(lb => {
+              if (lb.attachments && lb.attachments.length) {
+                const atts = lb.attachments.map(a => ({
+                  name: a.name || 'Receipt',
+                  type: a.type || 'image/jpeg',
+                  isPdf: Boolean(a.type === 'application/pdf' || (a.name && a.name.toLowerCase().endsWith('.pdf')))
+                }));
+                if (lb.id) localAttMap.set(lb.id, atts);
+                if (lb.billNumber) localAttMap.set(lb.billNumber, atts);
+              }
+            });
+            list.forEach(b => {
+              if (!b.attachments || !b.attachments.length) {
+                b.attachments = localAttMap.get(b.id) || localAttMap.get(b.billNumber) || [];
+              }
+            });
+          } catch (e) {}
+        }
       } catch (err) {
-        if (isQuotaOrNetworkError(err)) {
-          useLocalFallback = true;
+        if (isQuotaOrNetworkError(err) || !process.env.VERCEL) {
           const data = loadLocalData();
           list = (data.bills || []).map(b => normalizeBillRecord(b));
         } else {
@@ -5634,28 +5668,42 @@ const db = {
   // Get Bill By ID
   async getBillById(id) {
     if (!id) return null;
-    if (useLocalFallback) {
-      const data = loadLocalData();
-      const found = (data.bills || []).find(b => b.id === id);
-      return found ? normalizeBillRecord(found) : null;
+    const cleanId = String(id).trim();
+
+    // 1. Try Supabase first if client available
+    if (supabase) {
+      try {
+        let { data, error } = await supabase.from('bills').select('*').eq('id', cleanId).maybeSingle();
+        if (!data && (cleanId.startsWith('BILL-') || cleanId.startsWith('bill-') || !cleanId.startsWith('bill_'))) {
+          const res = await supabase.from('bills').select('*').eq('billNumber', cleanId).maybeSingle();
+          if (res.data) data = res.data;
+        }
+        if (data) {
+          const normalized = normalizeBillRecord(data);
+          // Sync into local data cache
+          try {
+            const localData = loadLocalData();
+            localData.bills = localData.bills || [];
+            const idx = localData.bills.findIndex(b => b.id === cleanId || b.billNumber === cleanId);
+            if (idx >= 0) localData.bills[idx] = data;
+            else localData.bills.push(data);
+            saveLocalData(localData);
+          } catch (e) {}
+          return normalized;
+        }
+      } catch (err) {
+        console.warn('Supabase getBillById error:', err.message || err);
+      }
     }
+
+    // 2. Check local data fallback
     try {
-      const { data, error } = await supabase.from('bills').select('*').eq('id', id).single();
-      if (error) {
-        if (error.code === 'PGRST116') return null;
-        throw error;
-      }
-      return normalizeBillRecord(data);
-    } catch (err) {
-      if (isQuotaOrNetworkError(err)) {
-        useLocalFallback = true;
-        const data = loadLocalData();
-        const found = (data.bills || []).find(b => b.id === id);
-        return found ? normalizeBillRecord(found) : null;
-      }
-      handleSupabaseError(err, 'get bill by ID');
-      throw err;
-    }
+      const data = loadLocalData();
+      const found = (data.bills || []).find(b => b.id === cleanId || b.billNumber === cleanId);
+      if (found) return normalizeBillRecord(found);
+    } catch (e) {}
+
+    return null;
   },
 
   // Category-wise Admin Verification
