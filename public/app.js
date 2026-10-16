@@ -6983,36 +6983,55 @@ async function handleAdminRejectBill(source) {
 
 // ─── CLIENT DUPLICATE BILL VERIFICATION HELPERS ────────────────────────────
 
+function areEmployeesMatchingClient(emp1Id, emp1Name, emp2Id, emp2Name) {
+  const id1 = String(emp1Id || '').trim();
+  const id2 = String(emp2Id || '').trim();
+  if (id1 && id2 && id1 === id2) return true;
+
+  const n1 = String(emp1Name || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const n2 = String(emp2Name || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  if (n1 && n2 && n1 === n2) return true;
+
+  return false;
+}
+
 function getBillDuplicateVerificationClient(targetBill, allBills) {
   if (!targetBill || !Array.isArray(allBills)) return { isDuplicate: false, matches: [] };
   const matches = [];
   const targetTotal = Math.round(Number(targetBill.totalClaimedAmount) || 0);
   const targetSite = (targetBill.siteName || '').trim().toLowerCase();
   const targetDate = (targetBill.billDate || targetBill.date || '').slice(0, 10);
-  const targetEmp = String(targetBill.employeeId || '').trim();
+  const targetEmpId = String(targetBill.employeeId || '').trim();
+  const targetEmpName = String(targetBill.employeeName || '').trim();
 
   for (const other of allBills) {
     if (!other || String(other.id) === String(targetBill.id) || String(other.billNumber) === String(targetBill.billNumber)) continue;
     const otherTotal = Math.round(Number(other.totalClaimedAmount) || 0);
     const otherSite = (other.siteName || '').trim().toLowerCase();
     const otherDate = (other.billDate || other.date || '').slice(0, 10);
-    const otherEmp = String(other.employeeId || '').trim();
+    const otherEmpId = String(other.employeeId || '').trim();
+    const otherEmpName = String(other.employeeName || '').trim();
 
     const cleanT = targetSite.replace(/[^a-z0-9]/g, '');
     const cleanO = otherSite.replace(/[^a-z0-9]/g, '');
     const branchMatch = Boolean(cleanT && cleanO && (cleanT === cleanO || cleanT.includes(cleanO) || cleanO.includes(cleanT)));
     const amountMatch = targetTotal > 0 && targetTotal === otherTotal;
+    const empMatch = areEmployeesMatchingClient(targetEmpId, targetEmpName, otherEmpId, otherEmpName);
     const dateMatch = Boolean(targetDate && otherDate && targetDate === otherDate);
-    const empMatch = Boolean(targetEmp && targetEmp === otherEmp);
 
-    if ((branchMatch && amountMatch) || (dateMatch && amountMatch && empMatch) || (branchMatch && dateMatch && empMatch)) {
-      const reasons = [];
-      const matchedCriteria = [];
-      if (branchMatch) { matchedCriteria.push('branch'); reasons.push(`Matching Branch: "${other.siteName}"`); }
-      if (amountMatch) { matchedCriteria.push('amount'); reasons.push(`Matching Amount: Rs. ${otherTotal.toLocaleString()}`); }
-      if (dateMatch) { matchedCriteria.push('billDate'); reasons.push(`Same Bill Date: ${targetDate}`); }
-      if (empMatch) { matchedCriteria.push('employee'); reasons.push(`Same Employee: ${targetBill.employeeName || targetBill.employeeId}`); }
-      else { matchedCriteria.push('crossEmployee'); reasons.push(`Cross-Employee Match: Submitted by ${other.employeeName || other.employeeId}`); }
+    // STRICT USER REQUIREMENT:
+    // Only mark the bill as duplicate if Site Name, Employee Name, and Amount ALL THREE MATCH.
+    if (branchMatch && empMatch && amountMatch) {
+      const reasons = [
+        `Matching Site/Branch: "${other.siteName}"`,
+        `Same Employee: ${otherEmpName || otherEmpId}`,
+        `Matching Claimed Amount: Rs. ${otherTotal.toLocaleString()}`
+      ];
+      const matchedCriteria = ['branch', 'employee', 'amount'];
+      if (dateMatch) {
+        matchedCriteria.push('billDate');
+        reasons.push(`Same Bill Date: ${targetDate}`);
+      }
 
       matches.push({
         billId: other.id,
@@ -7023,8 +7042,8 @@ function getBillDuplicateVerificationClient(targetBill, allBills) {
         billDate: otherDate,
         totalClaimedAmount: otherTotal,
         status: other.status,
-        severity: branchMatch && amountMatch ? 'HIGH' : 'MEDIUM',
-        matchType: branchMatch && amountMatch ? 'Branch & Amount Match' : 'Date & Amount Match',
+        severity: 'HIGH',
+        matchType: dateMatch ? 'Duplicate: Site, Employee, Amount & Date Match' : 'Duplicate: Site, Employee & Amount Match',
         matchedCriteria,
         reasons
       });
@@ -7033,7 +7052,7 @@ function getBillDuplicateVerificationClient(targetBill, allBills) {
 
   return {
     isDuplicate: matches.length > 0,
-    severity: matches.some(m => m.severity === 'HIGH') ? 'HIGH' : (matches.length > 0 ? 'MEDIUM' : 'NONE'),
+    severity: matches.length > 0 ? 'HIGH' : 'NONE',
     matchCount: matches.length,
     matches
   };
