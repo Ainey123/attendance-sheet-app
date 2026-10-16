@@ -460,7 +460,14 @@ const db = {
       }
     }
     if (emp) {
+      await this.autoCompleteOldAttendance(emp.id).catch(() => {});
       emp = await this.checkAndUpdateLinkCycle(emp);
+      const todayAtt = await this.getTodayAttendanceForEmployee(emp.id).catch(() => null);
+      if (!todayAtt || todayAtt.clockOutTime) {
+        emp.status = 'OUT';
+      } else {
+        emp.status = 'IN';
+      }
     }
     return emp;
   },
@@ -669,7 +676,7 @@ const db = {
       const data = loadLocalData();
       const s = data.settings || {};
       return {
-        adminPasscode: s.adminPasscode || '1234',
+        adminPasscode: s.adminPasscode || '1200',
         seniorAdminPasscode: s.seniorAdminPasscode || '9999',
         officeName: s.officeName || 'My Office',
         adminToken: s.adminToken || null
@@ -710,9 +717,15 @@ const db = {
       await settingsFetchPromise;
     } catch (error) {
       if (cachedSettings) return cachedSettings;
-      return { adminPasscode: '1290', seniorAdminPasscode: '9999', officeName: 'My Office' };
+      const local = loadLocalData();
+      const s = local.settings || {};
+      return {
+        adminPasscode: s.adminPasscode || '1200',
+        seniorAdminPasscode: s.seniorAdminPasscode || '9999',
+        officeName: s.officeName || 'My Office'
+      };
     }
-    return cachedSettings || { adminPasscode: '1290', seniorAdminPasscode: '9999', officeName: 'My Office' };
+    return cachedSettings || { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' };
   },
 
   async updateSettings(newSettings) {
@@ -729,24 +742,44 @@ const db = {
         .select('*')
         .single();
 
+      const targetId = (existingData && existingData.id) ? existingData.id : 'default';
+
+      let resultData;
       if (fetchError || !existingData) {
         const { data, error } = await supabase
           .from('settings')
-          .insert([{ ...newSettings, id: 'default' }])
+          .insert([{ ...newSettings, id: targetId }])
+          .select()
+          .single();
+        if (error) handleSupabaseError(error, 'insert settings');
+        resultData = data;
+      } else {
+        const { data, error } = await supabase
+          .from('settings')
+          .update(newSettings)
+          .eq('id', targetId)
           .select()
           .single();
         if (error) handleSupabaseError(error, 'update settings');
-        return data;
+        resultData = data;
       }
 
-      const { data, error } = await supabase
-        .from('settings')
-        .update(newSettings)
-        .eq('id', 'default')
-        .select()
-        .single();
-      if (error) handleSupabaseError(error, 'update settings');
-      return data;
+      cachedSettings = {
+        ...resultData,
+        seniorAdminPasscode: resultData.seniorAdminPasscode || (existingData && existingData.seniorAdminPasscode) || '9999'
+      };
+      lastSettingsFetch = Date.now();
+
+      // Mirror settings change immediately to data.json so local fallback stays 100% in sync
+      try {
+        const local = loadLocalData();
+        local.settings = { ...local.settings, ...cachedSettings };
+        saveLocalData(local);
+      } catch (mirrorErr) {
+        console.warn('Failed to mirror settings to local data.json:', mirrorErr.message);
+      }
+
+      return cachedSettings;
     } catch (error) {
       handleSupabaseError(error, 'update settings');
     }
@@ -819,6 +852,9 @@ const db = {
   async getTodayAttendanceForEmployee(employeeId) {
     await this.autoCompleteOldAttendance(employeeId).catch(() => {});
     const today = getLocalDateString();
+    const nowMs = Date.now();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+
     if (useLocalFallback) {
       const data = loadLocalData();
       const empRecords = (data.attendance || [])
@@ -827,8 +863,12 @@ const db = {
 
       if (empRecords.length === 0) return null;
 
-      // First check if there is an active unclosed record
-      const active = empRecords.find(r => !r.clockOutTime);
+      // First check if there is an active unclosed record strictly within the last 24 hours
+      const active = empRecords.find(r => {
+        if (r.clockOutTime) return false;
+        const inMs = new Date(r.clockInTime || (r.date + 'T09:00:00')).getTime();
+        return !isNaN(inMs) && (nowMs - inMs) < twentyFourHoursMs;
+      });
       if (active) {
         const emp = (data.employees || []).find(e => e.id === employeeId);
         if (emp && emp.status !== 'IN') { emp.status = 'IN'; saveLocalData(data); }
@@ -842,17 +882,20 @@ const db = {
         if (leaveRecord) return leaveRecord;
         return todayRecords[0];
       }
+
+      // No active record and no records today -> ensure employee status is OUT
+      const emp = (data.employees || []).find(e => e.id === employeeId);
+      if (emp && emp.status === 'IN') { emp.status = 'OUT'; saveLocalData(data); }
       return null;
     }
     try {
-      // 1. Check for active unclosed record for this employee
+      // 1. Check for active unclosed records for this employee
       const { data: activeRecords, error: activeErr } = await supabase
         .from('attendance')
         .select('*')
         .eq('employeeId', employeeId)
         .is('clockOutTime', null)
-        .order('clockInTime', { ascending: false })
-        .limit(1);
+        .order('clockInTime', { ascending: false });
 
       if (activeErr && isQuotaOrNetworkError(activeErr)) {
         useLocalFallback = true;
@@ -860,10 +903,32 @@ const db = {
       }
 
       if (!activeErr && activeRecords && activeRecords.length > 0) {
-        try {
-          await supabase.from('employees').update({ status: 'IN' }).eq('id', employeeId).neq('status', 'IN');
-        } catch (e) {}
-        return activeRecords[0];
+        const validActive = activeRecords.find(r => {
+          const inMs = new Date(r.clockInTime || (r.date + 'T09:00:00')).getTime();
+          return !isNaN(inMs) && (nowMs - inMs) < twentyFourHoursMs;
+        });
+
+        if (validActive) {
+          try {
+            await supabase.from('employees').update({ status: 'IN' }).eq('id', employeeId).neq('status', 'IN');
+          } catch (e) {}
+          return validActive;
+        } else {
+          // All unclosed records are older than 24 hours — auto-close them immediately!
+          for (const r of activeRecords) {
+            const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
+            const inMs = inTime.getTime();
+            const autoOut = !isNaN(inMs) ? new Date(inMs + twentyFourHoursMs) : new Date();
+            const note = r.performanceNotes 
+              ? `${r.performanceNotes} | Auto-closed (>24h)` 
+              : 'Auto clock-out by system — 24 hours elapsed without manual clock-out';
+            await supabase.from('attendance').update({
+              clockOutTime: autoOut.toISOString(),
+              duration: 24 * 60,
+              performanceNotes: note
+            }).eq('id', r.id);
+          }
+        }
       }
 
       // 2. Fetch today's records
@@ -883,6 +948,9 @@ const db = {
         return null;
       }
       if (!data || data.length === 0) {
+        try {
+          await supabase.from('employees').update({ status: 'OUT' }).eq('id', employeeId).neq('status', 'OUT');
+        } catch (e) {}
         return null;
       }
 
@@ -969,13 +1037,15 @@ const db = {
 
       if (priorUnclosed && priorUnclosed.length > 0) {
         for (const pr of priorUnclosed) {
-          const inTime = new Date(pr.clockInTime);
+          const inTime = new Date(pr.clockInTime || (pr.date + 'T09:00:00'));
           const duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+          const note = pr.performanceNotes 
+            ? `${pr.performanceNotes} | Auto-closed on next shift clock-in` 
+            : 'Auto-closed on next shift clock-in';
           await supabase.from('attendance').update({
             clockOutTime: now.toISOString(),
             duration,
-            autoClockOut: true,
-            autoClockOutNote: 'Auto-closed on next shift clock-in'
+            performanceNotes: note
           }).eq('id', pr.id);
         }
       }
@@ -1096,6 +1166,15 @@ const db = {
         data.attendance.push(record);
       }
 
+      (data.attendance || []).forEach(r => {
+        if (r.employeeId === employeeId && !r.clockOutTime && r.id !== record.id) {
+          const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
+          r.clockOutTime = now.toISOString();
+          r.duration = Math.max(0, Math.round((now - inTime) / (1000 * 60)));
+          r.performanceNotes = (r.performanceNotes ? r.performanceNotes + ' | ' : '') + 'Auto-closed on clock out';
+        }
+      });
+
       employee.status = 'OUT';
 
       const monthStr = today.substring(0, 7);
@@ -1132,14 +1211,13 @@ const db = {
 
       if (empError || !employee) throw new Error('Employee not found');
 
-      // 1. Check for active unclosed record for this employee
+      // 1. Check for active unclosed records for this employee
       const { data: activeRecords } = await supabase
         .from('attendance')
         .select('*')
         .eq('employeeId', employeeId)
         .is('clockOutTime', null)
-        .order('clockInTime', { ascending: false })
-        .limit(1);
+        .order('clockInTime', { ascending: false });
 
       let targetRecord = (activeRecords && activeRecords.length > 0) ? activeRecords[0] : null;
 
@@ -1208,6 +1286,25 @@ const db = {
 
         if (insertError) handleSupabaseError(insertError, 'insert attendance record on clock out');
         updatedRecord = ins;
+      }
+
+      // Auto-close any OTHER unclosed records for this employee so none are left dangling
+      if (activeRecords && activeRecords.length > 1) {
+        for (let i = 1; i < activeRecords.length; i++) {
+          const oRec = activeRecords[i];
+          const inTime = new Date(oRec.clockInTime || (oRec.date + 'T09:00:00'));
+          const inTimeMs = inTime.getTime();
+          const autoOut = !isNaN(inTimeMs) ? new Date(inTimeMs + 24 * 60 * 60 * 1000) : now;
+          const dur = Math.max(0, Math.round((autoOut - inTime) / (1000 * 60)));
+          const note = oRec.performanceNotes 
+            ? `${oRec.performanceNotes} | Auto-closed on clock out` 
+            : 'Auto-closed on clock out';
+          await supabase.from('attendance').update({
+            clockOutTime: autoOut.toISOString(),
+            duration: dur,
+            performanceNotes: note
+          }).eq('id', oRec.id);
+        }
       }
 
       const { data: updatedEmployee, error: empUpdateError } = await supabase
@@ -1342,8 +1439,9 @@ const db = {
               const autoOut = new Date(inTimeMs + twentyFourHoursMs);
               r.clockOutTime = autoOut.toISOString();
               r.duration = 24 * 60;
-              r.autoClockOut = true;
-              r.autoClockOutNote = 'Auto clock-out by system — 24 hours elapsed without manual clock-out';
+              r.performanceNotes = r.performanceNotes 
+                ? `${r.performanceNotes} | Auto clock-out by system (24h)` 
+                : 'Auto clock-out by system — 24 hours elapsed without manual clock-out';
               empIdsToUpdate.add(r.employeeId);
               changed = true;
             }
@@ -1365,7 +1463,7 @@ const db = {
       // Supabase: find unclosed records efficiently (selecting only essential columns)
       let query = supabase
         .from('attendance')
-        .select('id, employeeId, clockInTime, date')
+        .select('id, employeeId, clockInTime, date, performanceNotes')
         .is('clockOutTime', null);
       if (targetEmployeeId) {
         query = query.eq('employeeId', targetEmployeeId);
@@ -1387,12 +1485,18 @@ const db = {
         const inTime = new Date(r.clockInTime || (r.date + 'T09:00:00'));
         const autoOut = new Date(inTime.getTime() + twentyFourHoursMs);
         empIdsToUpdate.add(r.employeeId);
-        await supabase.from('attendance').update({
+        const note = r.performanceNotes
+          ? `${r.performanceNotes} | Auto clock-out by system (24h)`
+          : 'Auto clock-out by system — 24 hours elapsed without manual clock-out';
+
+        const { error: updErr } = await supabase.from('attendance').update({
           clockOutTime: autoOut.toISOString(),
           duration: 24 * 60,
-          autoClockOut: true,
-          autoClockOutNote: 'Auto clock-out by system — 24 hours elapsed without manual clock-out'
+          performanceNotes: note
         }).eq('id', r.id);
+        if (updErr) {
+          console.warn('[Auto Clock-Out] Failed to update record', r.id, updErr.message);
+        }
       }
 
       if (empIdsToUpdate.size > 0) {
@@ -5452,6 +5556,29 @@ const db = {
         updatedAt: nowIso
       };
 
+      // Run automated duplicate verification against existing bills
+      let existingBills = [];
+      try {
+        const localData = loadLocalData();
+        existingBills = (localData.bills || []).map(b => normalizeBillRecord(b));
+      } catch (e) {}
+
+      const dupCheck = getBillDuplicateVerification(newBill, existingBills);
+      if (dupCheck.isDuplicate) {
+        newBill.isDuplicate = true;
+        newBill.duplicateVerification = dupCheck;
+        newBill.duplicateMatches = dupCheck.matches;
+        newBill.auditLog.push({
+          action: 'DUPLICATE_FLAGGED',
+          by: 'system',
+          at: nowIso,
+          details: {
+            summary: dupCheck.summary,
+            matches: dupCheck.matches.map(m => ({ billNumber: m.billNumber, matchType: m.matchType, siteName: m.siteName, totalClaimedAmount: m.totalClaimedAmount }))
+          }
+        });
+      }
+
       if (useLocalFallback) {
         const data = loadLocalData();
         data.bills = data.bills || [];
@@ -5471,6 +5598,9 @@ const db = {
       } else {
         const hasNativeCategories = await checkBillsTableNativeCategories();
         const rowToInsert = { ...newBill };
+        delete rowToInsert.duplicateVerification;
+        delete rowToInsert.duplicateMatches;
+        delete rowToInsert.isDuplicate;
         if (!hasNativeCategories) {
           delete rowToInsert.categories;
           delete rowToInsert.totalVerifiedAmount;
@@ -5524,7 +5654,12 @@ const db = {
 
       // Automatically create a persistent notification in comments table (existing notification system)
       try {
-        const notifMsg = `New Bill Submitted\nEmployee: ${newBill.employeeName}\nEmployee ID: ${newBill.employeeId}\nBill Number: ${newBill.billNumber}\nSite: ${newBill.siteName}\nDate: ${newBill.billDate}\nClaimed Amount: Rs. ${Number(newBill.totalClaimedAmount).toLocaleString()}\nStatus: Pending Verification\n[BillID:${newBill.id}]`;
+        let dupWarning = '';
+        if (dupCheck.isDuplicate && dupCheck.matches.length > 0) {
+          const topMatch = dupCheck.matches[0];
+          dupWarning = `\n⚠️ [DUPLICATE ALERT]: Matches ${topMatch.billNumber} (${topMatch.matchType} - Branch: ${newBill.siteName}, Amount: Rs. ${Number(newBill.totalClaimedAmount).toLocaleString()})`;
+        }
+        const notifMsg = `New Bill Submitted\nEmployee: ${newBill.employeeName}\nEmployee ID: ${newBill.employeeId}\nBill Number: ${newBill.billNumber}\nSite: ${newBill.siteName}\nDate: ${newBill.billDate}\nClaimed Amount: Rs. ${Number(newBill.totalClaimedAmount).toLocaleString()}\nStatus: Pending Verification${dupWarning}\n[BillID:${newBill.id}]`;
         await this.addComment({
           employeeId: newBill.employeeId,
           employeeName: newBill.employeeName,
@@ -5543,7 +5678,7 @@ const db = {
   // Get Bills with optional scoping & filters
   async getBills({ employeeId = null, status = null, search = null, startDate = null, endDate = null, lightweight = true } = {}) {
     let list = [];
-    if (useLocalFallback && !supabase) {
+    if (useLocalFallback || !supabase) {
       const data = loadLocalData();
       list = (data.bills || []).map(b => normalizeBillRecord(b));
     } else {
@@ -5662,6 +5797,16 @@ const db = {
       });
     }
 
+    // Automatically attach duplicate verification by bill, amount, and branch name
+    try {
+      const allKnownBills = (useLocalFallback || !supabase)
+        ? (loadLocalData().bills || []).map(b => normalizeBillRecord(b))
+        : list;
+      list = attachDuplicateVerificationToBills(list, allKnownBills);
+    } catch (e) {
+      console.warn('Duplicate verification attachment failed (non-fatal):', e.message);
+    }
+
     return list;
   },
 
@@ -5669,6 +5814,8 @@ const db = {
   async getBillById(id) {
     if (!id) return null;
     const cleanId = String(id).trim();
+
+    let foundBill = null;
 
     // 1. Try Supabase first if client available
     if (supabase) {
@@ -5679,7 +5826,7 @@ const db = {
           if (res.data) data = res.data;
         }
         if (data) {
-          const normalized = normalizeBillRecord(data);
+          foundBill = normalizeBillRecord(data);
           // Sync into local data cache
           try {
             const localData = loadLocalData();
@@ -5689,7 +5836,6 @@ const db = {
             else localData.bills.push(data);
             saveLocalData(localData);
           } catch (e) {}
-          return normalized;
         }
       } catch (err) {
         console.warn('Supabase getBillById error:', err.message || err);
@@ -5697,11 +5843,25 @@ const db = {
     }
 
     // 2. Check local data fallback
-    try {
-      const data = loadLocalData();
-      const found = (data.bills || []).find(b => b.id === cleanId || b.billNumber === cleanId);
-      if (found) return normalizeBillRecord(found);
-    } catch (e) {}
+    if (!foundBill) {
+      try {
+        const data = loadLocalData();
+        const found = (data.bills || []).find(b => b.id === cleanId || b.billNumber === cleanId);
+        if (found) foundBill = normalizeBillRecord(found);
+      } catch (e) {}
+    }
+
+    if (foundBill) {
+      try {
+        const localData = loadLocalData();
+        const allKnown = (localData.bills || []).map(b => normalizeBillRecord(b));
+        const dupCheck = getBillDuplicateVerification(foundBill, allKnown);
+        foundBill.isDuplicate = dupCheck.isDuplicate;
+        foundBill.duplicateVerification = dupCheck;
+        foundBill.duplicateMatches = dupCheck.matches;
+      } catch (e) {}
+      return foundBill;
+    }
 
     return null;
   },
@@ -6338,7 +6498,8 @@ const db = {
   // Bill Statistics
   async getBillStats() {
     const rawBills = await this.getBills();
-    const bills = (rawBills || []).map(b => normalizeBillRecord(b));
+    let bills = (rawBills || []).map(b => normalizeBillRecord(b));
+    bills = attachDuplicateVerificationToBills(bills, bills);
     const totalBills = bills.length;
     let pendingVerification = 0;
     let partiallyVerified = 0;
@@ -6346,6 +6507,8 @@ const db = {
     let partiallyApproved = 0;
     let approved = 0;
     let rejected = 0;
+    let duplicateAlertsCount = 0;
+    let duplicateAlertsAmount = 0;
     let totalClaimedAmount = 0;
     let totalVerifiedAmount = 0;
     let totalApprovedAmount = 0;
@@ -6361,6 +6524,11 @@ const db = {
       else if (b.status === 'PARTIALLY_APPROVED') partiallyApproved++;
       else if (b.status === 'APPROVED') approved++;
       else if (b.status === 'REJECTED') rejected++;
+
+      if (b.isDuplicate && b.status !== 'REJECTED') {
+        duplicateAlertsCount++;
+        duplicateAlertsAmount += (Number(b.totalClaimedAmount) || 0);
+      }
     });
 
     return {
@@ -6377,10 +6545,140 @@ const db = {
       approvedCount: approved,
       rejected,
       rejectedCount: rejected,
+      duplicateAlertsCount,
+      duplicateAlertsAmount,
       totalClaimedAmount,
       totalVerifiedAmount,
       totalApprovedAmount
     };
+  },
+
+  // Verify Bill Duplicates (Single Bill Full Report)
+  async verifyBillDuplicates(idOrBill) {
+    let bill = null;
+    if (typeof idOrBill === 'object' && idOrBill !== null) {
+      bill = normalizeBillRecord(idOrBill);
+    } else {
+      bill = await this.getBillById(idOrBill);
+    }
+    if (!bill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    let allBills = [];
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      allBills = (data.bills || []).map(b => normalizeBillRecord(b));
+    } else {
+      allBills = await this.getBills({ lightweight: true });
+    }
+
+    const verification = getBillDuplicateVerification(bill, allBills);
+    return {
+      bill,
+      duplicateVerification: verification,
+      isDuplicate: verification.isDuplicate,
+      matches: verification.matches
+    };
+  },
+
+  // Get All Duplicate Bill Clusters
+  async getDuplicateClusters() {
+    let allBills = [];
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      allBills = (data.bills || []).map(b => normalizeBillRecord(b));
+    } else {
+      allBills = await this.getBills({ lightweight: true });
+    }
+
+    allBills = attachDuplicateVerificationToBills(allBills, allBills);
+    const clusters = [];
+    const processedIds = new Set();
+
+    allBills.forEach(b => {
+      if (processedIds.has(b.id)) return;
+      if (b.duplicateMatches && b.duplicateMatches.length > 0) {
+        const clusterBills = [b];
+        processedIds.add(b.id);
+        b.duplicateMatches.forEach(m => {
+          const matchBill = allBills.find(x => x.id === m.billId || x.billNumber === m.billNumber);
+          if (matchBill && !processedIds.has(matchBill.id)) {
+            clusterBills.push(matchBill);
+            processedIds.add(matchBill.id);
+          }
+        });
+
+        if (clusterBills.length > 1) {
+          clusters.push({
+            clusterId: 'cluster_' + b.id,
+            siteName: b.siteName,
+            totalClaimedAmount: b.totalClaimedAmount,
+            billsCount: clusterBills.length,
+            bills: clusterBills
+          });
+        }
+      }
+    });
+
+    return clusters;
+  },
+
+  // Admin Override / Verification of Bill as Legitimate (Not Duplicate)
+  async overrideBillDuplicate(id, { overrideBy = 'Admin', note = '' } = {}) {
+    const rawBill = await this.getBillById(id);
+    if (!rawBill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+    const bill = normalizeBillRecord(rawBill);
+    const nowIso = new Date().toISOString();
+    const reasonNote = (note || 'Admin verified bill is legitimate and not a duplicate.').trim();
+
+    const existingLog = Array.isArray(bill.auditLog) ? bill.auditLog : [];
+    const auditLog = [...existingLog, {
+      action: 'DUPLICATE_OVERRIDDEN',
+      by: overrideBy || 'Admin',
+      at: nowIso,
+      details: {
+        note: reasonNote,
+        overridden: true
+      }
+    }];
+
+    const updates = {
+      duplicateOverridden: true,
+      duplicateOverrideBy: overrideBy || 'Admin',
+      duplicateOverrideAt: nowIso,
+      duplicateOverrideNote: reasonNote,
+      auditLog,
+      updatedAt: nowIso
+    };
+
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      const idx = (data.bills || []).findIndex(b => b.id === id || b.billNumber === id);
+      if (idx !== -1) {
+        data.bills[idx] = { ...data.bills[idx], ...updates };
+        saveLocalData(data);
+      }
+    } else {
+      try {
+        await supabase.from('bills').update(updates).eq('id', id);
+      } catch (err) {
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === id || b.billNumber === id);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates };
+          saveLocalData(data);
+        }
+      }
+    }
+
+    return this.getBillById(id);
   },
 };
 
@@ -6676,16 +6974,232 @@ function withBillLock(fn) {
   return next;
 }
 
-function sanitizeAccountsPdfForClient(record) {
-  if (!record) return null;
-  const clone = JSON.parse(JSON.stringify(record));
-  delete clone.pdfData;
-  if (Array.isArray(clone.pdfs)) {
-    clone.pdfs.forEach(p => {
-      delete p.pdfData;
-    });
+// ─── AUTOMATED DUPLICATE BILL VERIFICATION ENGINE ────────────────────────────
+
+function normalizeBranchName(name) {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .toLowerCase()
+    .replace(/\b(branch|site|office|plaza|project|phase|sector|road|st|rd|building|complex|chowk|bazaar|market)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+function areBranchNamesMatching(name1, name2) {
+  if (!name1 || !name2) return false;
+  const raw1 = String(name1).toLowerCase().trim();
+  const raw2 = String(name2).toLowerCase().trim();
+  if (raw1 === raw2) return true;
+
+  const clean1 = raw1.replace(/[^a-z0-9]/g, '');
+  const clean2 = raw2.replace(/[^a-z0-9]/g, '');
+  if (clean1 && clean2 && clean1 === clean2) return true;
+
+  const norm1 = normalizeBranchName(name1);
+  const norm2 = normalizeBranchName(name2);
+  if (norm1 && norm2 && norm1 === norm2) return true;
+
+  if (clean1.length >= 4 && clean2.length >= 4) {
+    if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
   }
-  return clone;
+  if (norm1.length >= 4 && norm2.length >= 4) {
+    if (norm1.includes(norm2) || norm2.includes(norm1)) return true;
+  }
+
+  return false;
+}
+
+function areAmountsMatching(amt1, amt2) {
+  const n1 = Math.round(Number(amt1) || 0);
+  const n2 = Math.round(Number(amt2) || 0);
+  return n1 > 0 && n1 === n2;
+}
+
+function areDatesMatching(d1, d2) {
+  if (!d1 || !d2) return false;
+  const s1 = String(d1).slice(0, 10);
+  const s2 = String(d2).slice(0, 10);
+  return s1 === s2;
+}
+
+function getDateDifferenceInDays(d1, d2) {
+  if (!d1 || !d2) return 999;
+  try {
+    const t1 = new Date(d1).getTime();
+    const t2 = new Date(d2).getTime();
+    if (isNaN(t1) || isNaN(t2)) return 999;
+    return Math.abs(t1 - t2) / (1000 * 60 * 60 * 24);
+  } catch (e) {
+    return 999;
+  }
+}
+
+function getBillDuplicateVerification(targetBill, allBills = []) {
+  if (!targetBill) {
+    return { isDuplicate: false, severity: 'NONE', matchCount: 0, matches: [], summary: 'No bill provided.' };
+  }
+
+  if (targetBill.duplicateOverridden) {
+    return {
+      isDuplicate: false,
+      severity: 'NONE',
+      matchCount: 0,
+      matches: [],
+      overridden: true,
+      overrideBy: targetBill.duplicateOverrideBy || 'Admin',
+      overrideAt: targetBill.duplicateOverrideAt || targetBill.updatedAt,
+      overrideNote: targetBill.duplicateOverrideNote || 'Verified legitimate by admin',
+      summary: `Verified legitimate by Admin (${targetBill.duplicateOverrideBy || 'Admin'}): ${targetBill.duplicateOverrideNote || 'Marked as not duplicate'}`
+    };
+  }
+
+  const matches = [];
+  const targetTotal = Number(targetBill.totalClaimedAmount) || 0;
+  const targetSite = (targetBill.siteName || '').trim();
+  const targetDate = targetBill.billDate || targetBill.date || '';
+  const targetEmpId = String(targetBill.employeeId || '').trim();
+
+  for (const other of allBills) {
+    if (!other) continue;
+    // Don't compare bill to itself
+    if (targetBill.id && other.id && String(targetBill.id) === String(other.id)) continue;
+    if (targetBill.billNumber && other.billNumber && String(targetBill.billNumber) === String(other.billNumber)) continue;
+
+    const otherTotal = Number(other.totalClaimedAmount) || 0;
+    const otherSite = (other.siteName || '').trim();
+    const otherDate = other.billDate || other.date || '';
+    const otherEmpId = String(other.employeeId || '').trim();
+
+    const branchMatch = areBranchNamesMatching(targetSite, otherSite);
+    const amountMatch = areAmountsMatching(targetTotal, otherTotal);
+    const dateMatch = areDatesMatching(targetDate, otherDate);
+    const empMatch = Boolean(targetEmpId && targetEmpId === otherEmpId);
+    const daysDiff = getDateDifferenceInDays(targetDate, otherDate);
+
+    // Check attachment matches
+    let attachmentMatch = false;
+    const atts1 = Array.isArray(targetBill.attachments) ? targetBill.attachments : [];
+    const atts2 = Array.isArray(other.attachments) ? other.attachments : [];
+    if (atts1.length && atts2.length) {
+      attachmentMatch = atts1.some(a1 =>
+        atts2.some(a2 => a1.name && a2.name && String(a1.name).toLowerCase().trim() === String(a2.name).toLowerCase().trim())
+      );
+    }
+
+    const descMatch = Boolean(
+      targetBill.description && other.description &&
+      targetBill.description.trim().length >= 5 &&
+      targetBill.description.trim().toLowerCase() === other.description.trim().toLowerCase()
+    );
+
+    // Matching criteria check:
+    // 1. Branch Name + Amount match
+    // 2. Bill Date + Amount + Employee match
+    // 3. Branch Name + Bill Date + Employee match
+    // 4. Attachment/Receipt + Amount or Branch match
+    const isBranchAndAmount = branchMatch && amountMatch;
+    const isDateAndAmountAndEmp = dateMatch && amountMatch && empMatch;
+    const isBranchAndDateAndEmp = branchMatch && dateMatch && empMatch;
+    const isReceiptOrDescMatch = (attachmentMatch || descMatch) && (amountMatch || branchMatch);
+
+    if (isBranchAndAmount || isDateAndAmountAndEmp || isBranchAndDateAndEmp || isReceiptOrDescMatch) {
+      const matchedCriteria = [];
+      const reasons = [];
+
+      if (branchMatch) {
+        matchedCriteria.push('branch');
+        reasons.push(`Matching Branch Name: "${otherSite}"`);
+      }
+      if (amountMatch) {
+        matchedCriteria.push('amount');
+        reasons.push(`Matching Claimed Amount: Rs. ${otherTotal.toLocaleString()}`);
+      }
+      if (dateMatch) {
+        matchedCriteria.push('billDate');
+        reasons.push(`Same Bill Date: ${targetDate}`);
+      } else if (daysDiff <= 7) {
+        reasons.push(`Close Bill Date: within ${Math.round(daysDiff)} days (${otherDate || 'N/A'})`);
+      }
+      if (empMatch) {
+        matchedCriteria.push('employee');
+        reasons.push(`Same Employee: ${targetBill.employeeName || targetBill.employeeId}`);
+      } else {
+        matchedCriteria.push('crossEmployee');
+        reasons.push(`Cross-Employee Match: Submitted by ${other.employeeName || other.employeeId}`);
+      }
+      if (attachmentMatch) {
+        matchedCriteria.push('attachment');
+        reasons.push('Matching receipt attachment filename');
+      }
+      if (descMatch) {
+        matchedCriteria.push('description');
+        reasons.push('Identical expense description');
+      }
+
+      let severity = 'MEDIUM';
+      if ((branchMatch && amountMatch && (empMatch || dateMatch || daysDiff <= 14)) || (attachmentMatch && amountMatch)) {
+        severity = 'HIGH';
+      }
+
+      let matchType = 'Duplicate Alert';
+      if (branchMatch && amountMatch && dateMatch) {
+        matchType = 'Exact Match: Branch, Amount & Date';
+      } else if (branchMatch && amountMatch) {
+        matchType = 'Branch & Amount Match';
+      } else if (amountMatch && dateMatch) {
+        matchType = 'Date & Amount Match';
+      } else if (branchMatch && dateMatch) {
+        matchType = 'Branch & Date Match';
+      }
+
+      matches.push({
+        billId: other.id,
+        billNumber: other.billNumber,
+        employeeId: other.employeeId,
+        employeeName: other.employeeName,
+        siteName: other.siteName,
+        billDate: other.billDate || other.date,
+        totalClaimedAmount: otherTotal,
+        status: other.status,
+        severity,
+        matchType,
+        matchedCriteria,
+        reasons,
+        summary: `Matched with ${other.billNumber} (${matchType}: ${reasons.join(', ')})`
+      });
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (a.severity === 'HIGH' && b.severity !== 'HIGH') return -1;
+    if (b.severity === 'HIGH' && a.severity !== 'HIGH') return 1;
+    return 0;
+  });
+
+  return {
+    isDuplicate: matches.length > 0,
+    severity: matches.length > 0 ? matches[0].severity : 'NONE',
+    matchCount: matches.length,
+    matches,
+    matchedBillNumbers: matches.map(m => m.billNumber),
+    summary: matches.length > 0
+      ? `Potential duplicate: ${matches.length} matching bill(s) found (${matches[0].summary})`
+      : 'Verified Unique: No duplicate bill, amount, or branch match found.'
+  };
+}
+
+function attachDuplicateVerificationToBills(bills, allReferenceBills = null) {
+  if (!Array.isArray(bills) || bills.length === 0) return bills;
+  const reference = Array.isArray(allReferenceBills) && allReferenceBills.length > 0 ? allReferenceBills : bills;
+  return bills.map(b => {
+    const dupCheck = getBillDuplicateVerification(b, reference);
+    return {
+      ...b,
+      isDuplicate: dupCheck.isDuplicate,
+      duplicateVerification: dupCheck,
+      duplicateMatches: dupCheck.matches
+    };
+  });
 }
 
 module.exports = db;

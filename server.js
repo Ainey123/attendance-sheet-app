@@ -26,16 +26,26 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve frontend static assets from public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Helper to validate admin passcode strictly
+function isPasscodeValid(passcode, settings) {
+  const clean = String(passcode || '').trim();
+  if (!clean) return false;
+  const target = (settings && settings.adminPasscode && String(settings.adminPasscode).trim()) || '';
+  const senior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '';
+  return (target && clean === target) || (senior && clean === senior);
+}
+
 // Helper to check admin password
 const checkAdminAuth = async (req, res, next) => {
   const passcode = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || req.query.adminPasscode || (req.body && req.body.adminPasscode) || '').trim();
-  const settings = await db.getSettings();
-  const target = (settings && settings.adminPasscode) || '9999';
-  if (!passcode || passcode === '' || passcode === target || passcode === '9999' || passcode === (settings && settings.seniorAdminPasscode)) {
-    next();
-  } else {
-    res.status(401).json({ error: 'Unauthorized. Invalid admin passcode.' });
+  if (!passcode) {
+    return res.status(401).json({ error: 'Unauthorized. Admin passcode required.' });
   }
+  const settings = await db.getSettings();
+  if (isPasscodeValid(passcode, settings)) {
+    return next();
+  }
+  return res.status(401).json({ error: 'Unauthorized. Invalid admin passcode.' });
 };
 
 // Migration: ensure all employees have a token (now handled by Supabase)
@@ -52,24 +62,27 @@ app.get('/api/settings', async (req, res) => {
 // Verify admin passcode
 app.post('/api/settings/verify', async (req, res) => {
   const { passcode } = req.body;
-  const settings = await db.getSettings();
-  const target = (settings && settings.adminPasscode) || '9999';
   const clean = String(passcode || '').trim();
-  if (clean === target || clean === '9999' || clean === (settings && settings.seniorAdminPasscode)) {
+  if (!clean) {
+    return res.status(401).json({ success: false, error: 'Passcode is required.' });
+  }
+  const settings = await db.getSettings();
+  if (isPasscodeValid(clean, settings)) {
     return res.json({ success: true, message: 'Passcode verified.' });
   }
-  res.status(401).json({ success: false, error: 'Incorrect passcode.' });
+  return res.status(401).json({ success: false, error: 'Incorrect passcode.' });
 });
 
 // Update office settings
 app.post('/api/settings/update', checkAdminAuth, async (req, res) => {
-  const { officeName, adminPasscode } = req.body;
+  const { officeName, adminPasscode, seniorAdminPasscode } = req.body;
   const updateData = {};
-  if (officeName) updateData.officeName = officeName.trim();
-  if (adminPasscode) updateData.adminPasscode = adminPasscode.trim();
+  if (officeName && String(officeName).trim()) updateData.officeName = String(officeName).trim();
+  if (adminPasscode && String(adminPasscode).trim()) updateData.adminPasscode = String(adminPasscode).trim();
+  if (seniorAdminPasscode && String(seniorAdminPasscode).trim()) updateData.seniorAdminPasscode = String(seniorAdminPasscode).trim();
 
   const updated = await db.updateSettings(updateData);
-  res.json({ success: true, settings: { officeName: updated.officeName } });
+  res.json({ success: true, settings: { officeName: updated.officeName, adminPasscode: updated.adminPasscode } });
 });
 
 // Generate permanent admin token
@@ -876,10 +889,8 @@ app.post('/api/salary/expense/verify', async (req, res) => {
     const { employeeId, employeeName, salaryMonth, month, claimedAmount, verifiedAmount, verifiedBy, notes, passcode } = req.body;
     const settings = await db.getSettings();
     const provided = String(passcode || req.headers['x-admin-passcode'] || '').trim();
-    const target = (settings && settings.adminPasscode) || '1234';
-    const senior = (settings && settings.seniorAdminPasscode) || '9999';
-    if (provided && provided !== target && provided !== senior && provided !== '1290' && provided !== '1289' && provided !== '1234' && provided !== '9999') {
-      return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+    if (!isPasscodeValid(provided, settings)) {
+      return res.status(401).json({ error: 'Unauthorized: Valid Admin passcode required' });
     }
 
     const verification = await db.verifyExpense({
@@ -903,10 +914,8 @@ app.post('/api/salary/expense/reject', async (req, res) => {
     const { employeeId, employeeName, salaryMonth, month, rejectionReason, reason, rejectedBy, notes, passcode } = req.body;
     const settings = await db.getSettings();
     const provided = String(passcode || req.headers['x-admin-passcode'] || '').trim();
-    const target = (settings && settings.adminPasscode) || '1234';
-    const senior = (settings && settings.seniorAdminPasscode) || '9999';
-    if (provided && provided !== target && provided !== senior && provided !== '1290' && provided !== '1289' && provided !== '1234' && provided !== '9999') {
-      return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+    if (!isPasscodeValid(provided, settings)) {
+      return res.status(401).json({ error: 'Unauthorized: Valid Admin passcode required' });
     }
 
     const verification = await db.rejectExpense({
@@ -1066,7 +1075,7 @@ app.get('/api/bills', async (req, res) => {
   try {
     const settings = await db.getSettings();
     const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || '').trim();
-    const isAdmin = adminPass && (adminPass === (settings.adminPasscode || '1234') || adminPass === (settings.seniorAdminPasscode || '9999') || adminPass === '1289' || adminPass === '1290');
+    const isAdmin = isPasscodeValid(adminPass, settings);
 
     let employeeId = req.query.employeeId || null;
     if (!isAdmin) {
@@ -1114,7 +1123,7 @@ app.get('/api/bills/:id', async (req, res) => {
 
     const settings = await db.getSettings();
     const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || '').trim();
-    const isAdmin = adminPass && (adminPass === (settings.adminPasscode || '1234') || adminPass === (settings.seniorAdminPasscode || '9999') || adminPass === '1289' || adminPass === '1290');
+    const isAdmin = isPasscodeValid(adminPass, settings);
 
     if (!isAdmin) {
       const clientEmpId = req.headers['x-employee-id'] || req.query.employeeId;
@@ -1169,9 +1178,9 @@ app.post('/api/bills/:id/approve-category', async (req, res) => {
   try {
     const settings = await db.getSettings();
     const provided = (req.body.seniorPasscode || req.body.passcode || req.headers['x-senior-passcode'] || req.headers['x-admin-passcode'] || '').trim();
-    const validSenior = settings.seniorAdminPasscode || '9999';
+    const validSenior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
 
-    if (provided !== validSenior) {
+    if (!provided || provided !== validSenior) {
       return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
     }
 
@@ -1209,9 +1218,9 @@ app.post('/api/bills/:id/approve', async (req, res) => {
   try {
     const settings = await db.getSettings();
     const provided = (req.body.seniorPasscode || req.body.passcode || req.headers['x-senior-passcode'] || req.headers['x-admin-passcode'] || '').trim();
-    const validSenior = settings.seniorAdminPasscode || '9999';
+    const validSenior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
 
-    if (provided !== validSenior) {
+    if (!provided || provided !== validSenior) {
       return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
     }
 
@@ -1236,6 +1245,55 @@ app.post('/api/bills/:id/reject', checkAdminAuth, async (req, res) => {
       rejectedBy: rejectedBy || 'Admin'
     });
     res.json({ success: true, bill: updated });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// GET /api/bills/duplicates (List all duplicate bill clusters for admin)
+app.get('/api/bills/duplicates', checkAdminAuth, async (req, res) => {
+  try {
+    const clusters = await db.getDuplicateClusters();
+    res.json({ success: true, clusters, count: clusters.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bills/:id/duplicate-check (Deep duplicate check for a bill)
+app.get('/api/bills/:id/duplicate-check', checkAdminAuth, async (req, res) => {
+  try {
+    const result = await db.verifyBillDuplicates(req.params.id);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/reject-duplicate (One-click reject duplicate bill)
+app.post('/api/bills/:id/reject-duplicate', checkAdminAuth, async (req, res) => {
+  try {
+    const { matchedBillNumber, branch, amount, reason, rejectedBy } = req.body;
+    const defaultReason = (reason && reason.trim()) ? reason.trim() : `Duplicate bill submission matching ${matchedBillNumber || 'existing bill'}${branch ? ` (Branch: ${branch})` : ''}${amount ? ` (Amount: Rs. ${Number(amount).toLocaleString()})` : ''}`;
+    const updated = await db.rejectBill(req.params.id, {
+      rejectionReason: defaultReason,
+      rejectedBy: rejectedBy || 'Admin'
+    });
+    res.json({ success: true, bill: updated, message: 'Bill rejected as duplicate.' });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/:id/override-duplicate (Admin marks bill as verified legitimate / not a duplicate)
+app.post('/api/bills/:id/override-duplicate', checkAdminAuth, async (req, res) => {
+  try {
+    const { note, verifiedBy } = req.body;
+    const updated = await db.overrideBillDuplicate(req.params.id, {
+      overrideBy: verifiedBy || 'Admin',
+      note: note || 'Admin verified bill is legitimate and not a duplicate.'
+    });
+    res.json({ success: true, bill: updated, message: 'Bill marked as verified legitimate (not duplicate).' });
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message });
   }

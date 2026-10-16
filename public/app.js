@@ -25,7 +25,7 @@ function getAdminPasscode() {
       return adminPasscode;
     }
   } catch (e) {}
-  return '1290';
+  return '';
 }
 
 async function fetchJson(url, options = {}) {
@@ -151,6 +151,22 @@ const API = {
     body: JSON.stringify(data)
   }),
   rejectBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
+  getBillDuplicates: () => fetchJson('/api/bills/duplicates', {
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  checkBillDuplicate: (id) => fetchJson(`/api/bills/${encodeURIComponent(id)}/duplicate-check`, {
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  rejectDuplicateBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/reject-duplicate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
+  }),
+  overrideDuplicateBill: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/override-duplicate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
     body: JSON.stringify(data)
@@ -1218,29 +1234,43 @@ async function submitClockOutDetails(e) {
 async function handleAdminAuthSubmit(e) {
   e.preventDefault();
   const input = document.getElementById('auth-passcode');
-  const passcode = input.value;
+  const passcode = (input ? input.value : '').trim();
   const errorMsg = document.getElementById('auth-error-msg');
   
   errorMsg.classList.add('hidden');
   
+  if (!passcode) {
+    errorMsg.textContent = 'Please enter admin passcode.';
+    errorMsg.classList.remove('hidden');
+    if (input) input.focus();
+    return;
+  }
+  
   try {
     const res = await API.verifyPasscode(passcode);
-    if (res.success) {
-        adminPasscode = passcode;
-        // Persist admin passcode
+    if (res && res.success) {
+      adminPasscode = passcode;
+      // Persist admin passcode
+      if (typeof Store !== 'undefined' && Store.savePasscode) {
         Store.savePasscode(adminPasscode);
-        input.value = '';
-        closeAdminAuthModal();
-        
-        // Unlock view
-        switchView('admin');
-        showToast('Admin access granted', 'success');
-      } else {
-        errorMsg.classList.remove('hidden');
-        input.focus();
       }
+      localStorage.setItem('attendance_admin_passcode', adminPasscode);
+      if (input) input.value = '';
+      closeAdminAuthModal();
+      
+      // Unlock view
+      switchView('admin');
+      showToast('Admin access granted', 'success');
+    } else {
+      errorMsg.textContent = (res && res.error) || 'Incorrect passcode.';
+      errorMsg.classList.remove('hidden');
+      if (input) input.focus();
+    }
   } catch (err) {
-    showToast('Connection error', 'error');
+    const msg = (err && err.payload && err.payload.error) || (err && err.message) || 'Incorrect passcode.';
+    errorMsg.textContent = msg;
+    errorMsg.classList.remove('hidden');
+    if (input) input.focus();
   }
 }
 
@@ -1773,32 +1803,50 @@ async function loadAdminSettings() {
 // Submit office settings
 async function handleSettingsSubmit(e) {
   e.preventDefault();
-  const officeName = document.getElementById('settings-office-name').value;
-  const newPasscode = document.getElementById('settings-passcode').value;
+  const officeNameInput = document.getElementById('settings-office-name');
+  const passcodeInput = document.getElementById('settings-passcode');
+  const officeName = (officeNameInput ? officeNameInput.value : '').trim();
+  const newPasscode = (passcodeInput ? passcodeInput.value : '').trim();
 
-  const updateBody = { officeName };
-  if (newPasscode.trim() !== '') {
+  const updateBody = {};
+  if (officeName) {
+    updateBody.officeName = officeName;
+  }
+  if (newPasscode) {
     updateBody.adminPasscode = newPasscode;
+  }
+
+  if (Object.keys(updateBody).length === 0) {
+    showToast('No changes to save', 'warning');
+    return;
   }
 
   try {
     const res = await API.updateSettings(updateBody);
-    if (res.success) {
+    if (res && res.success) {
       showToast('Settings saved successfully', 'success');
       
       // Update global titles
-      document.getElementById('office-title').innerText = res.settings.officeName;
+      if (res.settings && res.settings.officeName) {
+        const titleEl = document.getElementById('office-title');
+        if (titleEl) titleEl.innerText = res.settings.officeName;
+      }
       
-      if (newPasscode.trim() !== '') {
-        // If passcode changed, save the new value into session cache
+      if (newPasscode) {
+        // If passcode changed, save the new value into session cache and persistent storage immediately
         adminPasscode = newPasscode;
-        document.getElementById('settings-passcode').value = '';
+        if (typeof Store !== 'undefined' && Store.savePasscode) {
+          Store.savePasscode(adminPasscode);
+        }
+        localStorage.setItem('attendance_admin_passcode', adminPasscode);
+        if (passcodeInput) passcodeInput.value = '';
       }
     } else {
-      showToast(res.error || 'Failed to update settings', 'error');
+      showToast((res && res.error) || 'Failed to update settings', 'error');
     }
   } catch (err) {
-    showToast('Connection error', 'error');
+    console.error('Settings update error:', err);
+    showToast((err && err.message) || 'Failed to update settings', 'error');
   }
 }
 
@@ -5702,6 +5750,28 @@ function updateBillReviewSummary() {
 
   const revAtt = document.getElementById('rev-attach-count');
   if (revAtt) revAtt.innerText = currentBillAttachments.length;
+
+  // Real-time duplicate advisory notice for employee
+  const dupNoticeEl = document.getElementById('bill-submission-dup-notice');
+  if (dupNoticeEl) {
+    if (site && total > 0 && selectedEmployee) {
+      const match = (currentEmployeeBills || []).find(b => {
+        const bSite = (b.siteName || '').toLowerCase().trim();
+        const sSite = site.toLowerCase().trim();
+        const amtMatch = (Number(b.totalClaimedAmount) || 0) === total;
+        const siteMatch = bSite === sSite || (bSite && sSite && (bSite.includes(sSite) || sSite.includes(bSite)));
+        return amtMatch && siteMatch;
+      });
+      if (match) {
+        dupNoticeEl.style.display = 'block';
+        dupNoticeEl.innerHTML = `ℹ️ <strong>Duplicate Verification Advisory:</strong> You previously submitted a bill for <strong>Rs. ${total.toLocaleString()}</strong> at <strong>${escapeHtml(match.siteName)}</strong> (${match.billNumber} on ${match.billDate || 'earlier'}). The app will automatically cross-verify this on the admin side.`;
+      } else {
+        dupNoticeEl.style.display = 'none';
+      }
+    } else {
+      dupNoticeEl.style.display = 'none';
+    }
+  }
 }
 
 function handleBillFileInput(e) {
@@ -6202,7 +6272,7 @@ function renderAdminBillsTable() {
     });
   }
 
-  // 2. Compute dynamic stats on filtered set (Total, Pending, Verified, Approved, Rejected)
+  // 2. Compute dynamic stats on filtered set (Total, Pending, Verified, Approved, Rejected, Duplicates)
   const totalBillsCount = filtered.length;
   let totalClaimedAmount = 0;
   let pendingCount = 0;
@@ -6213,6 +6283,8 @@ function renderAdminBillsTable() {
   let approvedAmount = 0;
   let rejectedCount = 0;
   let rejectedAmount = 0;
+  let duplicateCount = 0;
+  let duplicateAmount = 0;
 
   filtered.forEach(b => {
     const claimed = Number(b.totalClaimedAmount || 0);
@@ -6233,6 +6305,12 @@ function renderAdminBillsTable() {
     } else if (b.status === 'REJECTED') {
       rejectedCount++;
       rejectedAmount += claimed;
+    }
+
+    const isDup = Boolean(b.isDuplicate || (b.duplicateVerification && b.duplicateVerification.isDuplicate));
+    if (isDup && b.status !== 'REJECTED') {
+      duplicateCount++;
+      duplicateAmount += claimed;
     }
   });
 
@@ -6262,12 +6340,29 @@ function renderAdminBillsTable() {
   const rejectedAmtEl = document.getElementById('bill-stat-rejected-amount');
   if (rejectedAmtEl) rejectedAmtEl.innerText = 'PKR ' + rejectedAmount.toLocaleString();
 
+  const dupEl = document.getElementById('bill-stat-duplicates');
+  if (dupEl) dupEl.innerText = duplicateCount.toLocaleString();
+  const dupAmtEl = document.getElementById('bill-stat-duplicates-amount');
+  if (dupAmtEl) dupAmtEl.innerText = 'PKR ' + duplicateAmount.toLocaleString();
+
+  const dupBadge = document.getElementById('badge-duplicates-count');
+  if (dupBadge) {
+    if (duplicateCount > 0) {
+      dupBadge.innerText = duplicateCount;
+      dupBadge.style.display = 'inline-block';
+    } else {
+      dupBadge.style.display = 'none';
+    }
+  }
+
   // 3. Filter by Status tab
   let rowsToRender = filtered;
   if (currentAdminBillFilter === 'PENDING_VERIFICATION') {
     rowsToRender = rowsToRender.filter(b => b.status === 'PENDING_VERIFICATION' || b.status === 'SUBMITTED' || b.status === 'PARTIALLY_VERIFIED');
   } else if (currentAdminBillFilter === 'VERIFIED') {
     rowsToRender = rowsToRender.filter(b => b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED');
+  } else if (currentAdminBillFilter === 'DUPLICATE') {
+    rowsToRender = rowsToRender.filter(b => b.isDuplicate || (b.duplicateVerification && b.duplicateVerification.isDuplicate));
   } else if (currentAdminBillFilter !== 'ALL') {
     rowsToRender = rowsToRender.filter(b => b.status === currentAdminBillFilter);
   }
@@ -6308,6 +6403,22 @@ function renderAdminBillsTable() {
       const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
       const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
 
+      const isDup = Boolean(bill.isDuplicate || (bill.duplicateVerification && bill.duplicateVerification.isDuplicate));
+      let dupBadgeHtml = '';
+      if (isDup) {
+        tr.style.backgroundColor = 'rgba(239, 68, 68, 0.06)';
+        tr.style.borderLeft = '3px solid #ef4444';
+        const matchCount = (bill.duplicateMatches && bill.duplicateMatches.length) || (bill.duplicateVerification && bill.duplicateVerification.matchCount) || 1;
+        const firstMatch = (bill.duplicateMatches && bill.duplicateMatches[0]) || (bill.duplicateVerification && bill.duplicateVerification.matches && bill.duplicateVerification.matches[0]);
+        const matchTitle = firstMatch ? `Duplicate Alert: Matches ${firstMatch.billNumber} (${firstMatch.matchType || 'Same Branch & Amount'})` : 'Potential Duplicate Bill';
+        dupBadgeHtml = `
+          <div style="margin-top: 3px;">
+            <span class="badge" onclick="event.stopPropagation(); openAdminBillModal('${bill.id}')" title="${escapeHtml(matchTitle)}" style="background: rgba(239,68,68,0.22); border: 1px solid #ef4444; color: #fca5a5; font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;">
+              <span>⚠️</span> DUPLICATE (${matchCount})
+            </span>
+          </div>`;
+      }
+
       // Receipt previews
       let attachmentsHtml = '<span class="text-muted" style="font-size:0.8rem;">—</span>';
       const atts = Array.isArray(bill.attachments) ? bill.attachments : [];
@@ -6330,14 +6441,19 @@ function renderAdminBillsTable() {
       }
 
       let btnLabel = 'View Details';
-      if (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED') {
+      if (isDup && (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED')) {
+        btnLabel = '⚠️ Review Duplicate';
+      } else if (bill.status === 'SUBMITTED' || bill.status === 'PENDING_VERIFICATION' || bill.status === 'PARTIALLY_VERIFIED') {
         btnLabel = 'Review & Verify';
       } else if (bill.status === 'VERIFIED' || bill.status === 'PARTIALLY_APPROVED') {
         btnLabel = 'Approve / Review';
       }
 
       tr.innerHTML = `
-        <td><strong style="color:#38bdf8;">${bill.billNumber}</strong></td>
+        <td>
+          <strong style="color:#38bdf8;">${bill.billNumber}</strong>
+          ${dupBadgeHtml}
+        </td>
         <td>${bill.billDate || bill.date || '—'}</td>
         <td>${escapeHtml(bill.employeeName)}</td>
         <td>${escapeHtml(bill.siteName || '—')}</td>
@@ -6347,7 +6463,7 @@ function renderAdminBillsTable() {
         <td>${attachmentsHtml}</td>
         <td>${badgeHtml}</td>
         <td>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openAdminBillModal('${bill.id}')">
+          <button type="button" class="btn btn-sm ${isDup ? 'btn-danger' : 'btn-primary'}" onclick="openAdminBillModal('${bill.id}')">
             ${btnLabel}
           </button>
         </td>
@@ -6865,6 +6981,392 @@ async function handleAdminRejectBill(source) {
   }
 }
 
+// ─── CLIENT DUPLICATE BILL VERIFICATION HELPERS ────────────────────────────
+
+function getBillDuplicateVerificationClient(targetBill, allBills) {
+  if (!targetBill || !Array.isArray(allBills)) return { isDuplicate: false, matches: [] };
+  const matches = [];
+  const targetTotal = Math.round(Number(targetBill.totalClaimedAmount) || 0);
+  const targetSite = (targetBill.siteName || '').trim().toLowerCase();
+  const targetDate = (targetBill.billDate || targetBill.date || '').slice(0, 10);
+  const targetEmp = String(targetBill.employeeId || '').trim();
+
+  for (const other of allBills) {
+    if (!other || String(other.id) === String(targetBill.id) || String(other.billNumber) === String(targetBill.billNumber)) continue;
+    const otherTotal = Math.round(Number(other.totalClaimedAmount) || 0);
+    const otherSite = (other.siteName || '').trim().toLowerCase();
+    const otherDate = (other.billDate || other.date || '').slice(0, 10);
+    const otherEmp = String(other.employeeId || '').trim();
+
+    const cleanT = targetSite.replace(/[^a-z0-9]/g, '');
+    const cleanO = otherSite.replace(/[^a-z0-9]/g, '');
+    const branchMatch = Boolean(cleanT && cleanO && (cleanT === cleanO || cleanT.includes(cleanO) || cleanO.includes(cleanT)));
+    const amountMatch = targetTotal > 0 && targetTotal === otherTotal;
+    const dateMatch = Boolean(targetDate && otherDate && targetDate === otherDate);
+    const empMatch = Boolean(targetEmp && targetEmp === otherEmp);
+
+    if ((branchMatch && amountMatch) || (dateMatch && amountMatch && empMatch) || (branchMatch && dateMatch && empMatch)) {
+      const reasons = [];
+      const matchedCriteria = [];
+      if (branchMatch) { matchedCriteria.push('branch'); reasons.push(`Matching Branch: "${other.siteName}"`); }
+      if (amountMatch) { matchedCriteria.push('amount'); reasons.push(`Matching Amount: Rs. ${otherTotal.toLocaleString()}`); }
+      if (dateMatch) { matchedCriteria.push('billDate'); reasons.push(`Same Bill Date: ${targetDate}`); }
+      if (empMatch) { matchedCriteria.push('employee'); reasons.push(`Same Employee: ${targetBill.employeeName || targetBill.employeeId}`); }
+      else { matchedCriteria.push('crossEmployee'); reasons.push(`Cross-Employee Match: Submitted by ${other.employeeName || other.employeeId}`); }
+
+      matches.push({
+        billId: other.id,
+        billNumber: other.billNumber,
+        employeeId: other.employeeId,
+        employeeName: other.employeeName,
+        siteName: other.siteName,
+        billDate: otherDate,
+        totalClaimedAmount: otherTotal,
+        status: other.status,
+        severity: branchMatch && amountMatch ? 'HIGH' : 'MEDIUM',
+        matchType: branchMatch && amountMatch ? 'Branch & Amount Match' : 'Date & Amount Match',
+        matchedCriteria,
+        reasons
+      });
+    }
+  }
+
+  return {
+    isDuplicate: matches.length > 0,
+    severity: matches.some(m => m.severity === 'HIGH') ? 'HIGH' : (matches.length > 0 ? 'MEDIUM' : 'NONE'),
+    matchCount: matches.length,
+    matches
+  };
+}
+
+function renderBillDuplicateVerification(bill) {
+  const container = document.getElementById('admin-bill-duplicate-verification-container');
+  if (!container) return;
+
+  const dupCheck = bill.duplicateVerification || (currentAdminBills && getBillDuplicateVerificationClient(bill, currentAdminBills)) || { isDuplicate: false, matches: [] };
+
+  if (bill.duplicateOverridden) {
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 0.85rem 1.1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.85rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="font-size: 1.25rem;">✓</span>
+          <div>
+            <strong style="color: #4ade80;">Duplicate Verification: Verified Legitimate by Admin</strong>
+            <div style="color: #cbd5e1; font-size: 0.8rem; margin-top: 2px;">
+              Admin (${escapeHtml(bill.duplicateOverrideBy || 'Admin')}) confirmed this bill is genuine: <em>"${escapeHtml(bill.duplicateOverrideNote || 'Verified legitimate')}"</em>
+            </div>
+          </div>
+        </div>
+        <span class="badge" style="background: rgba(16, 185, 129, 0.25); color: #86efac; border: 1px solid #10b981; font-size: 0.75rem; padding: 3px 8px;">OVERRIDDEN</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (dupCheck.isDuplicate && Array.isArray(dupCheck.matches) && dupCheck.matches.length > 0) {
+    container.style.display = 'block';
+    const matchCount = dupCheck.matches.length;
+    const severityBadge = dupCheck.severity === 'HIGH'
+      ? '<span class="badge" style="background:#ef4444; color:#fff; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:6px;">⚠️ HIGH RISK DUPLICATE</span>'
+      : '<span class="badge" style="background:#f59e0b; color:#fff; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:6px;">⚠️ POTENTIAL DUPLICATE</span>';
+
+    const matchesHtml = dupCheck.matches.map((m) => {
+      const statusBadge = getBillStatusBadgeHtml(m.status);
+
+      const criteriaBadges = (m.matchedCriteria || []).map(crit => {
+        if (crit === 'branch') return '<span style="background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#7dd3fc; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">🏷️ Branch Match</span>';
+        if (crit === 'amount') return '<span style="background:rgba(245,158,11,0.2); border:1px solid #f59e0b; color:#fde68a; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">💵 Amount Match</span>';
+        if (crit === 'billDate') return '<span style="background:rgba(168,85,247,0.2); border:1px solid #a855f7; color:#d8b4fe; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">📅 Date Match</span>';
+        if (crit === 'employee') return '<span style="background:rgba(16,185,129,0.2); border:1px solid #10b981; color:#86efac; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">👤 Same Employee</span>';
+        if (crit === 'crossEmployee') return '<span style="background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">👥 Cross-Employee</span>';
+        return '';
+      }).join(' ');
+
+      const reasonsList = (m.reasons || []).map(r => `• ${escapeHtml(r)}`).join('<br>');
+
+      return `
+        <div style="background: rgba(0,0,0,0.35); border: 1px solid rgba(239,68,68,0.35); border-radius: 8px; padding: 0.85rem; margin-top: 0.5rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.5rem;">
+            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+              <strong style="color:#38bdf8; font-size:0.95rem;">${escapeHtml(m.billNumber)}</strong>
+              <span class="text-muted" style="font-size:0.82rem;">(${escapeHtml(m.employeeName)} • ID: ${escapeHtml(m.employeeId)})</span>
+              ${statusBadge}
+            </div>
+            <div style="display:flex; gap:0.4rem; align-items:center;">
+              <button type="button" class="btn btn-sm btn-secondary" onclick="openDuplicateCompareModal('${bill.id}', '${m.billId}')" style="padding:0.25rem 0.6rem; font-size:0.78rem; font-weight:600; display:inline-flex; align-items:center; gap:3px;">
+                <span>🔍</span> Compare Side-by-Side
+              </button>
+              <button type="button" class="btn btn-sm btn-info" onclick="openAdminBillModal('${m.billId}')" style="padding:0.25rem 0.6rem; font-size:0.78rem;">
+                Open Bill ↗
+              </button>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-bottom:0.45rem;">
+            ${criteriaBadges}
+          </div>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:0.5rem; font-size:0.8rem; background:rgba(0,0,0,0.2); padding:0.5rem 0.75rem; border-radius:6px; margin-bottom:0.45rem;">
+            <div><span class="text-muted">Branch / Site:</span> <strong style="color:#f8fafc;">${escapeHtml(m.siteName || '—')}</strong></div>
+            <div><span class="text-muted">Claimed Amount:</span> <strong style="color:#fbbf24;">Rs. ${(m.totalClaimedAmount || 0).toLocaleString()}</strong></div>
+            <div><span class="text-muted">Bill Date:</span> <strong style="color:#f8fafc;">${escapeHtml(m.billDate || '—')}</strong></div>
+            <div><span class="text-muted">Bill Status:</span> <strong style="color:#f8fafc;">${escapeHtml(m.status)}</strong></div>
+          </div>
+
+          <div style="font-size:0.78rem; color:#fca5a5; line-height:1.4;">
+            ${reasonsList}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const topMatch = dupCheck.matches[0];
+    const isReadOnly = currentActiveAdminBillIsReadOnly || bill.status === 'APPROVED' || bill.status === 'REJECTED';
+
+    let actionButtonsHtml = '';
+    if (!isReadOnly) {
+      actionButtonsHtml = `
+        <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid rgba(239,68,68,0.25);">
+          <button type="button" class="btn btn-sm btn-danger" onclick="handleRejectBillAsDuplicate('${bill.id}', '${topMatch.billNumber}', '${escapeHtml(topMatch.siteName)}', ${topMatch.totalClaimedAmount})" style="font-weight:700; padding:0.4rem 0.9rem; display:inline-flex; align-items:center; gap:0.35rem;">
+            <span>✖</span> Reject as Duplicate
+          </button>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="handleOverrideBillDuplicate('${bill.id}')" style="font-size:0.8rem; padding:0.4rem 0.85rem;">
+            ✓ Mark Verified (Not Duplicate)
+          </button>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.5); border-radius: 10px; padding: 1.1rem; box-shadow: 0 4px 12px rgba(239,68,68,0.15);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.5rem;">
+          <div style="display:flex; align-items:center; gap:0.6rem;">
+            <span style="font-size:1.4rem;">⚠️</span>
+            <div>
+              <h4 style="margin:0; font-size:1rem; color:#f87171; font-weight:700;">
+                Automated Duplicate Bill Verification Alert
+              </h4>
+              <p style="margin:2px 0 0; font-size:0.82rem; color:#fca5a5;">
+                The system verified this bill against existing submissions and detected <strong>${matchCount} matching bill(s)</strong> by Bill, Amount, or Branch Name.
+              </p>
+            </div>
+          </div>
+          ${severityBadge}
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:0.4rem;">
+          ${matchesHtml}
+        </div>
+
+        ${actionButtonsHtml}
+      </div>
+    `;
+  } else {
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.85rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="font-size: 1.25rem;">✓</span>
+          <div>
+            <strong style="color: #4ade80;">Duplicate Verification: Verified Unique</strong>
+            <span style="color: #cbd5e1; font-size: 0.8rem; margin-left: 6px;">
+              No duplicate submissions found matching this Bill, Claimed Amount, or Branch Name.
+            </span>
+          </div>
+        </div>
+        <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #86efac; border: 1px solid rgba(16,185,129,0.4); font-size: 0.75rem; padding: 2px 7px;">VERIFIED UNIQUE</span>
+      </div>
+    `;
+  }
+}
+
+async function openDuplicateCompareModal(billId1, billId2) {
+  const modal = document.getElementById('modal-admin-duplicate-compare');
+  const body = document.getElementById('dup-compare-modal-body');
+  const footerNotice = document.getElementById('dup-compare-footer-notice');
+  const rejectBtn = document.getElementById('btn-dup-compare-reject');
+  if (!modal || !body) return;
+
+  body.innerHTML = '<div style="padding:2rem; text-align:center; color:#38bdf8;">⏳ Loading bills for comparison...</div>';
+  modal.classList.remove('hidden');
+
+  try {
+    let billA = (currentAdminBills || []).find(b => b.id === billId1 || b.billNumber === billId1);
+    let billB = (currentAdminBills || []).find(b => b.id === billId2 || b.billNumber === billId2);
+
+    if (!billA || !billA.categories) {
+      const resA = await API.getBillById(billId1);
+      if (resA && resA.bill) billA = resA.bill;
+    }
+    if (!billB || !billB.categories) {
+      const resB = await API.getBillById(billId2);
+      if (resB && resB.bill) billB = resB.bill;
+    }
+
+    if (!billA || !billB) {
+      body.innerHTML = '<div class="text-danger" style="padding:1.5rem; text-align:center;">Could not load both bills for comparison.</div>';
+      return;
+    }
+
+    const branchMatch = (billA.siteName || '').trim().toLowerCase() === (billB.siteName || '').trim().toLowerCase();
+    const amountMatch = (Number(billA.totalClaimedAmount) || 0) === (Number(billB.totalClaimedAmount) || 0);
+    const dateMatch = (billA.billDate || billA.date || '') === (billB.billDate || billB.date || '');
+
+    const highlightStyle = 'background: rgba(239,68,68,0.18); color: #fca5a5; font-weight:700;';
+    const normalStyle = '';
+
+    const catRows = BILL_EXPENSE_CATEGORIES_CLIENT.map(c => {
+      const catA = (billA.categories && billA.categories[c.key]) || { claimedAmount: 0 };
+      const catB = (billB.categories && billB.categories[c.key]) || { claimedAmount: 0 };
+      const amtA = Number(catA.claimedAmount || 0);
+      const amtB = Number(catB.claimedAmount || 0);
+      const isCatMatch = amtA > 0 && amtA === amtB;
+      const rowStyle = isCatMatch ? highlightStyle : normalStyle;
+
+      return `
+        <tr style="${rowStyle}">
+          <td style="padding:0.45rem 0.75rem;"><strong>${c.label}</strong></td>
+          <td style="text-align:right; padding:0.45rem 0.75rem;">Rs. ${amtA.toLocaleString()}</td>
+          <td style="text-align:center; padding:0.45rem; font-size:0.75rem;">${isCatMatch ? '⚠️ Identical' : (amtA === amtB ? '—' : '≠')}</td>
+          <td style="text-align:right; padding:0.45rem 0.75rem;">Rs. ${amtB.toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const renderAttThumbs = (atts) => {
+      if (!Array.isArray(atts) || !atts.length) return '<span class="text-muted" style="font-size:0.8rem;">No receipts attached</span>';
+      return '<div style="display:flex; gap:0.4rem; flex-wrap:wrap;">' + atts.map(a => {
+        if (a.dataUrl) {
+          return `<img src="${a.dataUrl}" alt="${escapeHtml(a.name || 'Receipt')}" onclick="openPhotoModal('${a.dataUrl}')" style="width:50px; height:50px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.2); cursor:pointer;" title="Click to view full receipt" />`;
+        }
+        return `<span style="font-size:0.75rem; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">📎 ${escapeHtml(a.name || 'Receipt')}</span>`;
+      }).join('') + '</div>';
+    };
+
+    body.innerHTML = `
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1rem;">
+        <div style="background:rgba(0,0,0,0.3); border:1px solid #38bdf8; border-radius:10px; padding:1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.5rem;">
+            <h4 style="margin:0; color:#38bdf8;">📌 Current Bill: ${escapeHtml(billA.billNumber)}</h4>
+            ${getBillStatusBadgeHtml(billA.status)}
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.85rem;">
+            <div><span class="text-muted">Employee:</span> <strong>${escapeHtml(billA.employeeName)}</strong> (${escapeHtml(billA.employeeId)})</div>
+            <div style="${branchMatch ? highlightStyle : ''}"><span class="text-muted">Branch / Site:</span> <strong>${escapeHtml(billA.siteName)}</strong> ${branchMatch ? '⚠️ [MATCH]' : ''}</div>
+            <div style="${dateMatch ? highlightStyle : ''}"><span class="text-muted">Bill Date:</span> <strong>${escapeHtml(billA.billDate || billA.date)}</strong> ${dateMatch ? '⚠️ [MATCH]' : ''}</div>
+            <div style="${amountMatch ? highlightStyle : ''}"><span class="text-muted">Total Claimed:</span> <strong>Rs. ${(Number(billA.totalClaimedAmount) || 0).toLocaleString()}</strong> ${amountMatch ? '⚠️ [MATCH]' : ''}</div>
+            <div><span class="text-muted">Description:</span> <em>${escapeHtml(billA.description || '—')}</em></div>
+            <div style="margin-top:0.4rem;"><span class="text-muted" style="display:block; margin-bottom:0.25rem;">Receipt Attachments:</span> ${renderAttThumbs(billA.attachments)}</div>
+          </div>
+        </div>
+
+        <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(239,68,68,0.5); border-radius:10px; padding:1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.5rem;">
+            <h4 style="margin:0; color:#f87171;">⚠️ Matched Bill: ${escapeHtml(billB.billNumber)}</h4>
+            ${getBillStatusBadgeHtml(billB.status)}
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.85rem;">
+            <div><span class="text-muted">Employee:</span> <strong>${escapeHtml(billB.employeeName)}</strong> (${escapeHtml(billB.employeeId)})</div>
+            <div style="${branchMatch ? highlightStyle : ''}"><span class="text-muted">Branch / Site:</span> <strong>${escapeHtml(billB.siteName)}</strong> ${branchMatch ? '⚠️ [MATCH]' : ''}</div>
+            <div style="${dateMatch ? highlightStyle : ''}"><span class="text-muted">Bill Date:</span> <strong>${escapeHtml(billB.billDate || billB.date)}</strong> ${dateMatch ? '⚠️ [MATCH]' : ''}</div>
+            <div style="${amountMatch ? highlightStyle : ''}"><span class="text-muted">Total Claimed:</span> <strong>Rs. ${(Number(billB.totalClaimedAmount) || 0).toLocaleString()}</strong> ${amountMatch ? '⚠️ [MATCH]' : ''}</div>
+            <div><span class="text-muted">Description:</span> <em>${escapeHtml(billB.description || '—')}</em></div>
+            <div style="margin-top:0.4rem;"><span class="text-muted" style="display:block; margin-bottom:0.25rem;">Receipt Attachments:</span> ${renderAttThumbs(billB.attachments)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:rgba(0,0,0,0.25); border:1px solid var(--border-color); border-radius:10px; padding:0.75rem; overflow-x:auto;">
+        <h5 style="margin:0 0 0.5rem; font-size:0.9rem; color:#fff;">Expense Categories Comparison</h5>
+        <table class="data-table" style="width:100%; font-size:0.85rem;">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th style="text-align:right;">${billA.billNumber} Claim</th>
+              <th style="text-align:center;">Match</th>
+              <th style="text-align:right;">${billB.billNumber} Claim</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${catRows}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    if (footerNotice) {
+      footerNotice.innerText = `⚠️ Matched on: ${[branchMatch ? 'Branch' : '', amountMatch ? 'Amount' : '', dateMatch ? 'Date' : ''].filter(Boolean).join(', ')}`;
+    }
+
+    if (rejectBtn) {
+      rejectBtn.onclick = () => {
+        closeDuplicateCompareModal();
+        handleRejectBillAsDuplicate(billA.id, billB.billNumber, billB.siteName, billB.totalClaimedAmount);
+      };
+    }
+  } catch (err) {
+    body.innerHTML = '<div class="text-danger" style="padding:1.5rem; text-align:center;">Error comparing bills: ' + escapeHtml(err.message || '') + '</div>';
+  }
+}
+
+function closeDuplicateCompareModal() {
+  const modal = document.getElementById('modal-admin-duplicate-compare');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleRejectBillAsDuplicate(billId, matchedNum, branch, amount) {
+  if (!billId) return;
+  const defaultReason = `Duplicate bill submission matching ${matchedNum || 'existing bill'}${branch ? ` (Branch: ${branch})` : ''}${amount ? ` (Amount: Rs. ${Number(amount).toLocaleString()})` : ''}`;
+  const customReason = prompt('Confirm rejection as duplicate. You may customize the reason below:', defaultReason);
+  if (customReason === null) return;
+  if (!customReason.trim()) {
+    showToast('Rejection reason cannot be empty', 'error');
+    return;
+  }
+
+  try {
+    const res = await API.rejectDuplicateBill(billId, {
+      matchedBillNumber: matchedNum,
+      branch,
+      amount,
+      reason: customReason.trim()
+    });
+
+    if (res && res.success) {
+      showToast('Bill successfully rejected as duplicate', 'info');
+      await openAdminBillModal(billId, currentActiveAdminBillIsReadOnly);
+      await loadAdminBills();
+    } else {
+      showToast((res && res.error) || 'Rejection failed', 'error');
+    }
+  } catch (err) {
+    showToast('Error rejecting duplicate bill: ' + (err.message || ''), 'error');
+  }
+}
+
+async function handleOverrideBillDuplicate(billId) {
+  if (!billId) return;
+  const note = prompt('Enter a note confirming why this bill is legitimate and not a duplicate:', 'Verified legitimate and authentic site expense.');
+  if (note === null) return;
+
+  try {
+    const res = await API.overrideDuplicateBill(billId, {
+      note: (note || '').trim()
+    });
+
+    if (res && res.success) {
+      showToast('Bill verified as legitimate (duplicate alert cleared)', 'success');
+      await openAdminBillModal(billId, currentActiveAdminBillIsReadOnly);
+      await loadAdminBills();
+    } else {
+      showToast((res && res.error) || 'Override failed', 'error');
+    }
+  } catch (err) {
+    showToast('Error overriding duplicate: ' + (err.message || ''), 'error');
+  }
+}
+
 async function openAdminBillModal(billId, isReadOnly = false) {
   currentActiveAdminBillId = billId;
   currentActiveAdminBillIsReadOnly = !!isReadOnly;
@@ -6901,6 +7403,7 @@ async function openAdminBillModal(billId, isReadOnly = false) {
     document.getElementById('admin-bill-modal-time').innerText = bill.createdAt ? new Date(bill.createdAt).toLocaleString() : '—';
 
     renderBillCategoriesTable(bill, currentActiveAdminBillIsReadOnly);
+    renderBillDuplicateVerification(bill);
     closeCategoryActionBox();
 
     const descEl = document.getElementById('admin-bill-modal-desc');
@@ -7159,6 +7662,23 @@ function initBillEventListeners() {
     }
   });
 
+  const cardStatDuplicates = document.getElementById('card-bill-stat-duplicates');
+  if (cardStatDuplicates) {
+    cardStatDuplicates.addEventListener('click', () => {
+      document.querySelectorAll('.bill-filter-btn').forEach(b => {
+        if (b.getAttribute('data-filter') === 'DUPLICATE') {
+          b.classList.add('active', 'btn-primary');
+          b.classList.remove('btn-secondary');
+        } else {
+          b.classList.remove('active', 'btn-primary');
+          b.classList.add('btn-secondary');
+        }
+      });
+      currentAdminBillFilter = 'DUPLICATE';
+      renderAdminBillsTable();
+    });
+  }
+
   // Global window bindings for inline HTML handlers
   window.openBillSubmissionScreen = openBillSubmissionScreen;
   window.closeBillSubmissionScreen = closeBillSubmissionScreen;
@@ -7173,6 +7693,10 @@ function initBillEventListeners() {
   window.submitCategoryVerification = submitCategoryVerification;
   window.submitCategoryApproval = submitCategoryApproval;
   window.submitCategoryRejection = submitCategoryRejection;
+  window.openDuplicateCompareModal = openDuplicateCompareModal;
+  window.closeDuplicateCompareModal = closeDuplicateCompareModal;
+  window.handleRejectBillAsDuplicate = handleRejectBillAsDuplicate;
+  window.handleOverrideBillDuplicate = handleOverrideBillDuplicate;
 }
 
 // ==========================================================================
@@ -10154,7 +10678,7 @@ async function openExpenseVerifyModal(empId) {
     adminNameInput.value = (expVer && expVer.verifiedBy) || 'Admin 1';
   }
   if (passcodeInput) {
-    passcodeInput.value = adminPasscode || getAdminPasscode() || '1290';
+    passcodeInput.value = adminPasscode || getAdminPasscode() || '';
   }
   if (notesInput) {
     notesInput.value = (expVer && expVer.notes) || '';
@@ -10197,7 +10721,7 @@ async function submitExpenseVerification() {
     return;
   }
 
-  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || getAdminPasscode() || '1290';
+  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || getAdminPasscode() || '';
   if (!passcode) {
     showToast('Please enter the Admin passcode.', 'warning');
     if (passcodeInput) passcodeInput.focus();
@@ -10263,7 +10787,7 @@ async function rejectExpenseFromSalaryModal() {
   const adminNameInput = document.getElementById('exp-verify-admin-name');
   const notesInput = document.getElementById('exp-verify-notes');
 
-  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || getAdminPasscode() || '1290';
+  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || getAdminPasscode() || '';
   if (!passcode) {
     showToast('Please enter the Admin passcode to reject.', 'warning');
     if (passcodeInput) passcodeInput.focus();
@@ -10390,7 +10914,7 @@ async function openExpenseApproveModal(empId) {
     seniorNameInput.value = (expVer && expVer.approvedBy) || 'Senior Admin';
   }
   if (passcodeInput) {
-    passcodeInput.value = adminPasscode || '9999';
+    passcodeInput.value = '';
   }
   if (notesInput) {
     notesInput.value = (expVer && expVer.notes) || '';
@@ -10440,9 +10964,9 @@ async function submitExpenseApproval() {
     return;
   }
 
-  const passcode = (passcodeInput ? passcodeInput.value.trim() : '') || adminPasscode || '9999';
+  const passcode = (passcodeInput ? passcodeInput.value.trim() : '');
   if (!passcode) {
-    showToast('Please enter the Senior Admin passcode (default 9999).', 'warning');
+    showToast('Please enter the Senior Admin passcode.', 'warning');
     if (passcodeInput) passcodeInput.focus();
     return;
   }
@@ -10971,7 +11495,7 @@ async function openEmergApproveModal(empId) {
   const emp = currentEmergReport.employees.find(e => e.id === empId);
   if (!emp) return;
 
-  const passcode = prompt(`Senior Admin Passcode required to approve salary for ${emp.name}:\n\n(Default Passcode: 9999)`);
+  const passcode = prompt(`Senior Admin Passcode required to approve salary for ${emp.name}:`);
   if (!passcode) return;
 
   try {

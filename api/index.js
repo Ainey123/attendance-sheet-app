@@ -32,12 +32,11 @@ function getPath(req) {
 }
 
 function isPasscodeValid(passcode, settings) {
-  const target = (settings && settings.adminPasscode) || '1234';
   const clean = String(passcode || '').trim();
-  if (!clean || clean === '' || clean === target || clean === '9999' || clean === '1234' || clean === '1290' || clean === (settings && settings.seniorAdminPasscode)) {
-    return true;
-  }
-  return false;
+  if (!clean) return false;
+  const target = (settings && settings.adminPasscode && String(settings.adminPasscode).trim()) || '';
+  const senior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '';
+  return (target && clean === target) || (senior && clean === senior);
 }
 
 module.exports = async (req, res) => {
@@ -86,17 +85,29 @@ module.exports = async (req, res) => {
     if (path === 'settings/verify' && method === 'POST') {
       const body = await parseBody(req);
       const settings = await db.getSettings();
-      if (isPasscodeValid(body.passcode, settings)) return res.json({ success: true });
-      return res.status(401).json({ success: false });
+      const passcode = body && body.passcode ? String(body.passcode).trim() : '';
+      if (!passcode) return res.status(401).json({ success: false, error: 'Passcode is required.' });
+      if (isPasscodeValid(passcode, settings)) return res.json({ success: true, message: 'Passcode verified.' });
+      return res.status(401).json({ success: false, error: 'Incorrect passcode.' });
     }
 
     // ── POST /api/settings/update ────────────────────────────────────────────
     if (path === 'settings/update' && method === 'POST') {
       const settings = await db.getSettings();
-      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized' });
+      if (!isPasscodeValid(adminPasscode, settings)) return res.status(401).json({ error: 'Unauthorized: Admin passcode required' });
       const body = await parseBody(req);
-      const updated = await db.updateSettings(body);
-      return res.json({ success: true, settings: updated });
+      const updateData = {};
+      if (body.officeName && String(body.officeName).trim()) {
+        updateData.officeName = String(body.officeName).trim();
+      }
+      if (body.adminPasscode && String(body.adminPasscode).trim()) {
+        updateData.adminPasscode = String(body.adminPasscode).trim();
+      }
+      if (body.seniorAdminPasscode && String(body.seniorAdminPasscode).trim()) {
+        updateData.seniorAdminPasscode = String(body.seniorAdminPasscode).trim();
+      }
+      const updated = await db.updateSettings(updateData);
+      return res.json({ success: true, settings: { officeName: updated.officeName, adminPasscode: updated.adminPasscode } });
     }
 
     // ── GET /api/employees ───────────────────────────────────────────────────
@@ -132,7 +143,6 @@ module.exports = async (req, res) => {
 
     // ── GET /api/employees/token/:token ──────────────────────────────────────
     if (path.startsWith('employees/token/') && method === 'GET') {
-      db.autoCompleteOldAttendance().catch(e => console.warn('[AutoClockOut]', e.message));
       const token = path.replace('employees/token/', '');
       const employee = await db.getEmployeeByToken(token);
       if (!employee) return res.status(404).json({ error: 'Invalid token' });
@@ -190,9 +200,9 @@ module.exports = async (req, res) => {
 
     // ── GET /api/attendance/status/:employeeId ────────────────────────────────
     if (path.startsWith('attendance/status') && method === 'GET') {
-      db.autoCompleteOldAttendance().catch(e => console.warn('[AutoClockOut]', e.message));
       const employeeId = path.replace('attendance/status/', '') || query.employeeId;
       if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+      await db.autoCompleteOldAttendance(employeeId).catch(e => console.warn('[AutoClockOut]', e.message));
       const record = await db.getTodayAttendanceForEmployee(employeeId);
       return res.json({ activeRecord: record });
     }
@@ -576,10 +586,11 @@ module.exports = async (req, res) => {
     if (path === 'emergency-salary/approve' && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const seniorPass = settings.seniorAdminPasscode || '9999';
-      const providedPass = req.headers['x-admin-passcode'] || body.passcode || adminPasscode;
+      const seniorPass = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
+      const targetAdmin = (settings && settings.adminPasscode && String(settings.adminPasscode).trim()) || '';
+      const providedPass = String(req.headers['x-admin-passcode'] || body.passcode || adminPasscode || '').trim();
       
-      if (providedPass !== seniorPass && providedPass !== settings.adminPasscode) {
+      if (!providedPass || (providedPass !== seniorPass && providedPass !== targetAdmin)) {
         return res.status(401).json({ error: 'Invalid Senior Admin Passcode' });
       }
 
@@ -770,7 +781,7 @@ module.exports = async (req, res) => {
     // ── Expense Verification & Senior Admin Approval Routes ───────────────────
     if (path === 'salary/expense-verifications' && method === 'GET') {
       const settings = await db.getSettings();
-      if (!isPasscodeValid(adminPasscode, settings) && adminPasscode !== settings.seniorAdminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       const list = await db.getExpenseVerifications(query.month);
@@ -781,8 +792,8 @@ module.exports = async (req, res) => {
       const settings = await db.getSettings();
       const body = await parseBody(req);
       const providedPasscode = String(body.passcode || adminPasscode || '').trim();
-      if (providedPasscode && !isPasscodeValid(providedPasscode, settings) && providedPasscode !== settings.seniorAdminPasscode) {
-        return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+      if (!isPasscodeValid(providedPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Valid Admin passcode required' });
       }
       try {
         const verification = await db.verifyExpense({
@@ -804,8 +815,8 @@ module.exports = async (req, res) => {
       const settings = await db.getSettings();
       const body = await parseBody(req);
       const providedPasscode = String(body.passcode || adminPasscode || '').trim();
-      if (providedPasscode && !isPasscodeValid(providedPasscode, settings) && providedPasscode !== settings.seniorAdminPasscode) {
-        return res.status(401).json({ error: 'Unauthorized: Invalid Admin passcode' });
+      if (!isPasscodeValid(providedPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Valid Admin passcode required' });
       }
       try {
         const verification = await db.rejectExpense({
@@ -825,10 +836,10 @@ module.exports = async (req, res) => {
     if (path === 'salary/expense/approve' && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const seniorPasscode = body.passcode || body.seniorPasscode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode;
-      const validSeniorPasscode = settings.seniorAdminPasscode || '9999';
+      const seniorPasscode = String(body.passcode || body.seniorPasscode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode || '').trim();
+      const validSeniorPasscode = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
 
-      if (seniorPasscode !== validSeniorPasscode) {
+      if (!seniorPasscode || seniorPasscode !== validSeniorPasscode) {
         return res.status(403).json({ error: 'Forbidden: Only Senior Admin can approve expenses. Passcode is invalid.' });
       }
 
@@ -850,7 +861,7 @@ module.exports = async (req, res) => {
 
     if (path === 'salary/expense/verify' && method === 'DELETE') {
       const settings = await db.getSettings();
-      if (!isPasscodeValid(adminPasscode, settings) && adminPasscode !== settings.seniorAdminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       const body = await parseBody(req).catch(() => ({}));
@@ -865,8 +876,9 @@ module.exports = async (req, res) => {
     if (path === 'salary/expense/approve' && method === 'DELETE') {
       const settings = await db.getSettings();
       const body = await parseBody(req).catch(() => ({}));
-      const seniorPasscode = body.passcode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode;
-      if (seniorPasscode !== (settings.seniorAdminPasscode || '9999')) {
+      const seniorPasscode = String(body.passcode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode || '').trim();
+      const validSeniorPasscode = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
+      if (!seniorPasscode || seniorPasscode !== validSeniorPasscode) {
         return res.status(403).json({ error: 'Forbidden: Only Senior Admin can revoke expense approvals' });
       }
       const employeeId = query.employeeId || body.employeeId;
@@ -879,7 +891,7 @@ module.exports = async (req, res) => {
 
     if (path === 'salary/employee-credit-history' && method === 'GET') {
       const settings = await db.getSettings();
-      if (!isPasscodeValid(adminPasscode, settings) && adminPasscode !== settings.seniorAdminPasscode) {
+      if (!isPasscodeValid(adminPasscode, settings)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       const employeeId = query.employeeId;
@@ -944,9 +956,9 @@ module.exports = async (req, res) => {
     if (path.match(/^materials\/[^\/]+\/approve$/) && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const seniorPasscode = body.passcode || body.seniorPasscode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode;
-      const validSeniorPasscode = settings.seniorAdminPasscode || '9999';
-      if (seniorPasscode !== validSeniorPasscode) {
+      const seniorPasscode = String(body.passcode || body.seniorPasscode || headers['x-senior-passcode'] || headers['X-Senior-Passcode'] || adminPasscode || '').trim();
+      const validSeniorPasscode = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
+      if (!seniorPasscode || seniorPasscode !== validSeniorPasscode) {
         return res.status(403).json({ error: 'Forbidden: Only Senior Admin can approve. Passcode is invalid.' });
       }
       const id = path.split('/')[1];
@@ -1121,10 +1133,10 @@ module.exports = async (req, res) => {
     if (path.match(/^bills\/([^\/]+)\/approve-category$/) && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const provided = (body.seniorPasscode || body.passcode || headers['x-senior-passcode'] || adminPasscode || '').trim();
-      const validSenior = settings.seniorAdminPasscode || '9999';
+      const provided = String(body.seniorPasscode || body.passcode || headers['x-senior-passcode'] || adminPasscode || '').trim();
+      const validSenior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
 
-      if (provided !== validSenior) {
+      if (!provided || provided !== validSenior) {
         return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
       }
 
@@ -1165,10 +1177,10 @@ module.exports = async (req, res) => {
     if (path.match(/^bills\/([^\/]+)\/approve$/) && method === 'POST') {
       const settings = await db.getSettings();
       const body = await parseBody(req);
-      const provided = (body.seniorPasscode || body.passcode || headers['x-senior-passcode'] || adminPasscode || '').trim();
-      const validSenior = settings.seniorAdminPasscode || '9999';
+      const provided = String(body.seniorPasscode || body.passcode || headers['x-senior-passcode'] || adminPasscode || '').trim();
+      const validSenior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
 
-      if (provided !== validSenior) {
+      if (!provided || provided !== validSenior) {
         return res.status(401).json({ error: 'Unauthorized: Valid Senior Admin passcode required.' });
       }
 
@@ -1198,6 +1210,72 @@ module.exports = async (req, res) => {
           rejectedBy: body.rejectedBy || 'Admin'
         });
         return res.json({ success: true, bill: updated });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path === 'bills/duplicates' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      try {
+        const clusters = await db.getDuplicateClusters();
+        return res.json({ success: true, count: clusters.length, clusters });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/duplicate-check$/) && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = decodeURIComponent(path.split('/')[1]);
+      try {
+        const result = await db.verifyBillDuplicates(id);
+        return res.json({ success: true, ...result });
+      } catch (err) {
+        return res.status(err.status || 500).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/reject-duplicate$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = decodeURIComponent(path.split('/')[1]);
+      const body = await parseBody(req);
+      const { matchedBillNumber, branch, amount, reason, rejectedBy } = body;
+      const defaultReason = (reason && reason.trim()) ? reason.trim() : `Duplicate bill submission matching ${matchedBillNumber || 'existing bill'}${branch ? ` (Branch: ${branch})` : ''}${amount ? ` (Amount: Rs. ${Number(amount).toLocaleString()})` : ''}`;
+      try {
+        const updated = await db.rejectBill(id, {
+          rejectionReason: defaultReason,
+          rejectedBy: rejectedBy || 'Admin'
+        });
+        return res.json({ success: true, bill: updated, message: 'Bill rejected as duplicate.' });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/override-duplicate$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = decodeURIComponent(path.split('/')[1]);
+      const body = await parseBody(req);
+      const { note, verifiedBy } = body;
+      try {
+        const updated = await db.overrideBillDuplicate(id, {
+          overrideBy: verifiedBy || 'Admin',
+          note: note || 'Admin verified bill is legitimate and not a duplicate.'
+        });
+        return res.json({ success: true, bill: updated, message: 'Bill marked as verified legitimate (not duplicate).' });
       } catch (err) {
         return res.status(err.status || 400).json({ error: err.message });
       }

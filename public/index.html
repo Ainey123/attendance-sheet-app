@@ -65,7 +65,7 @@
           </svg>
         </div>
         <div>
-          <h1 id="office-title" style="display:inline-flex; align-items:center;">Office Attendance <span style="font-size:0.68rem; padding:0.15rem 0.45rem; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:12px; margin-left:0.5rem; font-weight:600;">v277 LIVE</span></h1>
+          <h1 id="office-title" style="display:inline-flex; align-items:center;">Office Attendance <span style="font-size:0.68rem; padding:0.15rem 0.45rem; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:12px; margin-left:0.5rem; font-weight:600;">v278 LIVE</span></h1>
           <p class="subtitle">Daily Registry & Tracker</p>
         </div>
       </div>
@@ -860,6 +860,9 @@
                 <div><span class="text-muted">Attachments:</span> <strong id="rev-attach-count">0</strong></div>
               </div>
             </div>
+
+            <!-- Duplicate Bill Advisory Banner -->
+            <div id="bill-submission-dup-notice" style="display:none; margin-bottom: 1.25rem; padding: 0.9rem 1.25rem; border-radius: 8px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #7dd3fc; font-size: 0.88rem; line-height: 1.4;"></div>
 
             <!-- Inline Error Banner -->
             <div id="bill-submit-inline-error" class="hidden" style="margin-bottom: 1.25rem; padding: 0.9rem 1.25rem; border-radius: 8px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.95rem; font-weight: 600;"></div>
@@ -1828,6 +1831,19 @@
                   <span class="stat-desc" id="bill-stat-rejected-amount" style="font-size: 0.8rem; font-weight: 700; color: #f87171;">PKR 0</span>
                 </div>
               </div>
+
+              <div class="stat-card" id="card-bill-stat-duplicates" style="cursor: pointer; border-left: 3px solid #ef4444;" title="Click to view duplicate bills">
+                <div class="stat-icon bg-rose" style="background: rgba(239, 68, 68, 0.2); color: #f87171;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-label">Duplicate Alerts</span>
+                  <span class="stat-number" id="bill-stat-duplicates" style="color: #f87171;">0</span>
+                  <span class="stat-desc" id="bill-stat-duplicates-amount" style="font-size: 0.8rem; font-weight: 700; color: #f87171;">PKR 0</span>
+                </div>
+              </div>
             </div>
 
             <!-- Employee & Tenure Filter Bar -->
@@ -1891,6 +1907,10 @@
                 <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="VERIFIED">Verified</button>
                 <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="APPROVED">Approved</button>
                 <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="REJECTED">Rejected</button>
+                <button type="button" class="btn btn-sm btn-secondary bill-filter-btn" data-filter="DUPLICATE" id="btn-filter-duplicates" style="display: inline-flex; align-items: center; gap: 5px;">
+                  <span>⚠️ Duplicates</span>
+                  <span class="badge" id="badge-duplicates-count" style="background: rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.72rem; padding: 1px 6px; border-radius: 9999px; display: none;">0</span>
+                </button>
               </div>
 
               <div style="min-width: 260px; flex: 1 1 260px; max-width: 400px;">
@@ -2535,6 +2555,9 @@
 
       <div class="modal-body" style="overflow-y: auto; padding: 1.25rem 0; display: flex; flex-direction: column; gap: 1.25rem;">
         
+        <!-- Section 0: Automated Duplicate Bill Verification Status / Alert -->
+        <div id="admin-bill-duplicate-verification-container"></div>
+
         <!-- Section 1: Staff & Bill Info -->
         <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem;">
           <h4 style="font-size: 0.95rem; color: #fff; margin: 0 0 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
@@ -2714,6 +2737,44 @@
           </ul>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SIDE-BY-SIDE DUPLICATE BILL COMPARISON -->
+  <div id="modal-admin-duplicate-compare" class="modal-overlay hidden" style="z-index: 10020;">
+    <div class="modal-content" style="max-width: 980px; max-height: 94vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.4rem;">🔍</span>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1.2rem; color: #fff;">
+              Duplicate Bill Verification &amp; Comparison
+            </h3>
+            <p style="margin: 0.2rem 0 0; font-size: 0.8rem; color: #94a3b8;">
+              Cross-referencing Branch Name, Claimed Amount, Dates and Receipts to prevent duplicate disbursements.
+            </p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" onclick="closeDuplicateCompareModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" id="dup-compare-modal-body" style="overflow-y: auto; padding: 1rem 0;">
+        <!-- Side-by-side comparison populated by JS -->
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap; gap: 0.75rem;">
+        <div id="dup-compare-footer-notice" style="font-size: 0.85rem; font-weight: 600; color: #fca5a5;"></div>
+        <div style="display: flex; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeDuplicateCompareModal()">Close</button>
+          <button type="button" id="btn-dup-compare-reject" class="btn btn-danger" style="font-weight: 700;">
+            ✖ Reject Current Bill as Duplicate
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -3439,6 +3500,6 @@ This action cannot be undone.</p>
 
   <!-- Script Load -->
   <script src="store.js?v=11"></script>
-  <script src="app.js?v=276"></script>
+  <script src="app.js?v=278"></script>
 </body>
 </html>
