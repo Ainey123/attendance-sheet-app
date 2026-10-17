@@ -232,12 +232,13 @@ function loadLocalData() {
         salaries: file.salaries || [],
         accountsPdfs: file.accountsPdfs || [],
         salaryApprovals: file.salaryApprovals || [],
-        expenseVerifications: file.expenseVerifications || [], materials: file.materials || [], materialTransactions: file.materialTransactions || [], materialAttachments: file.materialAttachments || [], materialVerifications: file.materialVerifications || [], materialVerificationAttachments: file.materialVerificationAttachments || [], materialApprovals: file.materialApprovals || [], materialApprovalAttachments: file.materialApprovalAttachments || [],
-        bills: file.bills || []
+        bills: file.bills || [],
+        whatsappSettings: file.whatsappSettings || null,
+        whatsappDispatchLogs: file.whatsappDispatchLogs || []
       };
     }
   } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [], materials: [], materialTransactions: [], materialAttachments: [], materialVerifications: [], materialVerificationAttachments: [], materialApprovals: [], materialApprovalAttachments: [], bills: [] };
+  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [], materials: [], materialTransactions: [], materialAttachments: [], materialVerifications: [], materialVerificationAttachments: [], materialApprovals: [], materialApprovalAttachments: [], bills: [], whatsappSettings: null, whatsappDispatchLogs: [] };
 }
 
 function saveLocalData(data) {
@@ -6680,6 +6681,535 @@ const db = {
 
     return this.getBillById(id);
   },
+
+  // ─── DAILY ATTENDANCE & BILLS WHATSAPP SUMMARY ENGINE ────────────────────
+
+  getLocalDateString(d = new Date()) {
+    return getLocalDateString(d);
+  },
+
+  async getWhatsAppSettings() {
+    const defaults = {
+      enabled: true,
+      autoSend: true,
+      scheduledTime: '21:00',
+      provider: 'callmebot',
+      groupId: '',
+      phoneNumber: '',
+      apiKey: '',
+      gatewayUrl: '',
+      groupInviteLink: ''
+    };
+    try {
+      if (!useLocalFallback && supabase) {
+        const { data: record, error } = await supabase
+          .from('form_submissions')
+          .select('formData')
+          .eq('id', 'cfg_whatsapp_settings')
+          .maybeSingle();
+        if (!error && record && record.formData) {
+          return { ...defaults, ...record.formData };
+        }
+      }
+    } catch (e) {}
+    try {
+      const data = loadLocalData();
+      return { ...defaults, ...(data.whatsappSettings || {}) };
+    } catch (e) {
+      return defaults;
+    }
+  },
+
+  async updateWhatsAppSettings(newSettings = {}) {
+    const current = await this.getWhatsAppSettings();
+    const updated = { ...current, ...newSettings };
+    try {
+      const data = loadLocalData();
+      data.whatsappSettings = updated;
+      saveLocalData(data);
+    } catch (e) {}
+
+    try {
+      if (!useLocalFallback && supabase) {
+        await supabase.from('form_submissions').upsert([{
+          id: 'cfg_whatsapp_settings',
+          employeeId: 'system',
+          employeeName: 'System Settings',
+          formType: 'whatsapp_settings',
+          formData: updated,
+          submittedAt: new Date().toISOString()
+        }], { onConflict: 'id' });
+      }
+    } catch (e) {}
+
+    return updated;
+  },
+
+  async getWhatsAppDispatchLogs() {
+    try {
+      const data = loadLocalData();
+      return data.whatsappDispatchLogs || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async generateDailyAttendanceSummary(targetDateInput = null) {
+    const targetDate = targetDateInput || getLocalDateString();
+    const settings = await this.getSettings().catch(() => ({}));
+    const officeName = (settings && settings.officeName) || 'My Office';
+
+    // 1. Fetch active employees
+    const allEmployees = await this.getEmployees().catch(() => []);
+    const activeEmployees = (allEmployees || []).filter(e => !e.isArchived);
+    const totalEmployees = activeEmployees.length;
+
+    // 2. Fetch attendance records for targetDate
+    const attendanceRecords = await this.getAttendance(targetDate).catch(() => []);
+
+    // 3. Separate real attendance from leave notes
+    const realAttendance = (attendanceRecords || []).filter(r => {
+      const notes = String(r.performanceNotes || '');
+      return !notes.startsWith('LEAVE:');
+    });
+
+    const presentMap = new Map();
+    realAttendance.forEach(r => {
+      if (!presentMap.has(r.employeeId)) {
+        presentMap.set(r.employeeId, r);
+      }
+    });
+
+    // 4. Fetch leaves for targetDate
+    const leaveRecords = (attendanceRecords || []).filter(r => {
+      const notes = String(r.performanceNotes || '');
+      return notes.startsWith('LEAVE:');
+    });
+
+    let leaveFormSubmissions = [];
+    try {
+      leaveFormSubmissions = await this.getFormSubmissions(null, 'Leave');
+    } catch (e) {
+      leaveFormSubmissions = [];
+    }
+
+    const activeLeavesToday = (leaveFormSubmissions || []).filter(sub => {
+      const fd = sub.formData || {};
+      if (fd.leaveDate && String(fd.leaveDate) === targetDate) return true;
+      if (fd.startDate && fd.endDate && String(fd.startDate) <= targetDate && String(fd.endDate) >= targetDate) return true;
+      return false;
+    });
+
+    const leaveEmployeesMap = new Map();
+    leaveRecords.forEach(r => {
+      const emp = activeEmployees.find(e => e.id === r.employeeId);
+      const leaveText = r.performanceNotes ? r.performanceNotes.replace(/^LEAVE:\s*/, '') : 'On Leave';
+      leaveEmployeesMap.set(r.employeeId, {
+        id: r.employeeId,
+        name: r.employeeName || (emp ? emp.name : 'Employee'),
+        role: r.role || (emp ? emp.role : 'Staff'),
+        details: leaveText
+      });
+    });
+
+    activeLeavesToday.forEach(sub => {
+      if (!leaveEmployeesMap.has(sub.employeeId)) {
+        const emp = activeEmployees.find(e => e.id === sub.employeeId);
+        const fd = sub.formData || {};
+        const leaveType = fd.leaveType || 'Leave';
+        const reason = fd.reason || fd.notes || '';
+        leaveEmployeesMap.set(sub.employeeId, {
+          id: sub.employeeId,
+          name: sub.employeeName || (emp ? emp.name : 'Employee'),
+          role: emp ? emp.role : 'Staff',
+          details: `${leaveType}${reason ? ` (${reason})` : ''}`
+        });
+      }
+    });
+
+    // Helper to format 12-hour time
+    const formatTime12 = (iso) => {
+      if (!iso) return '';
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return String(iso);
+        return d.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Karachi'
+        });
+      } catch (e) {
+        return String(iso);
+      }
+    };
+
+    // Helper to format location (string or object)
+    const formatLocationString = (loc) => {
+      if (!loc) return '';
+      if (typeof loc === 'string') {
+        const s = loc.trim();
+        return s === '[object Object]' ? '' : s;
+      }
+      if (typeof loc === 'object') {
+        if (loc.address && typeof loc.address === 'string') return loc.address.trim();
+        if (loc.name && typeof loc.name === 'string') return loc.name.trim();
+        if (loc.latitude && loc.longitude) return `${loc.latitude}, ${loc.longitude}`;
+      }
+      return '';
+    };
+
+    // Format present list
+    const presentEmployees = [];
+    presentMap.forEach((att, empId) => {
+      const emp = activeEmployees.find(e => e.id === empId);
+      const inTime = formatTime12(att.clockInTime);
+      const outTime = att.clockOutTime ? formatTime12(att.clockOutTime) : null;
+      const isWorking = !att.clockOutTime;
+
+      let durationStr = '';
+      if (att.duration) {
+        const hrs = (Number(att.duration) / 60).toFixed(1);
+        durationStr = `${hrs} hrs`;
+      } else if (att.clockInTime && att.clockOutTime) {
+        const diffMs = new Date(att.clockOutTime) - new Date(att.clockInTime);
+        const hrs = (diffMs / 3600000).toFixed(1);
+        durationStr = `${hrs} hrs`;
+      }
+
+      const locFormatted = formatLocationString(att.clockInLocation);
+
+      presentEmployees.push({
+        employeeId: empId,
+        name: att.employeeName || (emp ? emp.name : 'Employee'),
+        role: att.role || (emp ? emp.role : 'Staff'),
+        clockInTime: inTime,
+        clockOutTime: outTime,
+        isWorking,
+        duration: durationStr,
+        location: locFormatted || null,
+        expenseAmount: Number(att.expenseAmount || att.moneySpent || 0)
+      });
+    });
+
+    // Absent list (active staff who did not clock in and are not on leave)
+    const absentEmployees = activeEmployees.filter(emp => {
+      return !presentMap.has(emp.id) && !leaveEmployeesMap.has(emp.id);
+    }).map(emp => ({
+      employeeId: emp.id,
+      name: emp.name,
+      role: emp.role || 'Staff'
+    }));
+
+    const leaveEmployees = Array.from(leaveEmployeesMap.values());
+
+    // 5. Fetch bills for targetDate
+    let allBills = [];
+    try {
+      allBills = await this.getBills({ lightweight: true });
+    } catch (e) {
+      allBills = [];
+    }
+
+    const approvedBills = (allBills || []).filter(b => {
+      const isApprovedStatus = b.status === 'APPROVED' || b.status === 'PARTIALLY_APPROVED';
+      if (!isApprovedStatus) return false;
+      const dateApproved = b.approvedAt ? String(b.approvedAt).slice(0, 10) : '';
+      const dateUpdated = b.updatedAt ? String(b.updatedAt).slice(0, 10) : '';
+      return dateApproved === targetDate || (!b.approvedAt && dateUpdated === targetDate);
+    });
+
+    const totalApprovedAmount = approvedBills.reduce((sum, b) => {
+      const amt = Number(b.totalApprovedAmount !== null && b.totalApprovedAmount !== undefined ? b.totalApprovedAmount : b.approvedAmount) || 0;
+      return sum + amt;
+    }, 0);
+
+    const rejectedBills = (allBills || []).filter(b => {
+      const isRejectedStatus = b.status === 'REJECTED';
+      if (!isRejectedStatus) return false;
+      const dateRejected = b.rejectedAt ? String(b.rejectedAt).slice(0, 10) : '';
+      const dateUpdated = b.updatedAt ? String(b.updatedAt).slice(0, 10) : '';
+      return dateRejected === targetDate || (!b.rejectedAt && dateUpdated === targetDate);
+    });
+
+    const totalRejectedAmount = rejectedBills.reduce((sum, b) => {
+      return sum + (Number(b.totalClaimedAmount) || 0);
+    }, 0);
+
+    // Format date display
+    let dateDisplay = targetDate;
+    try {
+      const dateObj = new Date(`${targetDate}T12:00:00Z`);
+      if (!isNaN(dateObj.getTime())) {
+        dateDisplay = dateObj.toLocaleDateString('en-GB', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        });
+      }
+    } catch (e) {}
+
+    const timeNow = new Date().toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Karachi'
+    });
+
+    // Construct WhatsApp formatted markdown message
+    let msg = `📊 *DAILY ATTENDANCE & BILLS SUMMARY* 📊\n`;
+    msg += `🏢 *${officeName}*\n`;
+    msg += `📅 *Date:* ${dateDisplay}\n`;
+    msg += `⏰ *Generated At:* ${timeNow}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    msg += `👥 *ATTENDANCE OVERVIEW*\n`;
+    msg += `• Total Staff: *${totalEmployees}*\n`;
+    msg += `• Present / Marked: *${presentEmployees.length}* 🟢\n`;
+    msg += `• Absent: *${absentEmployees.length}* 🔴\n`;
+    msg += `• On Leave: *${leaveEmployees.length}* 🏖️\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    // Section 1: Present Employees
+    msg += `✅ *PRESENT EMPLOYEES (${presentEmployees.length})*\n`;
+    if (presentEmployees.length === 0) {
+      msg += `_No attendance marked today._\n\n`;
+    } else {
+      presentEmployees.forEach((p, idx) => {
+        msg += `${idx + 1}. *${p.name}* (${p.role})\n`;
+        const timeInfo = p.isWorking
+          ? `   └ ⏰ In: ${p.clockInTime} | Currently Working 🟢`
+          : `   └ ⏰ In: ${p.clockInTime} | Out: ${p.clockOutTime}${p.duration ? ` (${p.duration})` : ''}`;
+        msg += `${timeInfo}\n`;
+        if (p.location && p.location !== 'null' && String(p.location).trim().length > 0 && String(p.location) !== '[object Object]') {
+          msg += `   └ 📍 Location: ${p.location}\n`;
+        }
+        if (p.expenseAmount > 0) {
+          msg += `   └ 💵 Day Expense: Rs. ${Number(p.expenseAmount).toLocaleString()}\n`;
+        }
+      });
+      msg += `\n`;
+    }
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    // Section 2: Absent Employees
+    msg += `❌ *ABSENT EMPLOYEES (${absentEmployees.length})*\n`;
+    if (absentEmployees.length === 0) {
+      msg += `_None! 100% staff attendance today._ 🎉\n\n`;
+    } else {
+      absentEmployees.forEach((a, idx) => {
+        msg += `${idx + 1}. *${a.name}* (${a.role})\n`;
+      });
+      msg += `\n`;
+    }
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    // Section 3: On Leave Employees
+    msg += `🏖️ *ON LEAVE (${leaveEmployees.length})*\n`;
+    if (leaveEmployees.length === 0) {
+      msg += `_No employees on leave today._\n\n`;
+    } else {
+      leaveEmployees.forEach((l, idx) => {
+        msg += `${idx + 1}. *${l.name}* (${l.role}) — _${l.details}_\n`;
+      });
+      msg += `\n`;
+    }
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    // Section 4: Bills Activity
+    msg += `🧾 *BILLS ACTIVITY TODAY*\n`;
+    msg += `✅ *Approved Bills:* *${approvedBills.length}* (Total: Rs. ${totalApprovedAmount.toLocaleString()})\n`;
+    if (approvedBills.length > 0) {
+      approvedBills.forEach(b => {
+        const amt = Number(b.totalApprovedAmount !== null && b.totalApprovedAmount !== undefined ? b.totalApprovedAmount : b.approvedAmount) || 0;
+        msg += `   • ${b.billNumber}: *${b.employeeName}* — ${b.siteName} (Rs. ${amt.toLocaleString()})\n`;
+      });
+    } else {
+      msg += `   _No bills approved today._\n`;
+    }
+
+    msg += `\n❌ *Rejected Bills:* *${rejectedBills.length}* (Total: Rs. ${totalRejectedAmount.toLocaleString()})\n`;
+    if (rejectedBills.length > 0) {
+      rejectedBills.forEach(b => {
+        msg += `   • ${b.billNumber}: *${b.employeeName}* — ${b.siteName} (Rs. ${Number(b.totalClaimedAmount).toLocaleString()})\n`;
+        if (b.rejectionReason) {
+          msg += `     └ ⚠️ Reason: ${b.rejectionReason}\n`;
+        }
+      });
+    } else {
+      msg += `   _No bills rejected today._\n`;
+    }
+
+    msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `🤖 _Automated 9:00 PM Daily Summary • Office Attendance App_`;
+
+    return {
+      date: targetDate,
+      dateDisplay,
+      officeName,
+      summaryText: msg,
+      stats: {
+        totalEmployees,
+        presentCount: presentEmployees.length,
+        absentCount: absentEmployees.length,
+        leaveCount: leaveEmployees.length,
+        approvedBillsCount: approvedBills.length,
+        totalApprovedAmount,
+        rejectedBillsCount: rejectedBills.length,
+        totalRejectedAmount
+      },
+      presentEmployees,
+      absentEmployees,
+      leaveEmployees,
+      approvedBills,
+      rejectedBills
+    };
+  },
+
+  async dispatchDailyWhatsAppSummary(targetDateInput = null, options = {}) {
+    const targetDate = targetDateInput || getLocalDateString();
+    const summary = await this.generateDailyAttendanceSummary(targetDate);
+    const settings = await this.getWhatsAppSettings();
+
+    const provider = options.provider || settings.provider || 'callmebot';
+    const gatewayUrl = options.gatewayUrl || settings.gatewayUrl || '';
+    const groupId = options.groupId || settings.groupId || '';
+    const phoneNumber = options.phoneNumber || settings.phoneNumber || '';
+    const apiKey = options.apiKey || settings.apiKey || '';
+    const isTest = Boolean(options.isTest);
+
+    let dispatchResult = {
+      attempted: false,
+      delivered: false,
+      provider,
+      status: 'NOT_CONFIGURED',
+      message: 'No WhatsApp Gateway or Webhook URL configured in Settings.'
+    };
+
+    // If gateway or provider credentials provided, attempt HTTP dispatch
+    if (gatewayUrl || (provider === 'callmebot' && (groupId || phoneNumber) && apiKey)) {
+      dispatchResult.attempted = true;
+      try {
+        let endpoint = gatewayUrl;
+        let fetchOptions = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: summary.summaryText,
+            text: summary.summaryText,
+            groupId: groupId || phoneNumber,
+            to: groupId || phoneNumber,
+            date: targetDate,
+            isTest
+          })
+        };
+
+        if (apiKey) {
+          fetchOptions.headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+
+        if (provider === 'callmebot') {
+          if (groupId) {
+            endpoint = `https://api.callmebot.com/whatsapp.php?source=group&group=${encodeURIComponent(groupId)}&text=${encodeURIComponent(summary.summaryText)}&apikey=${encodeURIComponent(apiKey)}`;
+          } else {
+            endpoint = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phoneNumber)}&text=${encodeURIComponent(summary.summaryText)}&apikey=${encodeURIComponent(apiKey)}`;
+          }
+          fetchOptions = { method: 'GET' };
+        } else if (provider === 'ultramsg') {
+          endpoint = gatewayUrl || `https://api.ultramsg.com/messages/chat`;
+          fetchOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: apiKey,
+              to: groupId || phoneNumber,
+              body: summary.summaryText
+            })
+          };
+        } else if (provider === 'greenapi') {
+          endpoint = gatewayUrl;
+          fetchOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chatId: groupId.includes('@') ? groupId : `${groupId}@g.us`,
+              message: summary.summaryText
+            })
+          };
+        }
+
+        const res = await fetch(endpoint, fetchOptions);
+        const resText = await res.text().catch(() => '');
+        if (res.ok) {
+          dispatchResult.delivered = true;
+          dispatchResult.status = 'SUCCESS';
+          dispatchResult.message = `Successfully dispatched to WhatsApp (${provider}). Response: ${resText.slice(0, 150)}`;
+        } else {
+          dispatchResult.delivered = false;
+          dispatchResult.status = 'FAILED';
+          dispatchResult.message = `WhatsApp gateway returned HTTP ${res.status}: ${resText.slice(0, 150)}`;
+        }
+      } catch (err) {
+        dispatchResult.delivered = false;
+        dispatchResult.status = 'ERROR';
+        dispatchResult.message = `WhatsApp dispatch network error: ${err.message}`;
+      }
+    }
+
+    // Record dispatch history log
+    const nowIso = new Date().toISOString();
+    const logEntry = {
+      id: generateId('wa_log'),
+      date: targetDate,
+      timestamp: nowIso,
+      isAutomated: Boolean(options.isAutomated),
+      isTest,
+      provider,
+      delivered: dispatchResult.delivered,
+      status: dispatchResult.status,
+      message: dispatchResult.message,
+      summaryStats: summary.stats
+    };
+
+    try {
+      const data = loadLocalData();
+      data.whatsappDispatchLogs = data.whatsappDispatchLogs || [];
+      data.whatsappDispatchLogs.unshift(logEntry);
+      if (data.whatsappDispatchLogs.length > 50) {
+        data.whatsappDispatchLogs = data.whatsappDispatchLogs.slice(0, 50);
+      }
+      saveLocalData(data);
+    } catch (e) {}
+
+    // Post notification comment in admin feed
+    try {
+      const commentMsg = dispatchResult.delivered
+        ? `📲 Daily Summary for ${targetDate} automatically sent to WhatsApp group! (Present: ${summary.stats.presentCount}, Absent: ${summary.stats.absentCount}, Bills: ${summary.stats.approvedBillsCount} approved)`
+        : (dispatchResult.attempted
+          ? `⚠️ WhatsApp Daily Summary dispatch for ${targetDate} failed: ${dispatchResult.message}`
+          : `📊 Daily Attendance & Bills Summary compiled for ${targetDate}. (Present: ${summary.stats.presentCount}, Absent: ${summary.stats.absentCount}, Bills: ${summary.stats.approvedBillsCount} approved)`);
+
+      await this.addComment({
+        employeeId: 'system',
+        employeeName: 'System Automation',
+        sender: 'system',
+        senderName: 'WhatsApp Dispatcher',
+        message: commentMsg
+      });
+    } catch (e) {}
+
+    return {
+      success: dispatchResult.delivered,
+      attempted: dispatchResult.attempted,
+      status: dispatchResult.status,
+      message: dispatchResult.message,
+      summary,
+      log: logEntry
+    };
+  }
 };
 
 const BILL_EXPENSE_CATEGORIES = ['transportation', 'material', 'labour', 'accommodation', 'other'];

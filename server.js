@@ -1299,6 +1299,104 @@ app.post('/api/bills/:id/override-duplicate', checkAdminAuth, async (req, res) =
   }
 });
 
+// ── DAILY ATTENDANCE & BILLS WHATSAPP SUMMARY ────────────────────────────────
+
+// GET /api/daily-summary (Fetch daily summary stats and formatted WhatsApp message)
+app.get('/api/daily-summary', checkAdminAuth, async (req, res) => {
+  try {
+    const targetDate = req.query.date || null;
+    const summary = await db.generateDailyAttendanceSummary(targetDate);
+    res.json({ success: true, summary });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/daily-summary/send (Send daily summary via configured WhatsApp bot/gateway)
+app.post('/api/daily-summary/send', checkAdminAuth, async (req, res) => {
+  try {
+    const { date, isTest, provider, gatewayUrl, groupId, phoneNumber, apiKey } = req.body || {};
+    const result = await db.dispatchDailyWhatsAppSummary(date, {
+      isTest: Boolean(isTest),
+      provider,
+      gatewayUrl,
+      groupId,
+      phoneNumber,
+      apiKey,
+      isAutomated: false
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/settings/whatsapp (Fetch WhatsApp configuration & dispatch logs)
+app.get('/api/settings/whatsapp', checkAdminAuth, async (req, res) => {
+  try {
+    const settings = await db.getWhatsAppSettings();
+    const logs = await db.getWhatsAppDispatchLogs();
+    res.json({ success: true, settings, logs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/settings/whatsapp (Save WhatsApp configuration)
+app.post('/api/settings/whatsapp', checkAdminAuth, async (req, res) => {
+  try {
+    const updated = await db.updateWhatsAppSettings(req.body);
+    res.json({ success: true, settings: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/cron/daily-summary (Automated trigger endpoint for Vercel Cron or webhooks)
+app.get('/api/cron/daily-summary', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'] || '';
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      const settings = await db.getSettings();
+      const clientPasscode = (req.query.passcode || authHeader.replace(/^Bearer\s+/i, '')).trim();
+      if (!isPasscodeValid(clientPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Cron Secret or Admin Passcode required' });
+      }
+    }
+    const result = await db.dispatchDailyWhatsAppSummary(null, { isAutomated: true });
+    res.json({ success: true, timestamp: new Date().toISOString(), result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Automated 9:00 PM PKT Scheduler for daily summary
+let lastAutomatedSummaryDate = null;
+async function checkAutomatedDailySummary() {
+  try {
+    const now = new Date();
+    const pktTimeStr = now.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Karachi',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const pktDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+
+    // Check if 21:00 (9:00 PM) PKT
+    if (pktTimeStr === '21:00' && lastAutomatedSummaryDate !== pktDateStr) {
+      lastAutomatedSummaryDate = pktDateStr;
+      console.log(`[WhatsApp Daily Summary] Triggering 9:00 PM PKT automated summary for ${pktDateStr}...`);
+      const res = await db.dispatchDailyWhatsAppSummary(pktDateStr, { isAutomated: true });
+      console.log(`[WhatsApp Daily Summary] Automated dispatch result: ${res.status} (${res.message})`);
+    }
+  } catch (err) {
+    console.error('[WhatsApp Daily Summary] Scheduler error:', err.message);
+  }
+}
+setInterval(checkAutomatedDailySummary, 30000);
+
 // For any other route, serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

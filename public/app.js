@@ -100,6 +100,23 @@ const API = {
     body: JSON.stringify({ employeeId })
   }),
   getStats: () => fetchJson('/api/stats'),
+  // Daily Attendance Summary & WhatsApp Automation API
+  getDailySummary: (date = null) => {
+    let url = '/api/daily-summary';
+    if (date) url += `?date=${encodeURIComponent(date)}`;
+    return fetchJson(url);
+  },
+  sendDailySummary: (data) => fetchJson('/api/daily-summary/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
+  getWhatsAppSettings: () => fetchJson('/api/settings/whatsapp'),
+  updateWhatsAppSettings: (data) => fetchJson('/api/settings/whatsapp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
   // Bills API endpoints
   getNextBillNumber: () => fetchJson('/api/bills/next-number'),
   submitBill: (data) => fetchJson('/api/bills', {
@@ -1795,6 +1812,7 @@ async function loadAdminSettings() {
     const res = await API.getSettings();
     document.getElementById('settings-office-name').value = res.officeName || 'My Office';
     document.getElementById('settings-passcode').value = ''; // Leave password empty for inputting a new one
+    await loadWhatsAppSettings().catch(() => {});
   } catch (err) {
     showToast('Failed to retrieve settings', 'error');
   }
@@ -12339,3 +12357,299 @@ document.addEventListener('click', (e) => {
     loadAdminMaterialTransactions();
   }
 });
+
+// ==========================================================================
+// DAILY ATTENDANCE & BILLS WHATSAPP SUMMARY MODULE (9:00 PM AUTOMATION)
+// ==========================================================================
+let currentDailySummary = null;
+
+async function openDailySummaryModal(targetDate = null) {
+  const modal = document.getElementById('modal-daily-summary');
+  if (!modal) return;
+
+  const dateInput = document.getElementById('ds-date-input');
+  const dateToLoad = targetDate || (dateInput && dateInput.value) || getLocalDateString();
+  if (dateInput) {
+    dateInput.value = dateToLoad;
+  }
+
+  modal.classList.remove('hidden');
+  await loadDailySummary(dateToLoad);
+}
+
+function closeDailySummaryModal() {
+  const modal = document.getElementById('modal-daily-summary');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function loadDailySummary(targetDateInput = null) {
+  const dateInput = document.getElementById('ds-date-input');
+  const targetDate = targetDateInput || (dateInput && dateInput.value) || getLocalDateString();
+  if (dateInput) dateInput.value = targetDate;
+
+  const previewEl = document.getElementById('daily-summary-text-preview');
+  if (previewEl) {
+    previewEl.innerText = `⏳ Generating Daily Summary for ${targetDate}...\nCompiling attendance records, absent list, leaves, and approved/rejected bills...`;
+  }
+
+  const alertEl = document.getElementById('daily-summary-status-alert');
+  if (alertEl) {
+    alertEl.className = 'hidden';
+    alertEl.innerText = '';
+  }
+
+  try {
+    const res = await API.getDailySummary(targetDate);
+    if (!res || !res.summary) {
+      throw new Error(res?.error || 'Failed to generate summary');
+    }
+
+    currentDailySummary = res.summary;
+    const stats = currentDailySummary.stats || {};
+
+    const elPresent = document.getElementById('ds-stat-present');
+    const elAbsent = document.getElementById('ds-stat-absent');
+    const elLeave = document.getElementById('ds-stat-leave');
+    const elBillsApproved = document.getElementById('ds-stat-bills-approved');
+    const elBillsApprovedAmt = document.getElementById('ds-stat-bills-approved-amount');
+    const elBillsRejected = document.getElementById('ds-stat-bills-rejected');
+
+    if (elPresent) elPresent.innerText = stats.presentCount ?? 0;
+    if (elAbsent) elAbsent.innerText = stats.absentCount ?? 0;
+    if (elLeave) elLeave.innerText = stats.leaveCount ?? 0;
+    if (elBillsApproved) elBillsApproved.innerText = stats.approvedBillsCount ?? 0;
+    if (elBillsApprovedAmt) elBillsApprovedAmt.innerText = `Rs. ${(stats.totalApprovedAmount || 0).toLocaleString()}`;
+    if (elBillsRejected) elBillsRejected.innerText = stats.rejectedBillsCount ?? 0;
+
+    if (previewEl) {
+      previewEl.innerText = currentDailySummary.summaryText || 'No summary compiled.';
+    }
+  } catch (err) {
+    console.error('Failed to load daily summary:', err);
+    if (previewEl) {
+      previewEl.innerText = `⚠️ Error loading summary for ${targetDate}: ${err.message}`;
+    }
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+async function copyDailySummaryToClipboard() {
+  const text = (currentDailySummary && currentDailySummary.summaryText) ||
+    document.getElementById('daily-summary-text-preview')?.innerText;
+
+  if (!text || text.startsWith('⏳') || text.startsWith('⚠️')) {
+    return showToast('Please load a valid summary first', 'warning');
+  }
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    showToast('📋 Summary copied to clipboard! Paste directly into WhatsApp.', 'success');
+  } catch (err) {
+    showToast('Could not copy automatically. Please select and copy text.', 'error');
+  }
+}
+
+function openDirectInWhatsApp() {
+  const text = (currentDailySummary && currentDailySummary.summaryText) ||
+    document.getElementById('daily-summary-text-preview')?.innerText;
+
+  if (!text || text.startsWith('⏳') || text.startsWith('⚠️')) {
+    return showToast('Please load a valid summary first', 'warning');
+  }
+
+  const encoded = encodeURIComponent(text);
+  const waUrl = `https://api.whatsapp.com/send?text=${encoded}`;
+  window.open(waUrl, '_blank');
+  showToast('🟢 Opening WhatsApp with summary pre-filled!', 'success');
+}
+
+async function dispatchDailySummaryViaGateway() {
+  const btn = document.getElementById('btn-dispatch-whatsapp-bot');
+  const alertEl = document.getElementById('daily-summary-status-alert');
+
+  const targetDate = (currentDailySummary && currentDailySummary.date) ||
+    document.getElementById('ds-date-input')?.value || getLocalDateString();
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Sending...';
+  }
+
+  try {
+    const res = await API.sendDailySummary({ date: targetDate, isTest: false });
+    if (alertEl) {
+      alertEl.classList.remove('hidden');
+      if (res.delivered) {
+        alertEl.style.background = 'rgba(16, 185, 129, 0.15)';
+        alertEl.style.border = '1px solid #10b981';
+        alertEl.style.color = '#34d399';
+        alertEl.innerText = `✅ WhatsApp Dispatched: ${res.message}`;
+        showToast('✅ Daily summary dispatched to WhatsApp group!', 'success');
+      } else {
+        alertEl.style.background = 'rgba(239, 68, 68, 0.15)';
+        alertEl.style.border = '1px solid #ef4444';
+        alertEl.style.color = '#f87171';
+        alertEl.innerText = `⚠️ Dispatch Status (${res.status}): ${res.message}. (Tip: Click "Open in WhatsApp" for instant 1-click sharing!)`;
+        showToast(`Dispatch status: ${res.status}`, 'warning');
+      }
+    }
+  } catch (err) {
+    if (alertEl) {
+      alertEl.classList.remove('hidden');
+      alertEl.style.background = 'rgba(239, 68, 68, 0.15)';
+      alertEl.style.border = '1px solid #ef4444';
+      alertEl.style.color = '#f87171';
+      alertEl.innerText = `❌ Error: ${err.message}`;
+    }
+    showToast(`Failed to dispatch: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚀</span> Send via Bot / Gateway';
+    }
+  }
+}
+
+function openWhatsAppSettingsPanel() {
+  closeDailySummaryModal();
+  const navBtn = document.querySelector('[data-tab="tab-settings"]');
+  if (navBtn) navBtn.click();
+  const settingsPanel = document.getElementById('form-whatsapp-settings');
+  if (settingsPanel) {
+    setTimeout(() => {
+      settingsPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+  }
+}
+
+async function loadWhatsAppSettings() {
+  try {
+    const res = await API.getWhatsAppSettings();
+    const st = res.settings || {};
+
+    const elEnabled = document.getElementById('wa-settings-enabled');
+    const elProvider = document.getElementById('wa-settings-provider');
+    const elTime = document.getElementById('wa-settings-time');
+    const elGroupId = document.getElementById('wa-settings-group-id');
+    const elApiKey = document.getElementById('wa-settings-apikey');
+    const elGatewayUrl = document.getElementById('wa-settings-gateway-url');
+
+    if (elEnabled) elEnabled.checked = Boolean(st.enabled);
+    if (elProvider) elProvider.value = st.provider || 'callmebot';
+    if (elTime) elTime.value = st.scheduledTime || '21:00';
+    if (elGroupId) elGroupId.value = st.groupId || st.phoneNumber || '';
+    if (elApiKey) elApiKey.value = st.apiKey || '';
+    if (elGatewayUrl) elGatewayUrl.value = st.gatewayUrl || '';
+
+    renderWhatsAppDispatchLogs(res.logs || []);
+  } catch (err) {
+    console.warn('Could not load WhatsApp settings:', err.message);
+  }
+}
+
+function renderWhatsAppDispatchLogs(logs) {
+  const container = document.getElementById('wa-dispatch-logs-container');
+  if (!container) return;
+
+  if (!logs || logs.length === 0) {
+    container.innerHTML = '<div style="color: #64748b; padding: 0.25rem;">No dispatch history recorded yet.</div>';
+    return;
+  }
+
+  let html = '<div style="display: flex; flex-direction: column; gap: 0.4rem;">';
+  logs.forEach(l => {
+    const badgeColor = l.delivered ? '#10b981' : (l.status === 'NOT_CONFIGURED' ? '#f59e0b' : '#ef4444');
+    const dateFormatted = l.timestamp ? new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : l.date;
+    const typeTag = l.isAutomated ? '⏰ Auto (9 PM)' : (l.isTest ? '⚡ Test' : '👤 Manual');
+
+    html += `
+      <div style="background: rgba(255,255,255,0.03); border-left: 3px solid ${badgeColor}; padding: 0.4rem 0.6rem; border-radius: 4px;">
+        <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.78rem;">
+          <span style="color: ${badgeColor};">${l.status} • ${typeTag}</span>
+          <span style="color: #64748b;">${dateFormatted}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: #cbd5e1; margin-top: 0.15rem;">${l.message || ''}</div>
+      </div>
+    `;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function loadWhatsAppDispatchLogs() {
+  try {
+    const res = await API.getWhatsAppSettings();
+    renderWhatsAppDispatchLogs(res.logs || []);
+    showToast('Logs refreshed', 'info');
+  } catch (err) {
+    showToast('Failed to load logs', 'error');
+  }
+}
+
+async function saveWhatsAppSettingsForm(event) {
+  if (event) event.preventDefault();
+  const feedback = document.getElementById('wa-settings-save-feedback');
+
+  const enabled = document.getElementById('wa-settings-enabled')?.checked ?? true;
+  const provider = document.getElementById('wa-settings-provider')?.value || 'callmebot';
+  const scheduledTime = document.getElementById('wa-settings-time')?.value || '21:00';
+  const groupId = (document.getElementById('wa-settings-group-id')?.value || '').trim();
+  const apiKey = (document.getElementById('wa-settings-apikey')?.value || '').trim();
+  const gatewayUrl = (document.getElementById('wa-settings-gateway-url')?.value || '').trim();
+
+  try {
+    const updated = await API.updateWhatsAppSettings({
+      enabled,
+      provider,
+      scheduledTime,
+      groupId,
+      phoneNumber: groupId,
+      apiKey,
+      gatewayUrl
+    });
+
+    if (feedback) {
+      feedback.classList.remove('hidden');
+      feedback.style.background = 'rgba(16, 185, 129, 0.15)';
+      feedback.style.border = '1px solid #10b981';
+      feedback.style.color = '#34d399';
+      feedback.innerText = '💾 WhatsApp settings saved successfully! Automated 9:00 PM summary is active.';
+      setTimeout(() => feedback.classList.add('hidden'), 4000);
+    }
+    showToast('WhatsApp settings saved!', 'success');
+  } catch (err) {
+    if (feedback) {
+      feedback.classList.remove('hidden');
+      feedback.style.background = 'rgba(239, 68, 68, 0.15)';
+      feedback.style.border = '1px solid #ef4444';
+      feedback.style.color = '#f87171';
+      feedback.innerText = `Error: ${err.message}`;
+    }
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+async function testWhatsAppDispatchNow() {
+  showToast('Sending test WhatsApp dispatch...', 'info');
+  try {
+    const res = await API.sendDailySummary({ isTest: true });
+    if (res.delivered) {
+      showToast(`✅ Test dispatched successfully! (${res.provider})`, 'success');
+    } else {
+      showToast(`Test Result (${res.status}): ${res.message}`, 'warning');
+    }
+    await loadWhatsAppDispatchLogs();
+  } catch (err) {
+    showToast(`Test failed: ${err.message}`, 'error');
+  }
+}
+

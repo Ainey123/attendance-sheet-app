@@ -1281,6 +1281,96 @@ module.exports = async (req, res) => {
       }
     }
 
+    // ── DAILY ATTENDANCE & BILLS WHATSAPP SUMMARY ────────────────────────────────
+
+    // GET /api/daily-summary
+    if (path === 'daily-summary' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      try {
+        const targetDate = query.date || null;
+        const summary = await db.generateDailyAttendanceSummary(targetDate);
+        return res.json({ success: true, summary });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    // POST /api/daily-summary/send
+    if (path === 'daily-summary/send' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const body = await parseBody(req);
+      const { date, isTest, provider, gatewayUrl, groupId, phoneNumber, apiKey } = body || {};
+      try {
+        const result = await db.dispatchDailyWhatsAppSummary(date, {
+          isTest: Boolean(isTest),
+          provider,
+          gatewayUrl,
+          groupId,
+          phoneNumber,
+          apiKey,
+          isAutomated: false
+        });
+        return res.json(result);
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    // GET /api/settings/whatsapp
+    if (path === 'settings/whatsapp' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      try {
+        const waSettings = await db.getWhatsAppSettings();
+        const logs = await db.getWhatsAppDispatchLogs();
+        return res.json({ success: true, settings: waSettings, logs });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    // POST /api/settings/whatsapp
+    if (path === 'settings/whatsapp' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const body = await parseBody(req);
+      try {
+        const updated = await db.updateWhatsAppSettings(body);
+        return res.json({ success: true, settings: updated });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    // GET /api/cron/daily-summary
+    if (path === 'cron/daily-summary' && method === 'GET') {
+      try {
+        const authHeader = headers['authorization'] || '';
+        const cronSecret = process.env.CRON_SECRET;
+        if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+          const settings = await db.getSettings();
+          const clientPasscode = (query.passcode || authHeader.replace(/^Bearer\s+/i, '')).trim();
+          if (!isPasscodeValid(clientPasscode, settings)) {
+            return res.status(401).json({ error: 'Unauthorized: Cron Secret or Admin Passcode required' });
+          }
+        }
+        const result = await db.dispatchDailyWhatsAppSummary(null, { isAutomated: true });
+        return res.json({ success: true, timestamp: new Date().toISOString(), result });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
     // ── 404 fallback ──────────────────────────────────────────────────────────
     return res.status(404).json({ error: `Unknown route: ${method} /api/${path}` });
 

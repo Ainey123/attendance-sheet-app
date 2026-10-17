@@ -10,6 +10,12 @@
     },
     { "src": "public/**", "use": "@vercel/static" }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/daily-summary",
+      "schedule": "0 16 * * *"
+    }
+  ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.js" },
     { "src": "/(.*)",     "dest": "/public/$1" }
