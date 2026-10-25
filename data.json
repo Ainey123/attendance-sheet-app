@@ -654,9 +654,10 @@
   "workProfiles": {},
   "settings": {
     "id": "default",
-    "adminPasscode": "1289",
+    "adminPasscode": "1200",
     "officeName": "My Office",
-    "adminToken": null
+    "adminToken": null,
+    "seniorAdminPasscode": "9999"
   },
   "formSubmissions": [
     {
