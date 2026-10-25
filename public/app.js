@@ -4,7 +4,7 @@
 let allEmployees = [];
 let selectedEmployee = null;
 let userLocation = null;
-let adminPasscode = (typeof Store !== 'undefined' && Store.loadPasscode) ? Store.loadPasscode() : '';
+let adminPasscode = '';
 let currentView = 'employee'; // 'employee' or 'admin'
 let activeShiftTimer = null;
 let currentAdminTab = 'tab-dashboard';
@@ -18,13 +18,6 @@ function getAdminPasscode() {
   if (adminPasscode && typeof adminPasscode === 'string' && adminPasscode.trim()) {
     return adminPasscode.trim();
   }
-  try {
-    const stored = (typeof Store !== 'undefined' && Store.loadPasscode && Store.loadPasscode()) || localStorage.getItem('attendance_admin_passcode') || '';
-    if (stored && stored.trim()) {
-      adminPasscode = stored.trim();
-      return adminPasscode;
-    }
-  } catch (e) {}
   return '';
 }
 
@@ -1267,11 +1260,13 @@ async function handleAdminAuthSubmit(e) {
     const res = await API.verifyPasscode(passcode);
     if (res && res.success) {
       adminPasscode = passcode;
-      // Persist admin passcode
-      if (typeof Store !== 'undefined' && Store.savePasscode) {
-        Store.savePasscode(adminPasscode);
-      }
-      localStorage.setItem('attendance_admin_passcode', adminPasscode);
+      // Do not store admin passcode in persistent localStorage
+      try {
+        localStorage.removeItem('attendance_admin_passcode');
+        if (typeof Store !== 'undefined' && Store.clearPasscode) {
+          Store.clearPasscode();
+        }
+      } catch (e) {}
       if (input) input.value = '';
       closeAdminAuthModal();
       
@@ -1854,12 +1849,11 @@ async function handleSettingsSubmit(e) {
       }
       
       if (newPasscode) {
-        // If passcode changed, save the new value into session cache and persistent storage immediately
+        // If passcode changed, update in-memory session
         adminPasscode = newPasscode;
-        if (typeof Store !== 'undefined' && Store.savePasscode) {
-          Store.savePasscode(adminPasscode);
-        }
-        localStorage.setItem('attendance_admin_passcode', adminPasscode);
+        try {
+          localStorage.removeItem('attendance_admin_passcode');
+        } catch (e) {}
         if (passcodeInput) passcodeInput.value = '';
       }
     } else {
@@ -3883,6 +3877,15 @@ async function exportWorkRecordsToPDF(employeeId, month, employeeName) {
 // BOOTSTRAP EVENT BINDINGS
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
+  // Ensure admin session starts locked on every fresh load
+  adminPasscode = '';
+  try {
+    localStorage.removeItem('attendance_admin_passcode');
+    if (typeof Store !== 'undefined' && Store.clearPasscode) {
+      Store.clearPasscode();
+    }
+  } catch (e) {}
+
   // 1. Init clock
   initClock();
   initEmergencySalaryGenerator();
@@ -3964,14 +3967,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-change-pin-modal').addEventListener('click', closeChangePinModal);
   document.getElementById('form-change-pin').addEventListener('submit', handleChangePinSubmit);
 
-  // Toggle View admin vs employee
+  // Toggle View admin vs employee - ALWAYS require passcode to enter Admin
   document.getElementById('btn-toggle-portal').addEventListener('click', () => {
     if (currentView === 'employee') {
-      if (adminPasscode === '') {
-        openAdminAuthModal();
-      } else {
-        switchView('admin');
-      }
+      openAdminAuthModal();
     } else {
       switchView('employee');
     }

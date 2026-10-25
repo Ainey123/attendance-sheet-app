@@ -36,28 +36,28 @@ const Store = (function() {
 
   /**
    * Save admin passcode to localStorage.
+   * NOTE: Admin passcodes are not persisted in localStorage to ensure the Admin Panel
+   * always requires manual authentication upon clicking and never logs in without a password.
    * @param {string} passcode
    */
   function savePasscode(passcode) {
     try {
-      localStorage.setItem(PASSCODE_KEY, passcode);
-    } catch (e) {
-      console.error('Failed to save admin passcode to localStorage', e);
-    }
+      if (!passcode) {
+        localStorage.removeItem(PASSCODE_KEY);
+      }
+    } catch (e) {}
   }
 
   /**
-   * Load admin passcode from localStorage.
-   * Returns empty string if not set.
+   * Load admin passcode.
+   * Always returns empty string so Admin Panel strictly requires manual password entry.
    * @returns {string}
    */
   function loadPasscode() {
     try {
-      return localStorage.getItem(PASSCODE_KEY) || '';
-    } catch (e) {
-      console.error('Failed to load admin passcode from localStorage', e);
-      return '';
-    }
+      localStorage.removeItem(PASSCODE_KEY);
+    } catch (e) {}
+    return '';
   }
 
   /**
@@ -66,9 +66,7 @@ const Store = (function() {
   function clearPasscode() {
     try {
       localStorage.removeItem(PASSCODE_KEY);
-    } catch (e) {
-      console.error('Failed to clear admin passcode from localStorage', e);
-    }
+    } catch (e) {}
   }
 
   // Expose public API
