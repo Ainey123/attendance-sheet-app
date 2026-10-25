@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-portal-v279-nocache';
+const CACHE_NAME = 'attendance-portal-v281-nocache';
 
 // Install Event - skip waiting immediately
 self.addEventListener('install', (e) => {
@@ -28,7 +28,11 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(e.request).catch(async () => {
         const cached = await caches.match(e.request);
-        return cached || new Response('Offline', { status: 503 });
+        if (cached) return cached;
+        return new Response('<!DOCTYPE html><html><body><h1>Offline</h1><p>Please check your connection and reload.</p></body></html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        });
       })
     );
     return;
@@ -37,7 +41,8 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(e.request).catch(async () => {
       const cached = await caches.match(e.request);
-      return cached || new Response('Offline', { status: 503 });
+      if (cached) return cached;
+      return new Response('', { status: 200 });
     })
   );
 });

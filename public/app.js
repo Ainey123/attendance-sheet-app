@@ -1318,7 +1318,10 @@ function switchView(viewName) {
     // Clear admin passcode to log out session on view return
     adminPasscode = '';
     // Clear persisted passcode
-    Store.savePasscode('');
+    if (typeof Store !== 'undefined' && Store.savePasscode) {
+      Store.savePasscode('');
+    }
+    localStorage.removeItem('attendance_admin_passcode');
     
     // Reload portal listings
     loadEmployeesList(selectedEmployee ? selectedEmployee.id : null);
@@ -3143,6 +3146,7 @@ function exportFormsToPDF() {
 // ==========================================================================
 function initEvaluationsTab() {
   const monthInput = document.getElementById('eval-month');
+  if (!monthInput) return;
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   
@@ -3150,23 +3154,36 @@ function initEvaluationsTab() {
     monthInput.value = currentMonth;
   }
 
-  monthInput.addEventListener('change', loadEvaluations);
-  loadEvaluations();
+  monthInput.addEventListener('change', () => {
+    if (currentView === 'admin' && getAdminPasscode()) {
+      loadEvaluations();
+    }
+  });
+  // Do NOT execute loadEvaluations() eagerly on startup to avoid unauthenticated 401 calls.
+  // switchAdminTab('tab-evaluations') calls it when the admin navigates to the evaluations tab.
 }
 
 async function loadEvaluations() {
-  const month = document.getElementById('eval-month').value;
+  // Only execute when admin is unlocked and active
+  if (currentView !== 'admin' && !getAdminPasscode()) {
+    return;
+  }
+  const monthInput = document.getElementById('eval-month');
+  const month = monthInput ? monthInput.value : '';
   if (!month) return;
   
   const tbody = document.querySelector('#evaluations-table tbody');
-  tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Calculating...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Calculating...</td></tr>';
   
   try {
     // Fetch all required data for calculation
     const [employees, allAttendance, workRecords] = await Promise.all([
-      API.getEmployees(),
-      API.getAttendanceLogs(),
-      API.getWorkRecords()
+      API.getEmployees().catch(() => []),
+      API.getAttendanceLogs().catch(err => {
+        if (err && (err.status === 401 || err.message === 'Unauthorized')) return [];
+        throw err;
+      }),
+      API.getWorkRecords().catch(() => [])
     ]);
     
     // Filter attendance and work records by the selected month
@@ -3255,8 +3272,12 @@ async function loadEvaluations() {
     });
     
   } catch (err) {
-    console.error(err);
-    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Error calculating evaluations.</td></tr>';
+    if (err && (err.status === 401 || err.message === 'Unauthorized')) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Admin authentication required to view evaluations.</td></tr>';
+      return;
+    }
+    console.error('Error calculating evaluations:', err);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Error calculating evaluations.</td></tr>';
   }
 }
 

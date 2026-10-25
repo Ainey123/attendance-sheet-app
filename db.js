@@ -677,7 +677,7 @@ const db = {
       const data = loadLocalData();
       const s = data.settings || {};
       return {
-        adminPasscode: s.adminPasscode || '1200',
+        adminPasscode: s.adminPasscode || '1289',
         seniorAdminPasscode: s.seniorAdminPasscode || '9999',
         officeName: s.officeName || 'My Office',
         adminToken: s.adminToken || null
@@ -721,12 +721,12 @@ const db = {
       const local = loadLocalData();
       const s = local.settings || {};
       return {
-        adminPasscode: s.adminPasscode || '1200',
+        adminPasscode: s.adminPasscode || '1289',
         seniorAdminPasscode: s.seniorAdminPasscode || '9999',
         officeName: s.officeName || 'My Office'
       };
     }
-    return cachedSettings || { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' };
+    return cachedSettings || { adminPasscode: '1289', seniorAdminPasscode: '9999', officeName: 'My Office' };
   },
 
   async updateSettings(newSettings) {
