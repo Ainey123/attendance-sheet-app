@@ -12,6 +12,9 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 let supabase = null;
 let useLocalFallback = false;
+let manualFallbackOverride = false;
+let lastRecoveryAttempt = 0;
+let recoveryPromise = null;
 let cachedSettings = null;
 let lastSettingsFetch = 0;
 let settingsFetchPromise = null;
@@ -381,12 +384,40 @@ function handleSupabaseError(error, operation) {
 
 let _lastAllocatedBillNum = 0;
 
+async function maybeRecoverSupabase() {
+  if (!useLocalFallback || manualFallbackOverride || !supabase) return;
+  const now = Date.now();
+  if (now - lastRecoveryAttempt < 15000) return;
+  if (recoveryPromise) return recoveryPromise;
+  lastRecoveryAttempt = now;
+  recoveryPromise = (async () => {
+    try {
+      const { error } = await supabase.from('settings').select('id').limit(1);
+      if (!error) {
+        console.log('Supabase connection restored! Switching back to live Supabase database.');
+        useLocalFallback = false;
+        cachedSettings = null;
+        lastSettingsFetch = 0;
+      }
+    } catch (e) {
+      // Still paused or unreachable; will retry automatically after 15s
+    } finally {
+      recoveryPromise = null;
+    }
+  })();
+  return recoveryPromise;
+}
+
 const db = {
   get useLocalFallback() {
     return useLocalFallback;
   },
   set useLocalFallback(val) {
+    manualFallbackOverride = !!val;
     useLocalFallback = !!val;
+  },
+  async ensureConnection() {
+    return maybeRecoverSupabase();
   },
 
   // --- Employee Methods ---
@@ -454,6 +485,7 @@ const db = {
   },
 
   async getEmployees(includeArchived = false) {
+    await maybeRecoverSupabase();
     if (useLocalFallback) {
       const data = loadLocalData();
       let emps = data.employees || [];
@@ -735,6 +767,7 @@ const db = {
 
   // --- Settings Methods ---
   async getSettings() {
+    await maybeRecoverSupabase();
     if (useLocalFallback) {
       const data = loadLocalData();
       const s = data.settings || {};
@@ -877,6 +910,7 @@ const db = {
 
   // --- Attendance Methods ---
   async getAttendance(filterDate = null) {
+    await maybeRecoverSupabase();
     if (useLocalFallback) {
       const data = loadLocalData();
       let records = data.attendance || [];

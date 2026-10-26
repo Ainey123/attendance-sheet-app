@@ -59,6 +59,8 @@ module.exports = async (req, res) => {
   const adminPasscode = (headerPasscode || queryPasscode || '').replace(/^Bearer\s+/i, '').trim();
 
   try {
+    await db.ensureConnection();
+
     // Auto-complete any unclosed attendance records from previous days
     if (method === 'GET' && (path === 'attendance/monthly-summary' || path === 'attendance/individual' || path === 'stats')) {
       db.autoCompleteOldAttendance().catch(e => console.warn('autoCompleteOldAttendance error:', e.message));
@@ -68,7 +70,8 @@ module.exports = async (req, res) => {
     if (path === 'health' && method === 'GET') {
       return res.json({
         status: 'ok',
-        version: 'v215-worker-ready',
+        version: 'v285-auto-recover',
+        database: db.useLocalFallback ? 'local_fallback' : 'supabase',
         hasWorker: Boolean(globalThis.pdfjsWorker?.WorkerMessageHandler),
         timestamp: new Date().toISOString()
       });
