@@ -1,7 +1,4 @@
-# Exclude local data file from Vercel deployment
-# Without this, Vercel bundles data.json and always reads stale data (passcode stays 1234)
-# With this, all reads/writes go through JSONBlob (the live cloud database)
-data.json
+# Exclude local temporary files from Vercel deployment
 attendance_sheet.csv
 Start_Attendance_App.bat
 Dockerfile

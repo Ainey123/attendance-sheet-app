@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load existing data or create default
-let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [] };
+let data = { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [] };
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
@@ -136,7 +136,7 @@ const db = {
   async getSettings() {
     const s = data.settings || {};
     return {
-      adminPasscode: s.adminPasscode || '1234',
+      adminPasscode: s.adminPasscode || '1200',
       seniorAdminPasscode: s.seniorAdminPasscode || '9999',
       officeName: s.officeName || 'My Office',
       adminToken: s.adminToken || null
@@ -3284,6 +3284,7 @@ function normalizeBillRecord(bill) {
     other: otherExpense
   };
 
+  let isSyntheticCategories = false;
   let categories = b.categories;
   if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
     if (Array.isArray(b.auditLog) && b.auditLog.length > 0) {
@@ -3295,6 +3296,7 @@ function normalizeBillRecord(bill) {
   }
 
   if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
+    isSyntheticCategories = true;
     categories = {};
     const isLegacyVerified = b.status === 'VERIFIED' || b.status === 'APPROVED';
     const isLegacyApproved = b.status === 'APPROVED';
@@ -3413,10 +3415,21 @@ function normalizeBillRecord(bill) {
   const calc = computeBillTotalsAndStatus(categories, b.status);
   b.totalClaimedAmount = calc.totalClaimedAmount;
   b.totalAmount = calc.totalClaimedAmount;
-  b.totalVerifiedAmount = calc.totalVerifiedAmount;
-  b.totalApprovedAmount = calc.totalApprovedAmount;
-  b.verifiedAmount = calc.totalVerifiedAmount;
-  b.approvedAmount = calc.totalApprovedAmount;
+
+  if (isSyntheticCategories) {
+    const explicitVerified = (b.verifiedAmount !== null && b.verifiedAmount !== undefined) ? Number(b.verifiedAmount) : (b.totalVerifiedAmount !== null && b.totalVerifiedAmount !== undefined ? Number(b.totalVerifiedAmount) : null);
+    const explicitApproved = (b.approvedAmount !== null && b.approvedAmount !== undefined) ? Number(b.approvedAmount) : (b.totalApprovedAmount !== null && b.totalApprovedAmount !== undefined ? Number(b.totalApprovedAmount) : null);
+
+    b.totalVerifiedAmount = explicitVerified !== null ? explicitVerified : calc.totalVerifiedAmount;
+    b.totalApprovedAmount = explicitApproved !== null ? explicitApproved : calc.totalApprovedAmount;
+    b.verifiedAmount = b.totalVerifiedAmount;
+    b.approvedAmount = b.totalApprovedAmount;
+  } else {
+    b.totalVerifiedAmount = calc.totalVerifiedAmount;
+    b.totalApprovedAmount = calc.totalApprovedAmount;
+    b.verifiedAmount = calc.totalVerifiedAmount;
+    b.approvedAmount = calc.totalApprovedAmount;
+  }
   b.status = calc.status;
 
   return b;

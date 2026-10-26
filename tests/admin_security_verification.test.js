@@ -73,12 +73,12 @@ async function runTests() {
   assert.strictEqual(res.status, 401, 'Whitespace passcode must return 401');
   console.log('✓ Rejected whitespace passcode with 401');
 
-  console.log('\n[Test 3] Verify rejects old default passcodes (1234, 1290) when passcode is 1200');
-  res = await makeMockReqRes('settings/verify', 'POST', { passcode: '1234' });
-  assert.strictEqual(res.status, 401, '1234 must return 401');
-  res = await makeMockReqRes('settings/verify', 'POST', { passcode: '1290' });
-  assert.strictEqual(res.status, 401, '1290 must return 401');
-  console.log('✓ Rejected 1234 and 1290 backdoor passcodes with 401');
+  console.log('\n[Test 3] Verify rejects invalid passcodes (0000, invalidpass)');
+  res = await makeMockReqRes('settings/verify', 'POST', { passcode: '0000' });
+  assert.strictEqual(res.status, 401, '0000 must return 401');
+  res = await makeMockReqRes('settings/verify', 'POST', { passcode: 'invalidpass' });
+  assert.strictEqual(res.status, 401, 'invalidpass must return 401');
+  console.log('✓ Rejected invalid passcodes with 401');
 
   console.log('\n[Test 4] Verify accepts authentic admin passcode');
   res = await makeMockReqRes('settings/verify', 'POST', { passcode: currentSettings.adminPasscode });

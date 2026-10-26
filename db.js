@@ -28,27 +28,15 @@ if (supabaseUrl && supabaseKey) {
       const { data, error: pingError } = await supabase.from('employees').select('id').limit(1);
       if (pingError) {
         console.warn('Supabase initial ping notice:', pingError.message);
-        if (
-          pingError.message?.includes('exceed_egress_quota') ||
-          pingError.message?.includes('restricted') ||
-          pingError.message?.includes('quota') ||
-          pingError.message?.includes('Failed to fetch') ||
-          pingError.status === 402 ||
-          pingError.status === 403
-        ) {
-          console.warn('⚠️ Supabase egress quota exceeded or project restricted.');
-          if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
-            console.warn('Activating local JSON database fallback for local dev/testing.');
-            useLocalFallback = true;
-          }
+        if (isQuotaOrNetworkError(pingError)) {
+          console.warn('⚠️ Supabase unavailable or quota exceeded. Activating local JSON database fallback.');
+          useLocalFallback = true;
           return;
         }
       }
     } catch (e) {
       console.warn('Supabase initial connection failed:', e.message);
-      if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
-        useLocalFallback = true;
-      }
+      useLocalFallback = true;
       return;
     }
 
@@ -214,18 +202,44 @@ if (supabaseUrl && supabaseKey) {
 }
 
 // ─── Local File Storage (Fallback) ───────────────────────────────────────────
-const DATA_FILE = path.join(__dirname, 'data.json');
+const BUNDLED_DATA_PATH = path.join(__dirname, 'data.json');
+const TMP_DATA_PATH = path.join('/tmp', 'data.json');
+
+// Select appropriate data file path (seeds /tmp on Vercel so writes succeed)
+function getDataFilePath() {
+  if (process.env.VERCEL && fs.existsSync('/tmp')) {
+    if (!fs.existsSync(TMP_DATA_PATH) && fs.existsSync(BUNDLED_DATA_PATH)) {
+      try {
+        fs.copyFileSync(BUNDLED_DATA_PATH, TMP_DATA_PATH);
+      } catch (e) {
+        console.warn('Failed to copy data.json to /tmp:', e.message);
+      }
+    }
+    return fs.existsSync(TMP_DATA_PATH) ? TMP_DATA_PATH : BUNDLED_DATA_PATH;
+  }
+  return BUNDLED_DATA_PATH;
+}
+
+// Static bundled fallback in case file system read fails on serverless
+let bundledDataCache = null;
+try {
+  bundledDataCache = require('./data.json');
+} catch (e) {}
+
+let inMemoryData = null;
 
 function loadLocalData() {
+  const filePath = getDataFilePath();
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const file = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      return {
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const file = JSON.parse(raw);
+      inMemoryData = {
         employees: file.employees || [],
         attendance: file.attendance || [],
         workRecords: file.workRecords || [],
         workProfiles: file.workProfiles || {},
-        settings: file.settings || { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' },
+        settings: file.settings || { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' },
         formSubmissions: file.formSubmissions || [],
         employeeEvaluations: file.employeeEvaluations || [],
         comments: file.comments || [],
@@ -236,15 +250,53 @@ function loadLocalData() {
         whatsappSettings: file.whatsappSettings || null,
         whatsappDispatchLogs: file.whatsappDispatchLogs || []
       };
+      return inMemoryData;
     }
-  } catch (e) {}
-  return { employees: [], attendance: [], workRecords: [], workProfiles: {}, settings: { adminPasscode: '1234', seniorAdminPasscode: '9999', officeName: 'My Office' }, formSubmissions: [], employeeEvaluations: [], comments: [], salaries: [], accountsPdfs: [], salaryApprovals: [], expenseVerifications: [], materials: [], materialTransactions: [], materialAttachments: [], materialVerifications: [], materialVerificationAttachments: [], materialApprovals: [], materialApprovalAttachments: [], bills: [], whatsappSettings: null, whatsappDispatchLogs: [] };
+  } catch (e) {
+    console.warn('loadLocalData read error:', e.message);
+  }
+
+  if (inMemoryData) return inMemoryData;
+
+  if (bundledDataCache) {
+    inMemoryData = JSON.parse(JSON.stringify(bundledDataCache));
+    return inMemoryData;
+  }
+
+  return {
+    employees: [],
+    attendance: [],
+    workRecords: [],
+    workProfiles: {},
+    settings: { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' },
+    formSubmissions: [],
+    employeeEvaluations: [],
+    comments: [],
+    salaries: [],
+    accountsPdfs: [],
+    salaryApprovals: [],
+    expenseVerifications: [],
+    materials: [],
+    materialTransactions: [],
+    materialAttachments: [],
+    materialVerifications: [],
+    materialVerificationAttachments: [],
+    materialApprovals: [],
+    materialApprovalAttachments: [],
+    bills: [],
+    whatsappSettings: null,
+    whatsappDispatchLogs: []
+  };
 }
 
 function saveLocalData(data) {
+  inMemoryData = data;
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {}
+    const filePath = (process.env.VERCEL && fs.existsSync('/tmp')) ? TMP_DATA_PATH : getDataFilePath();
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn('saveLocalData write error:', e.message);
+  }
 }
 
 // Generate unique ID
@@ -291,17 +343,29 @@ function isQuotaOrNetworkError(error) {
     msg.includes('restricted') ||
     msg.includes('quota') ||
     msg.includes('failed to fetch') ||
+    msg.includes('fetch failed') ||
+    msg.includes('enotfound') ||
+    msg.includes('eai_again') ||
+    msg.includes('getaddrinfo') ||
+    msg.includes('network') ||
     msg.includes('fetch_error') ||
     msg.includes('terminated') ||
     msg.includes('timeout') ||
     msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
     msg.includes('socket') ||
     msg.includes('service unavailable') ||
     msg.includes('schema cache') ||
     msg.includes('could not find the table') ||
     msg.includes('pgrst204') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('504') ||
     error.status === 402 ||
-    error.status === 403
+    error.status === 403 ||
+    error.status === 502 ||
+    error.status === 503 ||
+    error.status === 504
   );
 }
 
@@ -309,10 +373,8 @@ function isQuotaOrNetworkError(error) {
 function handleSupabaseError(error, operation) {
   console.error(`Database error during ${operation}:`, error ? (error.message || error) : 'Unknown error');
   if (isQuotaOrNetworkError(error)) {
-    if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
-      console.warn(`Supabase service error during ${operation}. Enabling local JSON database fallback for dev.`);
-      useLocalFallback = true;
-    }
+    console.warn(`Supabase service error during ${operation}. Enabling local JSON database fallback.`);
+    useLocalFallback = true;
   }
   throw new Error(`Failed to ${operation}: ${error ? (error.message || error) : 'Unknown error'}`);
 }
@@ -702,10 +764,11 @@ const db = {
           .select('*')
           .single();
         if (error || !data) {
-          throw new Error('Supabase fetch failed');
+          throw new Error(error ? (error.message || 'Supabase fetch failed') : 'Supabase fetch failed');
         }
         cachedSettings = {
           ...data,
+          adminPasscode: data.adminPasscode || '1200',
           seniorAdminPasscode: data.seniorAdminPasscode || '9999'
         };
         lastSettingsFetch = Date.now();
@@ -717,6 +780,9 @@ const db = {
     try {
       await settingsFetchPromise;
     } catch (error) {
+      if (isQuotaOrNetworkError(error)) {
+        useLocalFallback = true;
+      }
       if (cachedSettings) return cachedSettings;
       const local = loadLocalData();
       const s = local.settings || {};
@@ -5684,8 +5750,10 @@ const db = {
       list = (data.bills || []).map(b => normalizeBillRecord(b));
     } else {
       try {
+        const hasNativeCategories = await checkBillsTableNativeCategories();
+        const catCols = hasNativeCategories ? ', categories, totalVerifiedAmount, totalApprovedAmount' : '';
         const listCols = lightweight
-          ? 'id, billNumber, employeeId, employeeName, siteName, billDate, submittedAt, transportationExpense, materialExpense, labourExpense, accommodationExpense, otherExpense, totalClaimedAmount, description, status, verifiedAmount, verifiedBy, verifiedAt, verificationComment, approvedAmount, approvedBy, approvedAt, approvalComment, rejectedBy, rejectedAt, rejectionReason, createdAt, updatedAt'
+          ? `id, billNumber, employeeId, employeeName, siteName, billDate, submittedAt, transportationExpense, materialExpense, labourExpense, accommodationExpense, otherExpense, totalClaimedAmount, description, status, verifiedAmount, verifiedBy, verifiedAt, verificationComment, approvedAmount, approvedBy, approvedAt, approvalComment, rejectedBy, rejectedAt, rejectionReason, auditLog, createdAt, updatedAt${catCols}`
           : '*';
         let query = supabase.from('bills').select(listCols).order('submittedAt', { ascending: false, nullsFirst: false }).range(0, 9999);
         if (employeeId) {
@@ -6762,7 +6830,6 @@ const db = {
     // 1. Fetch active employees
     const allEmployees = await this.getEmployees().catch(() => []);
     const activeEmployees = (allEmployees || []).filter(e => !e.isArchived);
-    const totalEmployees = activeEmployees.length;
 
     // 2. Fetch attendance records for targetDate
     const attendanceRecords = await this.getAttendance(targetDate).catch(() => []);
@@ -6802,6 +6869,7 @@ const db = {
 
     const leaveEmployeesMap = new Map();
     leaveRecords.forEach(r => {
+      if (presentMap.has(r.employeeId)) return;
       const emp = activeEmployees.find(e => e.id === r.employeeId);
       const leaveText = r.performanceNotes ? r.performanceNotes.replace(/^LEAVE:\s*/, '') : 'On Leave';
       leaveEmployeesMap.set(r.employeeId, {
@@ -6813,18 +6881,17 @@ const db = {
     });
 
     activeLeavesToday.forEach(sub => {
-      if (!leaveEmployeesMap.has(sub.employeeId)) {
-        const emp = activeEmployees.find(e => e.id === sub.employeeId);
-        const fd = sub.formData || {};
-        const leaveType = fd.leaveType || 'Leave';
-        const reason = fd.reason || fd.notes || '';
-        leaveEmployeesMap.set(sub.employeeId, {
-          id: sub.employeeId,
-          name: sub.employeeName || (emp ? emp.name : 'Employee'),
-          role: emp ? emp.role : 'Staff',
-          details: `${leaveType}${reason ? ` (${reason})` : ''}`
-        });
-      }
+      if (presentMap.has(sub.employeeId) || leaveEmployeesMap.has(sub.employeeId)) return;
+      const emp = activeEmployees.find(e => e.id === sub.employeeId);
+      const fd = sub.formData || {};
+      const leaveType = fd.leaveType || 'Leave';
+      const reason = fd.reason || fd.notes || '';
+      leaveEmployeesMap.set(sub.employeeId, {
+        id: sub.employeeId,
+        name: sub.employeeName || (emp ? emp.name : 'Employee'),
+        role: emp ? emp.role : 'Staff',
+        details: `${leaveType}${reason ? ` (${reason})` : ''}`
+      });
     });
 
     // Helper to format 12-hour time
@@ -6902,6 +6969,7 @@ const db = {
     }));
 
     const leaveEmployees = Array.from(leaveEmployeesMap.values());
+    const totalEmployees = presentEmployees.length + absentEmployees.length + leaveEmployees.length;
 
     // 5. Fetch bills for targetDate
     let allBills = [];
@@ -7357,6 +7425,7 @@ function normalizeBillRecord(bill) {
     other: otherExpense
   };
 
+  let isSyntheticCategories = false;
   let categories = b.categories;
   if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
     if (Array.isArray(b.auditLog) && b.auditLog.length > 0) {
@@ -7368,6 +7437,7 @@ function normalizeBillRecord(bill) {
   }
 
   if (!categories || typeof categories !== 'object' || Object.keys(categories).length === 0) {
+    isSyntheticCategories = true;
     categories = {};
     const isLegacyVerified = b.status === 'VERIFIED' || b.status === 'APPROVED';
     const isLegacyApproved = b.status === 'APPROVED';
@@ -7487,10 +7557,22 @@ function normalizeBillRecord(bill) {
   const calc = computeBillTotalsAndStatus(categories, b.status);
   b.totalClaimedAmount = calc.totalClaimedAmount;
   b.totalAmount = calc.totalClaimedAmount;
-  b.totalVerifiedAmount = calc.totalVerifiedAmount;
-  b.totalApprovedAmount = calc.totalApprovedAmount;
-  b.verifiedAmount = calc.totalVerifiedAmount;
-  b.approvedAmount = calc.totalApprovedAmount;
+
+  if (isSyntheticCategories) {
+    // If categories had to be synthesized from scratch, preserve any explicitly stored verified/approved amounts
+    const explicitVerified = (b.verifiedAmount !== null && b.verifiedAmount !== undefined) ? Number(b.verifiedAmount) : (b.totalVerifiedAmount !== null && b.totalVerifiedAmount !== undefined ? Number(b.totalVerifiedAmount) : null);
+    const explicitApproved = (b.approvedAmount !== null && b.approvedAmount !== undefined) ? Number(b.approvedAmount) : (b.totalApprovedAmount !== null && b.totalApprovedAmount !== undefined ? Number(b.totalApprovedAmount) : null);
+
+    b.totalVerifiedAmount = explicitVerified !== null ? explicitVerified : calc.totalVerifiedAmount;
+    b.totalApprovedAmount = explicitApproved !== null ? explicitApproved : calc.totalApprovedAmount;
+    b.verifiedAmount = b.totalVerifiedAmount;
+    b.approvedAmount = b.totalApprovedAmount;
+  } else {
+    b.totalVerifiedAmount = calc.totalVerifiedAmount;
+    b.totalApprovedAmount = calc.totalApprovedAmount;
+    b.verifiedAmount = calc.totalVerifiedAmount;
+    b.approvedAmount = calc.totalApprovedAmount;
+  }
   b.status = calc.status;
 
   return b;

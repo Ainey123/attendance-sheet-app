@@ -730,9 +730,18 @@ function stopShiftTimer() {
 // Load employee list into sidebar and select matching ID if specified
 async function loadEmployeesList(selectedId = null) {
   try {
-    allEmployees = await API.getEmployees();
-    // Persist employees to localStorage
-    Store.saveEmployees(allEmployees);
+    const fetched = await API.getEmployees();
+    if (Array.isArray(fetched) && fetched.length > 0) {
+      allEmployees = fetched;
+      Store.saveEmployees(allEmployees);
+    } else {
+      const cached = (typeof Store !== 'undefined' && Store.loadEmployees) ? Store.loadEmployees() : null;
+      if (cached && cached.length > 0) {
+        allEmployees = cached;
+      } else {
+        allEmployees = fetched || [];
+      }
+    }
     renderEmployeePortalList(allEmployees);
     
     if (selectedId) {
@@ -1512,11 +1521,17 @@ function filterAdminLogs(searchText) {
 // TAB 2: Roster profile listings
 async function loadAdminRoster() {
   try {
-    const [employees, todayLogs] = await Promise.all([
-      API.getEmployees(),
+    let [employees, todayLogs] = await Promise.all([
+      API.getEmployees().catch(() => []),
       API.getAttendanceLogs(getLocalDateString()).catch(() => [])
     ]);
-    Store.saveEmployees(employees);
+    if ((!employees || employees.length === 0) && typeof Store !== 'undefined' && Store.loadEmployees) {
+      const cached = Store.loadEmployees();
+      if (cached && cached.length > 0) employees = cached;
+    }
+    if (employees && employees.length > 0) {
+      Store.saveEmployees(employees);
+    }
     const tbody = document.querySelector('#admin-roster-table tbody');
     tbody.innerHTML = '';
 
@@ -6622,22 +6637,26 @@ function renderBillCategoriesTable(bill, isReadOnly) {
     const claimed = Number(cat.claimedAmount || 0);
     const isZeroClaimed = claimed === 0;
 
+    const isCatRejected = cat.status === 'REJECTED' || cat.approvalStatus === 'REJECTED' || cat.verificationStatus === 'REJECTED';
+    const isCatApproved = !isCatRejected && (cat.status === 'APPROVED' || cat.approvalStatus === 'APPROVED');
+    const isCatVerified = !isCatRejected && !isCatApproved && (cat.status === 'VERIFIED' || cat.verificationStatus === 'VERIFIED');
+
     let subNote = '';
-    if (cat.status === 'REJECTED' && cat.rejectionReason) {
+    if (isCatRejected && cat.rejectionReason) {
       subNote = `<div style="font-size:0.75rem; color:#f87171; margin-top:2px;">Rej: ${escapeHtml(cat.rejectionReason)}</div>`;
-    } else if (cat.status === 'APPROVED' && cat.approvedComment) {
-      subNote = `<div style="font-size:0.75rem; color:#86efac; margin-top:2px;">Appr: ${escapeHtml(cat.approvedComment)}</div>`;
-    } else if (cat.status === 'VERIFIED' && cat.verifiedComment) {
-      subNote = `<div style="font-size:0.75rem; color:#93c5fd; margin-top:2px;">Ver: ${escapeHtml(cat.verifiedComment)}</div>`;
+    } else if (isCatApproved && (cat.approvedComment || cat.approvalComment)) {
+      subNote = `<div style="font-size:0.75rem; color:#86efac; margin-top:2px;">Appr: ${escapeHtml(cat.approvedComment || cat.approvalComment)}</div>`;
+    } else if (isCatVerified && (cat.verifiedComment || cat.verificationComment)) {
+      subNote = `<div style="font-size:0.75rem; color:#93c5fd; margin-top:2px;">Ver: ${escapeHtml(cat.verifiedComment || cat.verificationComment)}</div>`;
     }
 
     let verifiedCell = '';
     if (isZeroClaimed) {
       verifiedCell = '<span class="text-muted" style="font-size:0.8rem;">— (N/A)</span>';
-    } else if (cat.status === 'REJECTED') {
+    } else if (isCatRejected) {
       verifiedCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">Rejected (Rs. 0)</span>';
     } else if (cat.verifiedAmount !== null && cat.verifiedAmount !== undefined) {
-      verifiedCell = `<span style="color:#60a5fa; font-weight:700;">Rs. ${cat.verifiedAmount.toLocaleString()}</span>`;
+      verifiedCell = `<span style="color:#60a5fa; font-weight:700;">Rs. ${Number(cat.verifiedAmount).toLocaleString()}</span>`;
     } else {
       verifiedCell = '<span class="badge-bill-submitted" style="font-size:0.75rem;">Pending</span>';
     }
@@ -6645,39 +6664,33 @@ function renderBillCategoriesTable(bill, isReadOnly) {
     let approvedCell = '';
     if (isZeroClaimed) {
       approvedCell = '<span class="text-muted" style="font-size:0.8rem;">— (N/A)</span>';
-    } else if (cat.status === 'REJECTED') {
+    } else if (isCatRejected) {
       approvedCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">Rejected (Rs. 0)</span>';
-    } else if (cat.approvedAmount !== null && cat.approvedAmount !== undefined) {
-      approvedCell = `<span style="color:#4ade80; font-weight:700;">Rs. ${cat.approvedAmount.toLocaleString()}</span>`;
+    } else if (isCatApproved && cat.approvedAmount !== null && cat.approvedAmount !== undefined) {
+      approvedCell = `<span style="color:#4ade80; font-weight:700;">Rs. ${Number(cat.approvedAmount).toLocaleString()}</span>`;
     } else {
       approvedCell = '<span class="text-muted" style="font-size:0.8rem;">—</span>';
     }
 
     let actionsCell = '';
-    if (isReadOnly) {
-      if (isZeroClaimed) {
-        actionsCell = '<span class="text-muted" style="font-size:0.75rem;">N/A</span>';
-      } else if (cat.status === 'APPROVED') {
-        actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
-      } else if (cat.status === 'VERIFIED') {
+    if (isZeroClaimed) {
+      actionsCell = '<span class="text-muted" style="font-size:0.75rem;">N/A</span>';
+    } else if (isCatRejected) {
+      actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Rejected</span>';
+    } else if (isCatApproved) {
+      actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
+    } else if (isReadOnly) {
+      if (isCatVerified) {
         actionsCell = '<span class="badge-bill-verified" style="font-size:0.75rem;">✓ Verified</span>';
-      } else if (cat.status === 'REJECTED') {
-        actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Rejected</span>';
       } else {
         actionsCell = '<span class="badge-bill-submitted" style="font-size:0.75rem;">● Pending</span>';
       }
     } else {
-      if (isZeroClaimed) {
-        actionsCell = '<span class="text-muted" style="font-size:0.75rem;">N/A</span>';
-      } else if (bill.status === 'APPROVED') {
+      if (bill.status === 'APPROVED') {
         actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
       } else if (bill.status === 'REJECTED') {
         actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Bill Rejected</span>';
-      } else if (cat.status === 'REJECTED') {
-        actionsCell = '<span class="badge-bill-rejected" style="font-size:0.75rem;">✖ Rejected</span>';
-      } else if (cat.status === 'APPROVED') {
-        actionsCell = '<span class="badge-bill-approved" style="font-size:0.75rem;">★ Approved</span>';
-      } else if (cat.status === 'VERIFIED') {
+      } else if (isCatVerified) {
         actionsCell = `
           <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap;">
             <button type="button" class="btn btn-sm btn-success" style="padding:0.25rem 0.6rem; font-size:0.75rem; font-weight:600;" onclick="openCategoryActionBox('${c.key}', 'approve')">Approve</button>
