@@ -416,6 +416,40 @@ const API = {
     }),
   approveFormSubmission: (id) => fetchJson(`/api/forms/${id}/approve`, { method: 'POST' }),
 
+  getMaterialSheets: (filters = {}) => {
+    const params = [];
+    if (filters.employeeId) params.push(`employeeId=${encodeURIComponent(filters.employeeId)}`);
+    if (filters.materialType) params.push(`materialType=${encodeURIComponent(filters.materialType)}`);
+    if (filters.employeeName) params.push(`employeeName=${encodeURIComponent(filters.employeeName)}`);
+    if (filters.siteName) params.push(`siteName=${encodeURIComponent(filters.siteName)}`);
+    if (filters.search) params.push(`search=${encodeURIComponent(filters.search)}`);
+    if (filters.startDate) params.push(`startDate=${encodeURIComponent(filters.startDate)}`);
+    if (filters.endDate) params.push(`endDate=${encodeURIComponent(filters.endDate)}`);
+    const qs = params.length ? `?${params.join('&')}` : '';
+    const headers = {};
+    if (adminPasscode) headers['X-Admin-Passcode'] = adminPasscode;
+    if (selectedEmployee && selectedEmployee.id) headers['X-Employee-Id'] = selectedEmployee.id;
+    return fetchJson(`/api/material-sheets${qs}`, { headers });
+  },
+  createMaterialSheet: (data) => fetchJson('/api/material-sheets', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(selectedEmployee && selectedEmployee.id ? { 'X-Employee-Id': selectedEmployee.id } : {})
+    },
+    body: JSON.stringify(data)
+  }),
+  deleteMaterialSheet: (id) => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (adminPasscode) headers['X-Admin-Passcode'] = adminPasscode;
+    if (selectedEmployee && selectedEmployee.id) headers['X-Employee-Id'] = selectedEmployee.id;
+    return fetchJson(`/api/material-sheets/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({ employeeId: selectedEmployee ? selectedEmployee.id : null })
+    });
+  },
+
   getMaterialTransactions: (employeeId) => {
     let url = '/api/materials';
     if (employeeId) url += '?employeeId=' + encodeURIComponent(employeeId);
@@ -1377,6 +1411,8 @@ async function switchAdminTab(tabId) {
     await loadSalarySheet();
   } else if (tabId === 'tab-bills') {
     await loadAdminBills();
+  } else if (tabId === 'tab-material-management') {
+    await loadAdminMaterialSheets();
   } else if (tabId === 'tab-emergency-salary') {
     const picker = document.getElementById('emerg-salary-month');
     const month = (picker && picker.value) || currentSalaryMonth || getCurrentMonthString();
@@ -2251,6 +2287,11 @@ function switchEmployeeTab(tabId) {
     if (selectedEmployee) {
       loadEmployeeComments();
       markMessagesAsRead();
+    }
+  } else if (tabId === 'emp-pane-material') {
+    grid.classList.add('work-record-active');
+    if (selectedEmployee) {
+      initAndLoadEmployeeMaterialPane();
     }
   } else if (tabId === 'emp-pane-my-bills') {
     grid.classList.remove('work-record-active');
@@ -11938,456 +11979,818 @@ window.hasUnsavedSalaryEdits = hasUnsavedSalaryEdits;
 
 
 // ==========================================================================
-// MATERIAL MANAGEMENT (EMPLOYEE & ADMIN)
+// MATERIAL MANAGEMENT — CONSUMABLE & FIXED MATERIAL SHEETS (EMPLOYEE & ADMIN)
 // ==========================================================================
 
-let currentMaterialTransactions = [];
-let pendingMaterialTransaction = null;
+let activeEmpMaterialPortion = 'CONSUMABLE';
+let empMaterialPoints = [
+  { detail: '', quantity: '' },
+  { detail: '', quantity: '' },
+  { detail: '', quantity: '' }
+];
+let empMaterialSheetsCache = [];
+let empMaterialListenersBound = false;
 
-// Convert File to Base64
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    if (!file) return resolve(null);
-    if (file.size > 5 * 1024 * 1024) return reject(new Error('File is too large. Max 5MB allowed.'));
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
-    reader.readAsDataURL(file);
+let adminMaterialSheetsAll = [];
+let activeAdminMatType = 'ALL';
+let adminMaterialListenersBound = false;
+let currentPreviewMaterialSheet = null;
+
+function safeMatEsc(val) {
+  const s = String(val == null ? '' : val);
+  if (typeof escapeHtml === 'function') return escapeHtml(s);
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatFesDisplayDate(dateStr) {
+  if (!dateStr) return '-';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (!isNaN(dt.getTime())) {
+      return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+  }
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? String(dateStr) : parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// Shared official FES Material Sheet card builder (identical pattern for Employee & Admin)
+function buildFesMaterialSheetCardHtml(sheet, { allowDelete = false } = {}) {
+  const isFixed = String(sheet.materialType || '').toUpperCase() === 'FIXED';
+  const badgeClass = isFixed ? 'fixed' : 'consumable';
+  const badgeLabel = isFixed ? '🏗️ Fixed Material' : '🛠️ Material Consumable';
+  const points = Array.isArray(sheet.points) ? sheet.points : [];
+
+  const pointsHtml = points.length > 0
+    ? points.map((pt, i) => {
+        const num = pt.pointNo || (i + 1);
+        const qtyBadge = pt.quantity
+          ? `<span class="fes-pt-qty-pill">${safeMatEsc(pt.quantity)}</span>`
+          : '';
+        return `
+          <li>
+            <div style="display:flex; align-items:baseline; flex:1; min-width:0;">
+              <span class="fes-pt-badge">${num}</span>
+              <span style="word-break:break-word; font-weight:500;">${safeMatEsc(pt.detail)}</span>
+            </div>
+            ${qtyBadge}
+          </li>
+        `;
+      }).join('')
+    : `<li style="color:#64748b;">No points recorded.</li>`;
+
+  const notesHtml = sheet.notes
+    ? `<div style="padding: 0 1.15rem 0.85rem; font-size: 0.8rem; color: #475569;"><strong>Remarks:</strong> ${safeMatEsc(sheet.notes)}</div>`
+    : '';
+
+  const deleteBtnHtml = allowDelete
+    ? `<button type="button" class="btn btn-sm" onclick="handleDeleteFesMaterialSheet('${safeMatEsc(sheet.id)}')" style="padding:0.28rem 0.65rem; font-size:0.74rem; background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; border-radius:6px; font-weight:700; cursor:pointer;">🗑️ Delete</button>`
+    : '';
+
+  return `
+    <div class="fes-sheet-record-card" data-sheet-id="${safeMatEsc(sheet.id)}">
+      <div class="fes-sheet-record-header">
+        <div style="display:flex; align-items:center; gap:0.7rem;">
+          <img src="/fes-logo.png" alt="FES Logo" style="width:48px; height:48px; object-fit:contain; border-radius:50%; background:#fff; border:1.5px solid #cbd5e1; padding:2px;">
+          <div>
+            <div style="font-family:var(--font-title); font-weight:800; font-size:0.98rem; color:#0f172a; text-transform:uppercase; line-height:1.15;">
+              Fast Engineering Solutions
+            </div>
+            <div style="font-size:0.72rem; font-weight:700; color:#dc2626;">
+              ${safeMatEsc(sheet.sheetNumber || 'Official Material Sheet')}
+            </div>
+          </div>
+        </div>
+        <span class="fes-portion-badge ${badgeClass}" style="font-size:0.7rem; padding:0.3rem 0.7rem;">
+          ${badgeLabel}
+        </span>
+      </div>
+
+      <div class="fes-sheet-record-meta">
+        <div class="fes-sheet-meta-item">
+          <span class="fes-sheet-meta-label">👤 Employee Name</span>
+          <span class="fes-sheet-meta-val">${safeMatEsc(sheet.employeeName)}</span>
+        </div>
+        <div class="fes-sheet-meta-item">
+          <span class="fes-sheet-meta-label">📅 Date</span>
+          <span class="fes-sheet-meta-val">${safeMatEsc(formatFesDisplayDate(sheet.date))}</span>
+        </div>
+        <div class="fes-sheet-meta-item">
+          <span class="fes-sheet-meta-label">📍 Site / Side Name</span>
+          <span class="fes-sheet-meta-val" style="color:#b91c1c;">${safeMatEsc(sheet.siteName)}</span>
+        </div>
+      </div>
+
+      <div style="padding: 0.65rem 1.15rem 0; font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #475569;">
+        📋 Material Details (${points.length} ${points.length === 1 ? 'Point' : 'Points'})
+      </div>
+      <ol class="fes-sheet-points-ol">
+        ${pointsHtml}
+      </ol>
+      ${notesHtml}
+
+      <div class="fes-sheet-record-footer">
+        <span>Submitted: ${safeMatEsc(new Date(sheet.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))}</span>
+        <div style="display:flex; gap:0.45rem; align-items:center;">
+          <button type="button" class="btn btn-sm" onclick="openFesMaterialSheetPreview('${safeMatEsc(sheet.id)}')" style="padding:0.28rem 0.68rem; font-size:0.74rem; background:#0f172a; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer;">
+            🖨️ Print / PDF
+          </button>
+          ${deleteBtnHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── EMPLOYEE SIDE LOGIC ─────────────────────────────────────────────────────
+
+function syncEmpMaterialPointValuesFromDom() {
+  const container = document.getElementById('emp-mat-points-container');
+  if (!container) return;
+  const rows = container.querySelectorAll('.fes-point-row');
+  if (rows.length === 0) return;
+  empMaterialPoints = Array.from(rows).map(row => ({
+    detail: row.querySelector('.fes-point-detail-input')?.value || '',
+    quantity: row.querySelector('.fes-point-qty-input')?.value || ''
+  }));
+}
+
+function renderEmpMaterialPointInputs(focusIndex = null) {
+  const container = document.getElementById('emp-mat-points-container');
+  if (!container) return;
+
+  if (!Array.isArray(empMaterialPoints) || empMaterialPoints.length === 0) {
+    empMaterialPoints = [{ detail: '', quantity: '' }, { detail: '', quantity: '' }, { detail: '', quantity: '' }];
+  }
+
+  const isFixed = activeEmpMaterialPortion === 'FIXED';
+  const placeholderExamples = isFixed
+    ? ['Hammer Drill Machine', 'Aluminium Folding Ladder 8ft', 'Welding Plant / Grinder']
+    : ['PVC Insulation Tape', '2.5mm Copper Wire Coil', 'Wall Plugs & Screws Box'];
+
+  container.innerHTML = empMaterialPoints.map((pt, idx) => {
+    const ex = placeholderExamples[idx % placeholderExamples.length];
+    const removeBtn = empMaterialPoints.length > 1
+      ? `<button type="button" class="fes-point-remove-btn" data-remove-idx="${idx}" title="Remove point ${idx + 1}">&times;</button>`
+      : '';
+    return `
+      <div class="fes-point-row" data-pt-index="${idx}">
+        <div class="fes-point-num">${idx + 1}.</div>
+        <input type="text" class="fes-point-detail-input" data-idx="${idx}" value="${safeMatEsc(pt.detail)}" placeholder="Point ${idx + 1}: Material detail (e.g. ${ex})">
+        <input type="text" class="fes-point-qty-input" data-idx="${idx}" value="${safeMatEsc(pt.quantity)}" placeholder="Qty / Unit (opt.)">
+        ${removeBtn}
+      </div>
+    `;
+  }).join('');
+
+  // Bind Enter key to add next point & remove button
+  container.querySelectorAll('.fes-point-detail-input, .fes-point-qty-input').forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        syncEmpMaterialPointValuesFromDom();
+        const idx = Number(inp.getAttribute('data-idx'));
+        if (idx === empMaterialPoints.length - 1) {
+          empMaterialPoints.push({ detail: '', quantity: '' });
+          renderEmpMaterialPointInputs(empMaterialPoints.length - 1);
+        } else {
+          const nextInput = container.querySelector(`.fes-point-detail-input[data-idx="${idx + 1}"]`);
+          if (nextInput) nextInput.focus();
+        }
+      }
+    });
   });
-}
 
-// Format date local
-function formatMaterialDate(d) {
-  if (!d) return '-';
-  return new Date(d).toLocaleDateString();
-}
+  container.querySelectorAll('.fes-point-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncEmpMaterialPointValuesFromDom();
+      const rmIdx = Number(btn.getAttribute('data-remove-idx'));
+      if (empMaterialPoints.length > 1) {
+        empMaterialPoints.splice(rmIdx, 1);
+        renderEmpMaterialPointInputs();
+      }
+    });
+  });
 
-async function loadEmployeeMaterialTransactions() {
-  if (!selectedEmployee) return;
-  try {
-    const res = await API.getMaterialTransactions(selectedEmployee.id);
-    currentMaterialTransactions = res.transactions || [];
-    renderEmployeeMaterialSummary();
-    renderEmployeeMaterialHistory();
-  } catch (e) {
-    console.error('Failed to load materials', e);
+  if (focusIndex !== null) {
+    const targetInput = container.querySelector(`.fes-point-detail-input[data-idx="${focusIndex}"]`);
+    if (targetInput) targetInput.focus();
   }
 }
 
-function renderEmployeeMaterialSummary() {
-  const container = document.getElementById('employee-materials-summary');
-  if (!container) return;
-  container.innerHTML = '';
-  
-  // Group by materialName and get latest APPROVED remaining
-  const latestApproved = {};
-  currentMaterialTransactions.forEach(tx => {
-    if (tx.status === 'APPROVED') {
-      const name = tx.materialName.toUpperCase();
-      if (!latestApproved[name] || new Date(tx.createdAt) > new Date(latestApproved[name].createdAt)) {
-        latestApproved[name] = tx;
+function selectEmpMaterialPortion(portion) {
+  syncEmpMaterialPointValuesFromDom();
+  activeEmpMaterialPortion = portion === 'FIXED' ? 'FIXED' : 'CONSUMABLE';
+
+  const isFixed = activeEmpMaterialPortion === 'FIXED';
+  const portionInput = document.getElementById('emp-mat-portion-value');
+  if (portionInput) portionInput.value = activeEmpMaterialPortion;
+
+  document.querySelectorAll('.fes-portion-card[data-mat-portion]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-mat-portion') === activeEmpMaterialPortion);
+  });
+
+  const subtitle = document.getElementById('emp-mat-sheet-subtitle');
+  if (subtitle) {
+    subtitle.textContent = isFixed
+      ? 'FES — Official Fixed Material Sheet'
+      : 'FES — Official Material Consumable Sheet';
+  }
+
+  const badge = document.getElementById('emp-mat-active-badge');
+  if (badge) {
+    badge.className = `fes-portion-badge ${isFixed ? 'fixed' : 'consumable'}`;
+    badge.textContent = isFixed ? '🏗️ Fixed Material' : '🛠️ Material Consumable';
+  }
+
+  const submitBtn = document.getElementById('btn-emp-submit-mat-sheet');
+  if (submitBtn) {
+    submitBtn.textContent = isFixed
+      ? '✅ Submit Fixed Material Sheet'
+      : '✅ Submit Material Consumable Sheet';
+  }
+
+  const historyHeading = document.getElementById('emp-mat-history-heading');
+  if (historyHeading) {
+    historyHeading.textContent = isFixed
+      ? '📄 My Submitted Fixed Material Sheets'
+      : '📄 My Submitted Material Consumable Sheets';
+  }
+
+  renderEmpMaterialPointInputs();
+  renderEmployeeMaterialSheetsList();
+}
+
+async function loadEmployeeMaterialSheets() {
+  if (!selectedEmployee) return;
+  const listEl = document.getElementById('emp-mat-submitted-list');
+  if (listEl) listEl.innerHTML = '<div class="text-muted" style="font-size:0.88rem;">Loading your material sheets...</div>';
+
+  try {
+    const res = await API.getMaterialSheets({ employeeId: selectedEmployee.id });
+    empMaterialSheetsCache = Array.isArray(res.sheets) ? res.sheets : [];
+    populateSiteAutocompleteSuggestions(empMaterialSheetsCache);
+    renderEmployeeMaterialSheetsList();
+  } catch (err) {
+    console.error('Failed to load employee material sheets:', err);
+    if (listEl) listEl.innerHTML = `<div class="text-danger" style="font-size:0.88rem;">Failed to load sheets: ${safeMatEsc(err.message)}</div>`;
+  }
+}
+
+function renderEmployeeMaterialSheetsList() {
+  const listEl = document.getElementById('emp-mat-submitted-list');
+  if (!listEl) return;
+
+  const filtered = empMaterialSheetsCache.filter(s => s.materialType === activeEmpMaterialPortion);
+  if (filtered.length === 0) {
+    const label = activeEmpMaterialPortion === 'FIXED' ? 'Fixed Material' : 'Material Consumable';
+    listEl.innerHTML = `<div class="text-muted" style="font-size:0.88rem; padding:0.75rem 0;">No <strong>${label}</strong> sheets submitted yet. Fill out the sheet above to submit one.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(s => buildFesMaterialSheetCardHtml(s, { allowDelete: false })).join('');
+}
+
+function populateSiteAutocompleteSuggestions(sheets) {
+  const datalist = document.getElementById('fes-site-suggestions');
+  if (!datalist) return;
+  const sites = new Set();
+  (sheets || []).forEach(s => {
+    if (s.siteName && s.siteName.trim() && s.siteName !== '-') {
+      sites.add(s.siteName.trim());
+    }
+  });
+  datalist.innerHTML = Array.from(sites)
+    .sort((a, b) => a.localeCompare(b))
+    .map(site => `<option value="${safeMatEsc(site)}"></option>`)
+    .join('');
+}
+
+function bindEmpMaterialListenersOnce() {
+  if (empMaterialListenersBound) return;
+  empMaterialListenersBound = true;
+
+  document.getElementById('btn-emp-mat-consumable')?.addEventListener('click', () => {
+    selectEmpMaterialPortion('CONSUMABLE');
+  });
+
+  document.getElementById('btn-emp-mat-fixed')?.addEventListener('click', () => {
+    selectEmpMaterialPortion('FIXED');
+  });
+
+  document.getElementById('btn-emp-add-mat-point')?.addEventListener('click', () => {
+    syncEmpMaterialPointValuesFromDom();
+    empMaterialPoints.push({ detail: '', quantity: '' });
+    renderEmpMaterialPointInputs(empMaterialPoints.length - 1);
+  });
+
+  document.getElementById('btn-emp-refresh-mat-sheets')?.addEventListener('click', () => {
+    loadEmployeeMaterialSheets();
+  });
+
+  document.getElementById('form-emp-material-sheet')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selectedEmployee) {
+      showToast('Please select an employee first.', 'error');
+      return;
+    }
+
+    syncEmpMaterialPointValuesFromDom();
+    const dateVal = document.getElementById('emp-mat-date')?.value || getLocalDateString();
+    const siteVal = (document.getElementById('emp-mat-site')?.value || '').trim();
+    const notesVal = (document.getElementById('emp-mat-notes')?.value || '').trim();
+
+    if (!siteVal) {
+      showToast('Please enter the Site / Side Name.', 'error');
+      document.getElementById('emp-mat-site')?.focus();
+      return;
+    }
+
+    const validPoints = empMaterialPoints
+      .map(p => ({ detail: (p.detail || '').trim(), quantity: (p.quantity || '').trim() }))
+      .filter(p => p.detail || p.quantity);
+
+    if (validPoints.length === 0) {
+      showToast('Please enter at least 1 material detail point.', 'error');
+      return;
+    }
+
+    const submitBtn = document.getElementById('btn-emp-submit-mat-sheet');
+    const origText = submitBtn ? submitBtn.textContent : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting Sheet...';
+    }
+
+    try {
+      await API.createMaterialSheet({
+        employeeId: selectedEmployee.id,
+        employeeName: selectedEmployee.name,
+        materialType: activeEmpMaterialPortion,
+        date: dateVal,
+        siteName: siteVal,
+        points: validPoints,
+        notes: notesVal
+      });
+
+      const portionLabel = activeEmpMaterialPortion === 'FIXED' ? 'Fixed Material' : 'Material Consumable';
+      showToast(`${portionLabel} sheet submitted successfully!`, 'success');
+
+      // Reset form points back to 1, 2, 3 cleanly while keeping today's date
+      empMaterialPoints = [
+        { detail: '', quantity: '' },
+        { detail: '', quantity: '' },
+        { detail: '', quantity: '' }
+      ];
+      const siteInput = document.getElementById('emp-mat-site');
+      const notesInput = document.getElementById('emp-mat-notes');
+      if (siteInput) siteInput.value = '';
+      if (notesInput) notesInput.value = '';
+      renderEmpMaterialPointInputs();
+
+      await loadEmployeeMaterialSheets();
+    } catch (err) {
+      showToast(err.message || 'Failed to submit material sheet', 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = origText;
       }
     }
   });
-  
-  if (Object.keys(latestApproved).length === 0) {
-    container.innerHTML = '<span class="text-muted">No active approved materials</span>';
-    return;
+}
+
+function initAndLoadEmployeeMaterialPane() {
+  bindEmpMaterialListenersOnce();
+  const empNameEl = document.getElementById('emp-mat-emp-name-display');
+  if (empNameEl && selectedEmployee) {
+    empNameEl.textContent = selectedEmployee.name;
   }
-  
-  Object.values(latestApproved).forEach(tx => {
-    const box = document.createElement('div');
-    box.className = 'card';
-    box.style.padding = '10px 15px';
-    box.style.minWidth = '120px';
-    box.innerHTML = `<div style="font-size:0.85rem; color:#666;">${escapeHtml(tx.materialName)}</div>
-                     <div style="font-size:1.5rem; font-weight:bold;">${tx.remainingQuantity}</div>`;
-    container.appendChild(box);
+  const dateInput = document.getElementById('emp-mat-date');
+  if (dateInput && !dateInput.value) {
+    dateInput.value = getLocalDateString();
+  }
+  selectEmpMaterialPortion(activeEmpMaterialPortion);
+  loadEmployeeMaterialSheets();
+}
+
+// Keep backward-compatible alias
+const loadEmployeeMaterialTransactions = initAndLoadEmployeeMaterialPane;
+
+// ── ADMIN SIDE MATERIAL MANAGEMENT (NAME, TENUREWISE & SIDE-WISE SEARCH) ────
+
+function applyAdminMatTenurePreset(preset) {
+  const fromEl = document.getElementById('admin-mat-date-from');
+  const toEl = document.getElementById('admin-mat-date-to');
+  if (!fromEl || !toEl) return;
+
+  const now = new Date();
+  const fmt = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  if (preset === 'ALL') {
+    fromEl.value = '';
+    toEl.value = '';
+  } else if (preset === 'TODAY') {
+    const t = getLocalDateString();
+    fromEl.value = t;
+    toEl.value = t;
+  } else if (preset === 'LAST_7_DAYS') {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 6);
+    fromEl.value = fmt(start);
+    toEl.value = fmt(now);
+  } else if (preset === 'THIS_MONTH') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    fromEl.value = fmt(start);
+    toEl.value = fmt(end);
+  } else if (preset === 'LAST_MONTH') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    fromEl.value = fmt(start);
+    toEl.value = fmt(end);
+  } else if (preset === 'LAST_3_MONTHS') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    fromEl.value = fmt(start);
+    toEl.value = fmt(end);
+  } else if (preset === 'THIS_YEAR') {
+    fromEl.value = `${now.getFullYear()}-01-01`;
+    toEl.value = `${now.getFullYear()}-12-31`;
+  }
+}
+
+function bindAdminMaterialListenersOnce() {
+  if (adminMaterialListenersBound) return;
+  adminMaterialListenersBound = true;
+
+  document.querySelectorAll('.admin-mat-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeAdminMatType = btn.getAttribute('data-admin-mat-type') || 'ALL';
+      document.querySelectorAll('.admin-mat-type-btn').forEach(b => {
+        const isAct = b.getAttribute('data-admin-mat-type') === activeAdminMatType;
+        b.classList.toggle('active', isAct);
+        b.classList.toggle('btn-primary', isAct);
+        b.classList.toggle('btn-secondary', !isAct);
+      });
+      renderFilteredAdminMaterialSheets();
+    });
+  });
+
+  ['admin-mat-emp-select', 'admin-mat-site-select'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      renderFilteredAdminMaterialSheets();
+    });
+  });
+
+  ['admin-mat-name-search', 'admin-mat-site-search'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => {
+      renderFilteredAdminMaterialSheets();
+    });
+  });
+
+  document.getElementById('admin-mat-tenure-preset')?.addEventListener('change', (e) => {
+    applyAdminMatTenurePreset(e.target.value);
+    renderFilteredAdminMaterialSheets();
+  });
+
+  ['admin-mat-date-from', 'admin-mat-date-to'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      const presetEl = document.getElementById('admin-mat-tenure-preset');
+      if (presetEl) presetEl.value = 'CUSTOM';
+      renderFilteredAdminMaterialSheets();
+    });
+  });
+
+  document.getElementById('btn-admin-mat-reset')?.addEventListener('click', () => {
+    activeAdminMatType = 'ALL';
+    document.querySelectorAll('.admin-mat-type-btn').forEach(b => {
+      const isAct = b.getAttribute('data-admin-mat-type') === 'ALL';
+      b.classList.toggle('active', isAct);
+      b.classList.toggle('btn-primary', isAct);
+      b.classList.toggle('btn-secondary', !isAct);
+    });
+    const empSel = document.getElementById('admin-mat-emp-select');
+    const nameInp = document.getElementById('admin-mat-name-search');
+    const siteSel = document.getElementById('admin-mat-site-select');
+    const siteInp = document.getElementById('admin-mat-site-search');
+    const tenureSel = document.getElementById('admin-mat-tenure-preset');
+    const fromInp = document.getElementById('admin-mat-date-from');
+    const toInp = document.getElementById('admin-mat-date-to');
+    if (empSel) empSel.value = '';
+    if (nameInp) nameInp.value = '';
+    if (siteSel) siteSel.value = '';
+    if (siteInp) siteInp.value = '';
+    if (tenureSel) tenureSel.value = 'ALL';
+    if (fromInp) fromInp.value = '';
+    if (toInp) toInp.value = '';
+    renderFilteredAdminMaterialSheets();
   });
 }
 
-function renderEmployeeMaterialHistory() {
-  const tbody = document.querySelector('#emp-material-history-table tbody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  if (currentMaterialTransactions.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No transactions found</td></tr>';
-    return;
-  }
-  
-  currentMaterialTransactions.forEach(tx => {
-    const tr = document.createElement('tr');
-    
-    // Status Badge
-    let statBadge = '';
-    if (tx.status === 'PENDING_VERIFICATION') statBadge = '<span class="badge bg-warning text-dark">Pending Verif</span>';
-    else if (tx.status === 'VERIFIED') statBadge = '<span class="badge bg-info">Verified</span>';
-    else if (tx.status === 'APPROVED') statBadge = '<span class="badge bg-success">Approved</span>';
-    else if (tx.status === 'REJECTED') statBadge = '<span class="badge bg-danger">Rejected</span>';
-    
-    tr.innerHTML = `
-      <td>${formatMaterialDate(tx.createdAt)}</td>
-      <td>${escapeHtml(tx.materialName)}</td>
-      <td>${tx.previousApprovedRemaining}</td>
-      <td><span class="text-success">+${tx.inwardQuantity}</span></td>
-      <td><span class="text-danger">-${tx.outwardQuantity}</span></td>
-      <td><strong>${tx.remainingQuantity}</strong></td>
-      <td>${statBadge}</td>
-      <td style="font-size:0.85rem; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(tx.remainingComment || '')}">${escapeHtml(tx.remainingComment || '-')}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
+async function loadAdminMaterialSheets() {
+  bindAdminMaterialListenersOnce();
+  const container = document.getElementById('admin-mat-sheets-container');
+  if (container) container.innerHTML = '<div class="text-muted">Loading material sheets...</div>';
 
-// Setup Wizard
-const btnNewMaterial = document.getElementById('btn-new-material-tx');
-if (btnNewMaterial) {
-  btnNewMaterial.addEventListener('click', () => {
-    document.getElementById('mat-wizard-step-1').classList.remove('hidden');
-    document.getElementById('mat-wizard-step-2').classList.add('hidden');
-    document.getElementById('mat-wizard-step-3').classList.add('hidden');
-    
-    document.getElementById('mat-wiz-name').value = '';
-    document.getElementById('mat-wiz-inward').value = '0';
-    document.getElementById('mat-wiz-inward-date').value = getLocalDateString();
-    document.getElementById('mat-wiz-inward-comment').value = '';
-    document.getElementById('mat-wiz-inward-file').value = '';
-    document.getElementById('mat-wiz-outward').value = '0';
-    document.getElementById('mat-wiz-outward-date').value = getLocalDateString();
-    document.getElementById('mat-wiz-outward-comment').value = '';
-    document.getElementById('mat-wiz-outward-file').value = '';
-    document.getElementById('mat-wiz-rem-comment').value = '';
-    document.getElementById('mat-wiz-rem-file').value = '';
-    
-    document.getElementById('mat-wiz-lock-warning').classList.add('hidden');
-    document.getElementById('mat-wiz-next-1').disabled = false;
-    
-    document.getElementById('modal-material-wizard').classList.remove('hidden');
-  });
-}
-
-document.getElementById('mat-wiz-name')?.addEventListener('input', (e) => {
-  const name = e.target.value.trim().toUpperCase();
-  const hasPending = currentMaterialTransactions.some(t => t.materialName.toUpperCase() === name && (t.status === 'PENDING_VERIFICATION' || t.status === 'VERIFIED'));
-  
-  if (hasPending) {
-    document.getElementById('mat-wiz-lock-warning').classList.remove('hidden');
-    document.getElementById('mat-wiz-next-1').disabled = true;
-  } else {
-    document.getElementById('mat-wiz-lock-warning').classList.add('hidden');
-    document.getElementById('mat-wiz-next-1').disabled = false;
-  }
-});
-
-document.getElementById('mat-wiz-next-1')?.addEventListener('click', () => {
-  const name = document.getElementById('mat-wiz-name').value.trim();
-  if (!name) return showToast('Please enter Material Name', 'error');
-  
-  document.getElementById('mat-wizard-step-1').classList.add('hidden');
-  document.getElementById('mat-wizard-step-2').classList.remove('hidden');
-});
-
-document.getElementById('mat-wiz-prev-2')?.addEventListener('click', () => {
-  document.getElementById('mat-wizard-step-2').classList.add('hidden');
-  document.getElementById('mat-wizard-step-1').classList.remove('hidden');
-});
-
-document.getElementById('mat-wiz-next-2')?.addEventListener('click', () => {
-  document.getElementById('mat-wizard-step-2').classList.add('hidden');
-  document.getElementById('mat-wizard-step-3').classList.remove('hidden');
-  
-  // Calculate Remaining
-  const name = document.getElementById('mat-wiz-name').value.trim().toUpperCase();
-  const inQty = Number(document.getElementById('mat-wiz-inward').value) || 0;
-  const outQty = Number(document.getElementById('mat-wiz-outward').value) || 0;
-  
-  let prevRem = 0;
-  const approvedForMat = currentMaterialTransactions.filter(t => t.materialName.toUpperCase() === name && t.status === 'APPROVED');
-  if (approvedForMat.length > 0) {
-    prevRem = Number(approvedForMat[0].remainingQuantity || 0);
-  }
-  
-  document.getElementById('mat-wiz-prev-rem').innerText = prevRem;
-  document.getElementById('mat-wiz-disp-in').innerText = inQty;
-  document.getElementById('mat-wiz-disp-out').innerText = outQty;
-  
-  const totalAvailable = prevRem + inQty;
-  document.getElementById('mat-wiz-calc-rem').innerText = totalAvailable - outQty;
-  
-  if (outQty > totalAvailable) {
-    showToast('Outward quantity exceeds available quantity!', 'error');
-    document.getElementById('mat-wiz-calc-rem').classList.add('text-danger');
-  } else {
-    document.getElementById('mat-wiz-calc-rem').classList.remove('text-danger');
-  }
-});
-
-document.getElementById('mat-wiz-prev-3')?.addEventListener('click', () => {
-  document.getElementById('mat-wizard-step-3').classList.add('hidden');
-  document.getElementById('mat-wizard-step-2').classList.remove('hidden');
-});
-
-document.getElementById('mat-wiz-submit')?.addEventListener('click', async () => {
-  const btn = document.getElementById('mat-wiz-submit');
-  btn.disabled = true;
-  btn.innerText = 'Submitting...';
-  
   try {
-    const inFile = document.getElementById('mat-wiz-inward-file').files[0];
-    const outFile = document.getElementById('mat-wiz-outward-file').files[0];
-    const remFile = document.getElementById('mat-wiz-rem-file').files[0];
-    
-    const attachments = [];
-    if (inFile) attachments.push({ step: 'INWARD', fileType: inFile.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(inFile) });
-    if (outFile) attachments.push({ step: 'OUTWARD', fileType: outFile.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(outFile) });
-    if (remFile) attachments.push({ step: 'REMAINING', fileType: remFile.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(remFile) });
-    
-    const payload = {
-      employeeId: selectedEmployee.id,
-      employeeName: selectedEmployee.name,
-      materialName: document.getElementById('mat-wiz-name').value.trim(),
-      inwardQuantity: Number(document.getElementById('mat-wiz-inward').value) || 0,
-      inwardDate: document.getElementById('mat-wiz-inward-date').value,
-      inwardComment: document.getElementById('mat-wiz-inward-comment').value,
-      outwardQuantity: Number(document.getElementById('mat-wiz-outward').value) || 0,
-      outwardDate: document.getElementById('mat-wiz-outward-date').value,
-      outwardComment: document.getElementById('mat-wiz-outward-comment').value,
-      remainingComment: document.getElementById('mat-wiz-rem-comment').value,
-      attachments
-    };
-    
-    await API.addMaterialTransaction(payload);
-    showToast('Transaction submitted successfully!', 'success');
-    document.getElementById('modal-material-wizard').classList.add('hidden');
-    loadEmployeeMaterialTransactions();
+    const [sheetsRes, employeesList] = await Promise.all([
+      API.getMaterialSheets(),
+      API.getEmployees().catch(() => [])
+    ]);
+
+    adminMaterialSheetsAll = Array.isArray(sheetsRes.sheets) ? sheetsRes.sheets : [];
+
+    // Populate Employee Dropdown
+    const empSel = document.getElementById('admin-mat-emp-select');
+    if (empSel) {
+      const prevEmp = empSel.value;
+      const empMap = new Map();
+      (employeesList || []).forEach(e => {
+        if (e && e.id && e.name) empMap.set(e.id, e.name);
+      });
+      adminMaterialSheetsAll.forEach(s => {
+        if (s.employeeId && s.employeeName && !empMap.has(s.employeeId)) {
+          empMap.set(s.employeeId, s.employeeName);
+        }
+      });
+      const sortedEmps = Array.from(empMap.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+      empSel.innerHTML = '<option value="">All Employees</option>' +
+        sortedEmps.map(([id, name]) => `<option value="${safeMatEsc(id)}">${safeMatEsc(name)}</option>`).join('');
+      if (prevEmp && empMap.has(prevEmp)) empSel.value = prevEmp;
+    }
+
+    // Populate Site / Side Dropdown
+    const siteSel = document.getElementById('admin-mat-site-select');
+    if (siteSel) {
+      const prevSite = siteSel.value;
+      const uniqueSites = Array.from(new Set(
+        adminMaterialSheetsAll
+          .map(s => String(s.siteName || '').trim())
+          .filter(s => s && s !== '-')
+      )).sort((a, b) => a.localeCompare(b));
+
+      siteSel.innerHTML = '<option value="">All Sites / Sides</option>' +
+        uniqueSites.map(site => `<option value="${safeMatEsc(site)}">${safeMatEsc(site)}</option>`).join('');
+      if (prevSite && uniqueSites.includes(prevSite)) siteSel.value = prevSite;
+    }
+
+    populateSiteAutocompleteSuggestions(adminMaterialSheetsAll);
+    renderFilteredAdminMaterialSheets();
   } catch (err) {
-    showToast(err.message || 'Failed to submit', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerText = 'SUBMIT MATERIAL';
-  }
-});
-
-// Watch for tab change to load materials
-document.addEventListener('click', (e) => {
-  if (e.target.matches('[data-emp-tab="emp-pane-material"]')) {
-    loadEmployeeMaterialTransactions();
-  }
-});
-
-
-// ADMIN SIDE MATERIAL MANAGEMENT
-let adminMaterialTxs = [];
-let currentReviewTx = null;
-
-async function loadAdminMaterialTransactions() {
-  const tbody = document.querySelector('#admin-material-table tbody');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="9" class="text-center">Loading...</td></tr>';
-  
-  try {
-    const res = await API.getMaterialTransactions();
-    adminMaterialTxs = res.transactions || [];
-    renderAdminMaterialTable();
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">${escapeHtml(err.message)}</td></tr>`;
+    console.error('Failed to load admin material sheets:', err);
+    if (container) {
+      container.innerHTML = `<div class="text-danger">Failed to load material sheets: ${safeMatEsc(err.message)}</div>`;
+    }
   }
 }
 
-function renderAdminMaterialTable() {
-  const tbody = document.querySelector('#admin-material-table tbody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  
-  if (adminMaterialTxs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No transactions found</td></tr>';
+window.loadAdminMaterialSheets = loadAdminMaterialSheets;
+const loadAdminMaterialTransactions = loadAdminMaterialSheets;
+
+function getFilteredAdminMaterialSheets() {
+  const empId = document.getElementById('admin-mat-emp-select')?.value || '';
+  const nameQuery = (document.getElementById('admin-mat-name-search')?.value || '').trim().toLowerCase();
+  const siteSelectVal = (document.getElementById('admin-mat-site-select')?.value || '').trim().toLowerCase();
+  const siteSearchVal = (document.getElementById('admin-mat-site-search')?.value || '').trim().toLowerCase();
+  const dateFrom = document.getElementById('admin-mat-date-from')?.value || '';
+  const dateTo = document.getElementById('admin-mat-date-to')?.value || '';
+
+  // First filter by search criteria (excluding portion tab so portion tab counters reflect active search!)
+  const baseMatches = adminMaterialSheetsAll.filter(s => {
+    if (empId && s.employeeId !== empId) return false;
+    if (nameQuery && !String(s.employeeName || '').toLowerCase().includes(nameQuery)) return false;
+    if (siteSelectVal && String(s.siteName || '').trim().toLowerCase() !== siteSelectVal) return false;
+    if (siteSearchVal && !String(s.siteName || '').toLowerCase().includes(siteSearchVal)) return false;
+    if (dateFrom && s.date < dateFrom) return false;
+    if (dateTo && s.date > dateTo) return false;
+    return true;
+  });
+
+  // Update portion counters
+  const consCount = baseMatches.filter(s => s.materialType === 'CONSUMABLE').length;
+  const fixedCount = baseMatches.filter(s => s.materialType === 'FIXED').length;
+  const elAll = document.getElementById('admin-mat-count-all');
+  const elCons = document.getElementById('admin-mat-count-consumable');
+  const elFix = document.getElementById('admin-mat-count-fixed');
+  if (elAll) elAll.textContent = baseMatches.length;
+  if (elCons) elCons.textContent = consCount;
+  if (elFix) elFix.textContent = fixedCount;
+
+  if (activeAdminMatType === 'CONSUMABLE') {
+    return baseMatches.filter(s => s.materialType === 'CONSUMABLE');
+  }
+  if (activeAdminMatType === 'FIXED') {
+    return baseMatches.filter(s => s.materialType === 'FIXED');
+  }
+  return baseMatches;
+}
+
+function renderFilteredAdminMaterialSheets() {
+  const container = document.getElementById('admin-mat-sheets-container');
+  const summaryEl = document.getElementById('admin-mat-results-summary');
+  if (!container) return;
+
+  const filtered = getFilteredAdminMaterialSheets();
+  const consCount = filtered.filter(s => s.materialType === 'CONSUMABLE').length;
+  const fixedCount = filtered.filter(s => s.materialType === 'FIXED').length;
+  const uniqueSites = new Set(filtered.map(s => String(s.siteName || '').trim()).filter(Boolean)).size;
+
+  if (summaryEl) {
+    summaryEl.innerHTML = `Showing <strong style="color:#fff;">${filtered.length}</strong> Material Sheet(s) &bull; 🛠️ Consumable: <strong style="color:#34d399;">${consCount}</strong> &bull; 🏗️ Fixed: <strong style="color:#60a5fa;">${fixedCount}</strong> &bull; 📍 Sites: <strong style="color:#fbbf24;">${uniqueSites}</strong>`;
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; padding: 2.5rem 1rem; background: rgba(15,23,42,0.45); border: 1px dashed rgba(255,255,255,0.15); border-radius: 12px; color: #94a3b8;">
+        No material sheets match the current Name / Tenurewise / Site-wise filters.
+      </div>
+    `;
     return;
   }
-  
-  adminMaterialTxs.forEach(tx => {
-    const tr = document.createElement('tr');
-    
-    let statBadge = '';
-    if (tx.status === 'PENDING_VERIFICATION') statBadge = '<span class="badge bg-warning text-dark">Pending Verif</span>';
-    else if (tx.status === 'VERIFIED') statBadge = '<span class="badge bg-info">Verified</span>';
-    else if (tx.status === 'APPROVED') statBadge = '<span class="badge bg-success">Approved</span>';
-    else if (tx.status === 'REJECTED') statBadge = '<span class="badge bg-danger">Rejected</span>';
-    
-    let actBtn = '';
-    if (tx.status === 'PENDING_VERIFICATION') actBtn = `<button class="btn btn-sm btn-primary" onclick="openAdminReviewModal('${tx.id}')">Verify</button>`;
-    else if (tx.status === 'VERIFIED') actBtn = `<button class="btn btn-sm btn-success" onclick="openAdminReviewModal('${tx.id}')">Approve</button>`;
-    else actBtn = `<button class="btn btn-sm btn-outline-secondary" onclick="openAdminReviewModal('${tx.id}')">View</button>`;
-    
-    tr.innerHTML = `
-      <td>${escapeHtml(tx.employeeName)}</td>
-      <td>${escapeHtml(tx.materialName)}</td>
-      <td>${formatMaterialDate(tx.createdAt)}</td>
-      <td>${tx.previousApprovedRemaining}</td>
-      <td>+${tx.inwardQuantity}</td>
-      <td>-${tx.outwardQuantity}</td>
-      <td><strong>${tx.remainingQuantity}</strong></td>
-      <td>${statBadge}</td>
-      <td>${actBtn}</td>
-    `;
-    tbody.appendChild(tr);
-  });
+
+  container.innerHTML = filtered.map(s => buildFesMaterialSheetCardHtml(s, { allowDelete: true })).join('');
 }
 
-window.openAdminReviewModal = function(id) {
-  currentReviewTx = adminMaterialTxs.find(t => t.id === id);
-  if (!currentReviewTx) return;
-  
-  const tx = currentReviewTx;
-  document.getElementById('mat-admin-title').innerText = tx.status === 'PENDING_VERIFICATION' ? 'Verify Transaction' : (tx.status === 'VERIFIED' ? 'Approve Transaction' : 'View Transaction');
-  
-  let detailsHtml = `
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-      <div><strong>Employee:</strong> ${escapeHtml(tx.employeeName)}</div>
-      <div><strong>Material:</strong> ${escapeHtml(tx.materialName)}</div>
-      <div><strong>Date:</strong> ${formatMaterialDate(tx.createdAt)}</div>
-      <div><strong>Status:</strong> ${escapeHtml(tx.status)}</div>
+// ── SINGLE SHEET PREVIEW, PRINT/PDF, DELETE & BULK EXPORTS ──────────────────
+
+function findMaterialSheetById(sheetId) {
+  return adminMaterialSheetsAll.find(s => s.id === sheetId) ||
+         empMaterialSheetsCache.find(s => s.id === sheetId) ||
+         null;
+}
+
+function buildPrintableSheetInnerHtml(sheet) {
+  const isFixed = String(sheet.materialType || '').toUpperCase() === 'FIXED';
+  const portionTitle = isFixed ? 'FIXED MATERIAL SHEET' : 'MATERIAL CONSUMABLE SHEET';
+  const badgeBg = isFixed ? '#dbeafe' : '#d1fae5';
+  const badgeColor = isFixed ? '#1d4ed8' : '#047857';
+  const points = Array.isArray(sheet.points) ? sheet.points : [];
+
+  const rowsHtml = points.map((pt, idx) => `
+    <tr>
+      <td style="padding:8px 10px; border:1px solid #cbd5e1; width:55px; text-align:center; font-weight:700;">${pt.pointNo || (idx + 1)}</td>
+      <td style="padding:8px 12px; border:1px solid #cbd5e1; font-weight:500;">${safeMatEsc(pt.detail)}</td>
+      <td style="padding:8px 12px; border:1px solid #cbd5e1; width:140px; text-align:center; font-weight:600;">${safeMatEsc(pt.quantity || '-')}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div style="font-family:'Inter', Arial, sans-serif; color:#0f172a; background:#ffffff; border:2px solid #0f172a; border-top:6px solid #dc2626; border-radius:8px; padding:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #e2e8f0; padding-bottom:14px; margin-bottom:16px; gap:12px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <img src="${window.location.origin}/fes-logo.png" alt="FES Logo" style="width:74px; height:74px; object-fit:contain; border-radius:50%; border:2px solid #e2e8f0; padding:2px;">
+          <div>
+            <div style="font-size:1.35rem; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:0.02em;">Fast Engineering Solutions</div>
+            <div style="font-size:0.85rem; font-weight:700; color:#dc2626; margin-top:2px;">${portionTitle}</div>
+            <div style="font-size:0.75rem; color:#64748b; margin-top:2px;">Ref: ${safeMatEsc(sheet.sheetNumber || sheet.id)}</div>
+          </div>
+        </div>
+        <div style="background:${badgeBg}; color:${badgeColor}; padding:6px 14px; border-radius:999px; font-weight:800; font-size:0.8rem;">
+          ${portionTitle}
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px 14px; margin-bottom:16px;">
+        <div>
+          <div style="font-size:0.7rem; font-weight:700; color:#64748b; text-transform:uppercase;">Employee Name</div>
+          <div style="font-size:0.95rem; font-weight:700; color:#0f172a; margin-top:2px;">${safeMatEsc(sheet.employeeName)}</div>
+        </div>
+        <div>
+          <div style="font-size:0.7rem; font-weight:700; color:#64748b; text-transform:uppercase;">Date</div>
+          <div style="font-size:0.95rem; font-weight:700; color:#0f172a; margin-top:2px;">${safeMatEsc(formatFesDisplayDate(sheet.date))}</div>
+        </div>
+        <div>
+          <div style="font-size:0.7rem; font-weight:700; color:#64748b; text-transform:uppercase;">Site / Side Name</div>
+          <div style="font-size:0.95rem; font-weight:800; color:#dc2626; margin-top:2px;">${safeMatEsc(sheet.siteName)}</div>
+        </div>
+      </div>
+
+      <table style="width:100%; border-collapse:collapse; font-size:0.9rem; margin-bottom:14px;">
+        <thead>
+          <tr style="background:#0f172a; color:#ffffff;">
+            <th style="padding:8px 10px; border:1px solid #0f172a; text-align:center;">Point #</th>
+            <th style="padding:8px 12px; border:1px solid #0f172a; text-align:left;">Material Details</th>
+            <th style="padding:8px 12px; border:1px solid #0f172a; text-align:center;">Qty / Unit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      ${sheet.notes ? `<div style="font-size:0.85rem; padding:8px 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;"><strong>Remarks:</strong> ${safeMatEsc(sheet.notes)}</div>` : ''}
     </div>
-    <hr>
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-      <div><strong>Prev Remaining:</strong> ${tx.previousApprovedRemaining}</div>
-      <div><strong>Inward:</strong> +${tx.inwardQuantity}</div>
-      <div><strong>Outward:</strong> -${tx.outwardQuantity}</div>
-      <div><strong class="text-primary">New Remaining:</strong> ${tx.remainingQuantity}</div>
-    </div>
-    <hr>
-    <div><strong>Employee Comments:</strong></div>
-    <div><small>Inward: ${escapeHtml(tx.inwardComment || '-')}</small></div>
-    <div><small>Outward: ${escapeHtml(tx.outwardComment || '-')}</small></div>
-    <div><small>Remaining: ${escapeHtml(tx.remainingComment || '-')}</small></div>
   `;
-  
-  if (tx.status === 'VERIFIED' && tx.verification) {
-    detailsHtml += `
-      <hr>
-      <div style="background:#e9f7ef; padding:8px; border-radius:4px;">
-        <strong>Admin 1 Verification</strong><br>
-        <small>Verified By: ${escapeHtml(tx.verification.verifiedBy)}</small><br>
-        <small>Comment: ${escapeHtml(tx.verification.verificationComment || '-')}</small>
-      </div>
-    `;
+}
+
+window.openFesMaterialSheetPreview = function(sheetId) {
+  const sheet = findMaterialSheetById(sheetId);
+  if (!sheet) return;
+  currentPreviewMaterialSheet = sheet;
+  const bodyEl = document.getElementById('fes-sheet-preview-body');
+  const modalEl = document.getElementById('modal-fes-sheet-preview');
+  if (bodyEl && modalEl) {
+    bodyEl.innerHTML = buildPrintableSheetInnerHtml(sheet);
+    modalEl.classList.remove('hidden');
   }
-  
-  if (tx.status === 'APPROVED' && tx.approval) {
-    detailsHtml += `
-      <hr>
-      <div style="background:#d4edda; padding:8px; border-radius:4px;">
-        <strong>Senior Admin Approval</strong><br>
-        <small>Approved By: ${escapeHtml(tx.approval.approvedBy)}</small><br>
-        <small>Comment: ${escapeHtml(tx.approval.approvalComment || '-')}</small>
-      </div>
-    `;
-  }
-  
-  document.getElementById('mat-admin-details').innerHTML = detailsHtml;
-  
-  document.getElementById('mat-admin-comment').value = '';
-  document.getElementById('mat-admin-file').value = '';
-  
-  if (tx.status === 'VERIFIED') {
-    document.getElementById('mat-admin-senior-passcode-group').classList.remove('hidden');
-    document.getElementById('mat-admin-senior-passcode').value = '';
-  } else {
-    document.getElementById('mat-admin-senior-passcode-group').classList.add('hidden');
-  }
-  
-  const actionBtn = document.getElementById('mat-admin-action-btn');
-  const rejectBtn = document.getElementById('mat-admin-reject-btn');
-  
-  if (tx.status === 'PENDING_VERIFICATION') {
-    actionBtn.innerText = 'VERIFY';
-    actionBtn.className = 'btn btn-primary';
-    actionBtn.classList.remove('hidden');
-    rejectBtn.classList.remove('hidden');
-  } else if (tx.status === 'VERIFIED') {
-    actionBtn.innerText = 'APPROVE';
-    actionBtn.className = 'btn btn-success';
-    actionBtn.classList.remove('hidden');
-    rejectBtn.classList.remove('hidden');
-  } else {
-    actionBtn.classList.add('hidden');
-    rejectBtn.classList.add('hidden');
-  }
-  
-  document.getElementById('modal-material-admin').classList.remove('hidden');
 };
 
-document.getElementById('mat-admin-action-btn')?.addEventListener('click', async () => {
-  if (!currentReviewTx) return;
-  const tx = currentReviewTx;
-  const btn = document.getElementById('mat-admin-action-btn');
-  btn.disabled = true;
-  btn.innerText = 'Processing...';
-  
-  try {
-    const file = document.getElementById('mat-admin-file').files[0];
-    let attachments = [];
-    if (file) {
-      attachments.push({ fileType: file.type.includes('pdf') ? 'application/pdf' : 'image/jpeg', fileData: await fileToBase64(file) });
-    }
-    
-    if (tx.status === 'PENDING_VERIFICATION') {
-      await API.verifyMaterialTransaction(tx.id, {
-        verifiedBy: 'Admin 1',
-        verificationComment: document.getElementById('mat-admin-comment').value,
-        attachments
-      });
-      showToast('Transaction Verified', 'success');
-    } else if (tx.status === 'VERIFIED') {
-      const seniorPass = document.getElementById('mat-admin-senior-passcode').value;
-      if (!seniorPass) throw new Error('Senior Admin Passcode is required');
-      await API.approveMaterialTransaction(tx.id, {
-        seniorPasscode: seniorPass,
-        approvedBy: 'Senior Admin',
-        approvalComment: document.getElementById('mat-admin-comment').value,
-        attachments
-      });
-      showToast('Transaction Approved', 'success');
-    }
-    document.getElementById('modal-material-admin').classList.add('hidden');
-    loadAdminMaterialTransactions();
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    btn.disabled = false;
+window.printSingleFesMaterialSheet = function() {
+  if (!currentPreviewMaterialSheet) return;
+  const html = buildPrintableSheetInnerHtml(currentPreviewMaterialSheet);
+  const win = window.open('', '_blank', 'width=850,height=900');
+  if (!win) {
+    showToast('Please allow pop-ups to print/save PDF.', 'warning');
+    return;
   }
-});
+  win.document.write(`<!DOCTYPE html><html><head><title>${safeMatEsc(currentPreviewMaterialSheet.sheetNumber || 'FES Material Sheet')}</title></head><body style="margin:24px; background:#fff;">${html}<script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script></body></html>`);
+  win.document.close();
+};
 
-document.getElementById('mat-admin-reject-btn')?.addEventListener('click', async () => {
-  if (!currentReviewTx) return;
-  const tx = currentReviewTx;
-  const btn = document.getElementById('mat-admin-reject-btn');
-  
-  const comment = document.getElementById('mat-admin-comment').value;
-  if (!comment) return showToast('Rejection comment is required', 'error');
-  
-  btn.disabled = true;
-  btn.innerText = 'Rejecting...';
-  
+window.handleDeleteFesMaterialSheet = async function(sheetId) {
+  if (!confirm('Are you sure you want to delete this Material Sheet?')) return;
   try {
-    await API.rejectMaterialTransaction(tx.id, {
-      rejectedBy: tx.status === 'VERIFIED' ? 'Senior Admin' : 'Admin 1',
-      rejectionComment: comment
-    });
-    showToast('Transaction Rejected', 'success');
-    document.getElementById('modal-material-admin').classList.add('hidden');
-    loadAdminMaterialTransactions();
+    await API.deleteMaterialSheet(sheetId);
+    showToast('Material sheet deleted.', 'success');
+    await loadAdminMaterialSheets();
   } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerText = 'REJECT';
+    showToast(err.message || 'Failed to delete material sheet', 'error');
   }
-});
+};
 
-// Watch Admin Tab
+window.exportAdminMaterialSheetsPDF = function() {
+  const filtered = getFilteredAdminMaterialSheets();
+  if (filtered.length === 0) {
+    showToast('No material sheets match current filters to export.', 'warning');
+    return;
+  }
+  const pagesHtml = filtered.map(s => `<div style="margin-bottom:24px; page-break-inside:avoid;">${buildPrintableSheetInnerHtml(s)}</div>`).join('');
+  const win = window.open('', '_blank', 'width=900,height=950');
+  if (!win) {
+    showToast('Please allow pop-ups to export PDF.', 'warning');
+    return;
+  }
+  win.document.write(`<!DOCTYPE html><html><head><title>Fast Engineering Solutions — Material Sheets Report</title></head><body style="margin:24px; background:#fff;">${pagesHtml}<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>`);
+  win.document.close();
+};
+
+window.exportAdminMaterialSheetsCSV = function() {
+  const filtered = getFilteredAdminMaterialSheets();
+  if (filtered.length === 0) {
+    showToast('No material sheets match current filters to export.', 'warning');
+    return;
+  }
+
+  const headers = ['S.No', 'Sheet Ref', 'Portion Type', 'Date', 'Employee Name', 'Site / Side Name', 'Material Points', 'Remarks'];
+  const rows = [headers.join(',')];
+
+  filtered.forEach((s, idx) => {
+    const ptsText = (s.points || [])
+      .map((p, i) => `${p.pointNo || (i + 1)}. ${p.detail}${p.quantity ? ' (' + p.quantity + ')' : ''}`)
+      .join(' | ');
+    rows.push([
+      idx + 1,
+      `"${String(s.sheetNumber || '').replace(/"/g, '""')}"`,
+      `"${s.materialType === 'FIXED' ? 'Fixed Material' : 'Material Consumable'}"`,
+      `"${String(s.date || '').replace(/"/g, '""')}"`,
+      `"${String(s.employeeName || '').replace(/"/g, '""')}"`,
+      `"${String(s.siteName || '').replace(/"/g, '""')}"`,
+      `"${ptsText.replace(/"/g, '""')}"`,
+      `"${String(s.notes || '').replace(/"/g, '""')}"`
+    ].join(','));
+  });
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `FES_Material_Sheets_${getLocalDateString()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Material sheets exported to CSV!', 'success');
+};
+
+// Also watch delegated clicks just in case
 document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-emp-tab="emp-pane-material"]')) {
+    initAndLoadEmployeeMaterialPane();
+  }
   if (e.target.closest('[data-tab="tab-material-management"]')) {
-    loadAdminMaterialTransactions();
+    loadAdminMaterialSheets();
   }
 });
 

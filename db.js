@@ -249,6 +249,15 @@ function loadLocalData() {
         salaries: file.salaries || [],
         accountsPdfs: file.accountsPdfs || [],
         salaryApprovals: file.salaryApprovals || [],
+        expenseVerifications: file.expenseVerifications || [],
+        materials: file.materials || [],
+        materialTransactions: file.materialTransactions || [],
+        materialAttachments: file.materialAttachments || [],
+        materialVerifications: file.materialVerifications || [],
+        materialVerificationAttachments: file.materialVerificationAttachments || [],
+        materialApprovals: file.materialApprovals || [],
+        materialApprovalAttachments: file.materialApprovalAttachments || [],
+        materialSheets: file.materialSheets || [],
         bills: file.bills || [],
         whatsappSettings: file.whatsappSettings || null,
         whatsappDispatchLogs: file.whatsappDispatchLogs || []
@@ -286,6 +295,7 @@ function loadLocalData() {
     materialVerificationAttachments: [],
     materialApprovals: [],
     materialApprovalAttachments: [],
+    materialSheets: [],
     bills: [],
     whatsappSettings: null,
     whatsappDispatchLogs: []
@@ -1852,19 +1862,26 @@ const db = {
 
   // --- Form Submissions ---
   async getFormSubmissions(employeeId = null, formType = null) {
+    const internalTypes = ['manual_present_days', 'manual_sunday_bonus', 'material_sheet', 'whatsapp_settings'];
     if (useLocalFallback) {
       const data = loadLocalData();
       let records = data.formSubmissions || [];
       if (employeeId) records = records.filter(r => r.employeeId === employeeId);
       if (formType) records = records.filter(r => r.formType === formType);
-      else records = records.filter(r => r.formType !== 'manual_present_days' && r.formType !== 'manual_sunday_bonus');
+      else records = records.filter(r => !internalTypes.includes(r.formType));
       return records.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
     }
     try {
       let query = supabase.from('form_submissions').select('*').order('submittedAt', { ascending: false });
       if (employeeId) query = query.eq('employeeId', employeeId);
       if (formType) query = query.eq('formType', formType);
-      else query = query.neq('formType', 'manual_present_days').neq('formType', 'manual_sunday_bonus');
+      else {
+        query = query
+          .neq('formType', 'manual_present_days')
+          .neq('formType', 'manual_sunday_bonus')
+          .neq('formType', 'material_sheet')
+          .neq('formType', 'whatsapp_settings');
+      }
 
       const { data, error } = await query;
       if (error) {
@@ -5126,6 +5143,301 @@ const db = {
   }
 
   , // ─── Material Management System Methods ────────────────────────────────────────
+
+  // Official Material Sheets: Consumable Material & Fixed Material
+  async createMaterialSheet({
+    employeeId,
+    employeeName,
+    materialType,
+    date,
+    siteName,
+    points,
+    notes = '',
+    attachment = null
+  }) {
+    await maybeRecoverSupabase();
+
+    if (!employeeId) throw new Error('Employee ID is required.');
+    const normType = String(materialType || '').trim().toUpperCase();
+    if (!['CONSUMABLE', 'FIXED'].includes(normType)) {
+      throw new Error('Material type must be CONSUMABLE or FIXED.');
+    }
+
+    const cleanSite = String(siteName || '').trim();
+    if (!cleanSite) {
+      throw new Error('Site / Side Name is required.');
+    }
+
+    const cleanDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date).trim()))
+      ? String(date).trim()
+      : getLocalDateString();
+
+    const rawPoints = Array.isArray(points) ? points : [];
+    const normalizedPoints = [];
+    rawPoints.forEach((p) => {
+      if (typeof p === 'string') {
+        const text = p.trim();
+        if (text) normalizedPoints.push({ pointNo: normalizedPoints.length + 1, detail: text, quantity: '' });
+      } else if (p && typeof p === 'object') {
+        const detail = String(p.detail || p.item || p.text || '').trim();
+        const quantity = String(p.quantity || p.qty || '').trim();
+        if (detail || quantity) {
+          normalizedPoints.push({
+            pointNo: normalizedPoints.length + 1,
+            detail: detail || quantity,
+            quantity: detail ? quantity : ''
+          });
+        }
+      }
+    });
+
+    if (normalizedPoints.length === 0) {
+      throw new Error('Please enter at least 1 material detail point.');
+    }
+
+    let resolvedEmpName = String(employeeName || '').trim();
+    if (!resolvedEmpName) {
+      const emps = await this.getEmployees(true).catch(() => []);
+      const found = (emps || []).find(e => e.id === employeeId);
+      resolvedEmpName = found ? found.name : 'Employee';
+    }
+
+    const nowIso = new Date().toISOString();
+    const id = generateId('msh');
+    const prefix = normType === 'CONSUMABLE' ? 'FES-CON' : 'FES-FIX';
+    const shortRand = Math.floor(1000 + Math.random() * 9000);
+    const sheetNumber = `${prefix}-${cleanDate.replace(/-/g, '')}-${shortRand}`;
+
+    const sheet = {
+      id,
+      sheetNumber,
+      employeeId,
+      employeeName: resolvedEmpName,
+      materialType: normType,
+      date: cleanDate,
+      siteName: cleanSite,
+      points: normalizedPoints,
+      notes: String(notes || '').trim(),
+      attachment: attachment || null,
+      companyName: 'Fast Engineering Solutions',
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      data.materialSheets = data.materialSheets || [];
+      data.materialSheets.push(sheet);
+      saveLocalData(data);
+      return sheet;
+    }
+
+    try {
+      const { error } = await supabase.from('form_submissions').insert([{
+        id,
+        employeeId,
+        employeeName: resolvedEmpName,
+        formType: 'material_sheet',
+        formData: sheet,
+        submittedAt: nowIso
+      }]);
+
+      if (error) {
+        if (isQuotaOrNetworkError(error)) {
+          useLocalFallback = true;
+          const data = loadLocalData();
+          data.materialSheets = data.materialSheets || [];
+          data.materialSheets.push(sheet);
+          saveLocalData(data);
+          return sheet;
+        }
+        throw new Error(error.message || 'Failed to save material sheet');
+      }
+
+      return sheet;
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        useLocalFallback = true;
+        const data = loadLocalData();
+        data.materialSheets = data.materialSheets || [];
+        data.materialSheets.push(sheet);
+        saveLocalData(data);
+        return sheet;
+      }
+      throw err;
+    }
+  },
+
+  async getMaterialSheets({
+    employeeId = null,
+    materialType = null,
+    employeeName = null,
+    siteName = null,
+    search = null,
+    startDate = null,
+    endDate = null
+  } = {}) {
+    await maybeRecoverSupabase();
+
+    const normalizeSheet = (row) => {
+      if (!row) return null;
+      const fd = (row.formData && typeof row.formData === 'object') ? row.formData : row;
+      const pts = Array.isArray(fd.points) ? fd.points.map((p, idx) => ({
+        pointNo: Number(p.pointNo) || (idx + 1),
+        detail: String(p.detail || p.item || p || '').trim(),
+        quantity: String(p.quantity || p.qty || '').trim()
+      })) : [];
+      return {
+        id: row.id || fd.id,
+        sheetNumber: fd.sheetNumber || 'FES-MAT',
+        employeeId: row.employeeId || fd.employeeId,
+        employeeName: row.employeeName || fd.employeeName || 'Employee',
+        materialType: String(fd.materialType || 'CONSUMABLE').toUpperCase(),
+        date: fd.date || (row.submittedAt ? String(row.submittedAt).slice(0, 10) : getLocalDateString()),
+        siteName: fd.siteName || '-',
+        points: pts,
+        notes: fd.notes || '',
+        attachment: fd.attachment || null,
+        companyName: fd.companyName || 'Fast Engineering Solutions',
+        createdAt: fd.createdAt || row.submittedAt || new Date().toISOString(),
+        updatedAt: fd.updatedAt || row.submittedAt || new Date().toISOString()
+      };
+    };
+
+    let sheets = [];
+
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      const fromDedicated = (data.materialSheets || []).map(normalizeSheet).filter(Boolean);
+      const fromForms = (data.formSubmissions || [])
+        .filter(r => r && r.formType === 'material_sheet')
+        .map(normalizeSheet)
+        .filter(Boolean);
+      const mapById = new Map();
+      [...fromForms, ...fromDedicated].forEach(s => mapById.set(s.id, s));
+      sheets = Array.from(mapById.values());
+    } else {
+      try {
+        let query = supabase
+          .from('form_submissions')
+          .select('*')
+          .eq('formType', 'material_sheet')
+          .order('submittedAt', { ascending: false });
+
+        if (employeeId) {
+          query = query.eq('employeeId', employeeId);
+        }
+
+        const { data, error } = await query;
+        if (error) {
+          if (isQuotaOrNetworkError(error)) {
+            useLocalFallback = true;
+            return this.getMaterialSheets({ employeeId, materialType, employeeName, siteName, search, startDate, endDate });
+          }
+          throw error;
+        }
+        sheets = (data || []).map(normalizeSheet).filter(Boolean);
+      } catch (err) {
+        if (isQuotaOrNetworkError(err)) {
+          useLocalFallback = true;
+          return this.getMaterialSheets({ employeeId, materialType, employeeName, siteName, search, startDate, endDate });
+        }
+        console.warn('getMaterialSheets error:', err.message);
+        const data = loadLocalData();
+        sheets = (data.materialSheets || []).map(normalizeSheet).filter(Boolean);
+      }
+    }
+
+    // Apply all filters (Employee ID, Portion/Type, Name search, Site/Side search, Tenure date range, general search)
+    if (employeeId) {
+      sheets = sheets.filter(s => s.employeeId === employeeId);
+    }
+
+    if (materialType && String(materialType).toUpperCase() !== 'ALL') {
+      const targetType = String(materialType).toUpperCase();
+      sheets = sheets.filter(s => s.materialType === targetType);
+    }
+
+    if (employeeName && String(employeeName).trim()) {
+      const qName = String(employeeName).trim().toLowerCase();
+      sheets = sheets.filter(s => String(s.employeeName || '').toLowerCase().includes(qName));
+    }
+
+    if (siteName && String(siteName).trim()) {
+      const qSite = String(siteName).trim().toLowerCase();
+      sheets = sheets.filter(s => String(s.siteName || '').toLowerCase().includes(qSite));
+    }
+
+    if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(String(startDate).trim())) {
+      const sd = String(startDate).trim();
+      sheets = sheets.filter(s => s.date >= sd);
+    }
+
+    if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(String(endDate).trim())) {
+      const ed = String(endDate).trim();
+      sheets = sheets.filter(s => s.date <= ed);
+    }
+
+    if (search && String(search).trim()) {
+      const q = String(search).trim().toLowerCase();
+      sheets = sheets.filter(s => {
+        if (String(s.employeeName || '').toLowerCase().includes(q)) return true;
+        if (String(s.siteName || '').toLowerCase().includes(q)) return true;
+        if (String(s.sheetNumber || '').toLowerCase().includes(q)) return true;
+        if (String(s.notes || '').toLowerCase().includes(q)) return true;
+        return (s.points || []).some(p =>
+          String(p.detail || '').toLowerCase().includes(q) ||
+          String(p.quantity || '').toLowerCase().includes(q)
+        );
+      });
+    }
+
+    sheets.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    return sheets;
+  },
+
+  async deleteMaterialSheet(sheetId, requesterEmployeeId = null, isAdmin = false) {
+    await maybeRecoverSupabase();
+    if (!sheetId) throw new Error('Sheet ID is required.');
+
+    // Verify ownership if not admin
+    if (!isAdmin) {
+      const existing = await this.getMaterialSheets({ employeeId: requesterEmployeeId });
+      const match = existing.find(s => s.id === sheetId);
+      if (!match) {
+        const err = new Error('Forbidden or sheet not found.');
+        err.status = 403;
+        throw err;
+      }
+    }
+
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      if (Array.isArray(data.materialSheets)) {
+        data.materialSheets = data.materialSheets.filter(s => s.id !== sheetId);
+      }
+      if (Array.isArray(data.formSubmissions)) {
+        data.formSubmissions = data.formSubmissions.filter(r => !(r.id === sheetId && r.formType === 'material_sheet'));
+      }
+      saveLocalData(data);
+      return { success: true, id: sheetId };
+    }
+
+    const { error } = await supabase
+      .from('form_submissions')
+      .delete()
+      .eq('id', sheetId)
+      .eq('formType', 'material_sheet');
+    if (error && !isQuotaOrNetworkError(error)) {
+      throw new Error(error.message || 'Failed to delete material sheet');
+    }
+
+    return { success: true, id: sheetId };
+  },
 
   async getMaterialTransactions(employeeId = null) {
     if (useLocalFallback) {

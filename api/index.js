@@ -70,7 +70,7 @@ module.exports = async (req, res) => {
     if (path === 'health' && method === 'GET') {
       return res.json({
         status: 'ok',
-        version: 'v285-auto-recover',
+        version: 'v286-material-sheets',
         database: db.useLocalFallback ? 'local_fallback' : 'supabase',
         hasWorker: Boolean(globalThis.pdfjsWorker?.WorkerMessageHandler),
         timestamp: new Date().toISOString()
@@ -921,6 +921,59 @@ module.exports = async (req, res) => {
     }
 
     
+    // ── MATERIAL SHEETS (CONSUMABLE & FIXED MATERIAL) ROUTES ────────────────────
+    if (path === 'material-sheets' && method === 'GET') {
+      const settings = await db.getSettings();
+      const isAdmin = isPasscodeValid(adminPasscode, settings);
+      let employeeId = query.employeeId || null;
+      if (!isAdmin) {
+        const clientEmpId = headers['x-employee-id'] || headers['X-Employee-Id'] || employeeId;
+        if (!clientEmpId) return res.status(401).json({ error: 'Unauthorized: Employee ID is required.' });
+        employeeId = clientEmpId;
+      }
+      try {
+        const sheets = await db.getMaterialSheets({
+          employeeId,
+          materialType: query.materialType || null,
+          employeeName: query.employeeName || null,
+          siteName: query.siteName || null,
+          search: query.search || null,
+          startDate: query.startDate || null,
+          endDate: query.endDate || null
+        });
+        return res.json({ success: true, sheets });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === 'material-sheets' && method === 'POST') {
+      const body = await parseBody(req);
+      try {
+        const sheet = await db.createMaterialSheet(body);
+        return res.status(201).json({ success: true, sheet });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
+    if (path.match(/^material-sheets\/([^\/]+)$/) && method === 'DELETE') {
+      const id = decodeURIComponent(path.split('/')[1]);
+      const settings = await db.getSettings();
+      const isAdmin = isPasscodeValid(adminPasscode, settings);
+      const body = await parseBody(req).catch(() => ({}));
+      const clientEmpId = headers['x-employee-id'] || headers['X-Employee-Id'] || query.employeeId || body.employeeId || null;
+      if (!isAdmin && !clientEmpId) {
+        return res.status(401).json({ error: 'Unauthorized.' });
+      }
+      try {
+        const result = await db.deleteMaterialSheet(id, clientEmpId, isAdmin);
+        return res.json(result);
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
+
     // ── MATERIAL MANAGEMENT ROUTES ──────────────────────────────────────────────
     if (path === 'materials' && method === 'GET') {
       const employeeId = query.employeeId;

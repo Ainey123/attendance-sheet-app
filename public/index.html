@@ -37,7 +37,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=273">
+  <link rel="stylesheet" href="style.css?v=286">
 
   <!-- html2pdf.js for generating monthly expense flow PDF reports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -65,7 +65,7 @@
           </svg>
         </div>
         <div>
-          <h1 id="office-title" style="display:inline-flex; align-items:center;">Office Attendance <span style="font-size:0.68rem; padding:0.15rem 0.45rem; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:12px; margin-left:0.5rem; font-weight:600;">v279 LIVE</span></h1>
+          <h1 id="office-title" style="display:inline-flex; align-items:center;">Office Attendance <span style="font-size:0.68rem; padding:0.15rem 0.45rem; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4); border-radius:12px; margin-left:0.5rem; font-weight:600;">v286 LIVE</span></h1>
           <p class="subtitle">Daily Registry & Tracker</p>
         </div>
       </div>
@@ -477,121 +477,121 @@
 
             <!-- Messages & Comments Tab Pane -->
             
-            <!-- MATERIAL DETAILS PANE -->
+            <!-- MATERIAL DETAILS PANE (TWO PORTIONS: MATERIAL CONSUMABLE & FIXED MATERIAL) -->
             <div id="emp-pane-material" class="emp-tab-pane hidden">
-              <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                  <h3 style="margin:0;">Active Materials</h3>
-                  <button id="btn-new-material-tx" class="btn btn-primary btn-sm">+ New Transaction</button>
-                </div>
-                <div class="card-body">
-                  <div id="employee-materials-summary" style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
-                    <!-- Filled by JS -->
-                  </div>
-                  <h4>Transaction History</h4>
-                  <div class="table-responsive">
-                    <table class="table data-table" id="emp-material-history-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Material</th>
-                          <th>Prev Rem.</th>
-                          <th>Inward</th>
-                          <th>Outward</th>
-                          <th>Rem.</th>
-                          <th>Status</th>
-                          <th>Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
-                </div>
+              <div style="margin-bottom: 1rem;">
+                <h3 style="margin: 0 0 0.35rem 0; font-size: 1.15rem; color: #fff; font-family: var(--font-title);">
+                  📦 Material Portal — Select Material Portion
+                </h3>
+                <p class="text-muted" style="font-size: 0.85rem; margin: 0;">
+                  Choose <strong>Material Consumable</strong> or <strong>Fixed Material</strong> below to submit and view official Fast Engineering Solutions material sheets.
+                </p>
               </div>
-            </div>
-            
-            <!-- NEW MATERIAL WIZARD MODAL -->
-            <div id="modal-material-wizard" class="modal hidden">
-              <div class="modal-content" style="max-width: 600px;">
-                <div class="modal-header">
-                  <h3>New Material Transaction</h3>
-                  <button class="close-btn" onclick="document.getElementById('modal-material-wizard').classList.add('hidden')">&times;</button>
+
+              <!-- TWO PORTIONS SELECTOR -->
+              <div class="fes-portion-grid">
+                <button type="button" id="btn-emp-mat-consumable" class="fes-portion-card active" data-mat-portion="CONSUMABLE">
+                  <div class="fes-portion-icon">🛠️</div>
+                  <div>
+                    <div class="fes-portion-title">1. Material Consumable</div>
+                    <div class="fes-portion-desc">Consumable supplies, wires, tapes, screws, fittings &amp; daily site items</div>
+                  </div>
+                </button>
+
+                <button type="button" id="btn-emp-mat-fixed" class="fes-portion-card" data-mat-portion="FIXED">
+                  <div class="fes-portion-icon">🏗️</div>
+                  <div>
+                    <div class="fes-portion-title">2. Fixed Material</div>
+                    <div class="fes-portion-desc">Fixed tools, machines, ladders, equipment &amp; permanent site assets</div>
+                  </div>
+                </button>
+              </div>
+
+              <!-- OFFICIAL BRANDED MATERIAL SHEET FORM -->
+              <div id="emp-material-sheet-card" class="fes-official-sheet">
+                <!-- Company Logo + Company Name Letterhead -->
+                <div class="fes-letterhead-banner">
+                  <div class="fes-letterhead-brand">
+                    <img src="/fes-logo.png" alt="Fast Engineering Solutions Logo" class="fes-company-logo">
+                    <div>
+                      <div class="fes-company-name">Fast Engineering Solutions</div>
+                      <div class="fes-company-tagline" id="emp-mat-sheet-subtitle">FES — Official Material Consumable Sheet</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem;">
+                    <span id="emp-mat-active-badge" class="fes-portion-badge consumable">🛠️ Material Consumable</span>
+                    <span style="font-size: 0.8rem; font-weight: 700; color: #334155;">
+                      👤 Employee: <span id="emp-mat-emp-name-display">-</span>
+                    </span>
+                  </div>
                 </div>
-                <div class="modal-body">
-                  <div id="mat-wizard-step-1">
-                    <h4>Step 1: Inward (Received)</h4>
-                    <div class="form-group">
-                      <label>Material Name</label>
-                      <input type="text" id="mat-wiz-name" class="form-control" placeholder="e.g. Bulb, Cable" required>
-                      <div id="mat-wiz-lock-warning" class="text-danger hidden" style="font-size:0.85rem; margin-top:5px;">A previous transaction for this material is pending. You cannot create a new one yet.</div>
+
+                <!-- Sheet Form Body -->
+                <form id="form-emp-material-sheet" class="fes-sheet-body">
+                  <input type="hidden" id="emp-mat-portion-value" value="CONSUMABLE">
+
+                  <div class="fes-meta-grid">
+                    <div class="form-group" style="margin: 0;">
+                      <label for="emp-mat-date" style="font-weight: 600; color: #e2e8f0; margin-bottom: 0.35rem; display: block;">
+                        📅 Date *
+                      </label>
+                      <input type="date" id="emp-mat-date" required style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.16); color: #fff; font-size: 0.92rem;">
                     </div>
-                    <div class="form-group">
-                      <label>Inward Quantity</label>
-                      <input type="number" id="mat-wiz-inward" class="form-control" min="0" value="0">
-                    </div>
-                    <div class="form-group">
-                      <label>Date</label>
-                      <input type="date" id="mat-wiz-inward-date" class="form-control">
-                    </div>
-                    <div class="form-group">
-                      <label>Comment</label>
-                      <input type="text" id="mat-wiz-inward-comment" class="form-control">
-                    </div>
-                    <div class="form-group">
-                      <label>Attachment (Image/PDF)</label>
-                      <input type="file" id="mat-wiz-inward-file" class="form-control" accept="image/*,.pdf">
-                    </div>
-                    <button class="btn btn-primary" id="mat-wiz-next-1">Next &rarr;</button>
-                  </div>
-                  
-                  <div id="mat-wizard-step-2" class="hidden">
-                    <h4>Step 2: Outward (Used)</h4>
-                    <div class="form-group">
-                      <label>Outward Quantity</label>
-                      <input type="number" id="mat-wiz-outward" class="form-control" min="0" value="0">
-                    </div>
-                    <div class="form-group">
-                      <label>Date</label>
-                      <input type="date" id="mat-wiz-outward-date" class="form-control">
-                    </div>
-                    <div class="form-group">
-                      <label>Comment</label>
-                      <input type="text" id="mat-wiz-outward-comment" class="form-control">
-                    </div>
-                    <div class="form-group">
-                      <label>Attachment (Image/PDF)</label>
-                      <input type="file" id="mat-wiz-outward-file" class="form-control" accept="image/*,.pdf">
-                    </div>
-                    <div style="display:flex; gap:10px;">
-                      <button class="btn btn-secondary" id="mat-wiz-prev-2">&larr; Back</button>
-                      <button class="btn btn-primary" id="mat-wiz-next-2">Next &rarr;</button>
+
+                    <div class="form-group" style="margin: 0;">
+                      <label for="emp-mat-site" style="font-weight: 600; color: #e2e8f0; margin-bottom: 0.35rem; display: block;">
+                        📍 Site / Side Name *
+                      </label>
+                      <input type="text" id="emp-mat-site" list="fes-site-suggestions" placeholder="Enter Site / Side Name (e.g. DHA Phase 6, Bahria...)" required style="width: 100%; padding: 0.6rem 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.16); color: #fff; font-size: 0.92rem;">
+                      <datalist id="fes-site-suggestions"></datalist>
                     </div>
                   </div>
-                  
-                  <div id="mat-wizard-step-3" class="hidden">
-                    <h4>Step 3: Remaining (Summary)</h4>
-                    <div class="card mb-2" style="background:#f8f9fa;">
-                      <div class="card-body">
-                        <div><strong>Previous Approved Remaining:</strong> <span id="mat-wiz-prev-rem">0</span></div>
-                        <div><strong>Current Inward:</strong> <span id="mat-wiz-disp-in">0</span></div>
-                        <div><strong>Current Outward:</strong> <span id="mat-wiz-disp-out">0</span></div>
-                        <hr>
-                        <div><strong style="font-size:1.2rem;">Calculated Remaining: <span id="mat-wiz-calc-rem" class="text-primary">0</span></strong></div>
-                      </div>
+
+                  <!-- Material Details with Numbered Points 1, 2, 3... -->
+                  <div style="margin-bottom: 1.15rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem; flex-wrap: wrap; gap: 0.5rem;">
+                      <label style="font-weight: 700; color: #fff; font-size: 0.95rem; margin: 0;">
+                        📋 Material Details (Points 1, 2, 3...) *
+                      </label>
+                      <button type="button" id="btn-emp-add-mat-point" class="btn btn-secondary btn-sm" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(99,102,241,0.5); color: #a5b4fc;">
+                        + Add Point
+                      </button>
                     </div>
-                    <div class="form-group">
-                      <label>Remaining Comment</label>
-                      <input type="text" id="mat-wiz-rem-comment" class="form-control">
+
+                    <div id="emp-mat-points-container">
+                      <!-- JS populates numbered rows 1, 2, 3... -->
                     </div>
-                    <div class="form-group">
-                      <label>Attachment (Image/PDF)</label>
-                      <input type="file" id="mat-wiz-rem-file" class="form-control" accept="image/*,.pdf">
-                    </div>
-                    <div style="display:flex; gap:10px; margin-top:1rem;">
-                      <button class="btn btn-secondary" id="mat-wiz-prev-3">&larr; Back</button>
-                      <button class="btn btn-success" id="mat-wiz-submit">SUBMIT MATERIAL</button>
-                    </div>
+                    <small class="text-muted" style="font-size: 0.76rem; display: block; margin-top: 0.35rem;">
+                      Tip: Press <strong>Enter</strong> or click <strong>+ Add Point</strong> to add more numbered material points (4, 5, 6...).
+                    </small>
                   </div>
+
+                  <!-- Optional Notes -->
+                  <div class="form-group" style="margin-bottom: 1.15rem;">
+                    <label for="emp-mat-notes" style="font-weight: 600; color: #cbd5e1; font-size: 0.85rem; margin-bottom: 0.35rem; display: block;">
+                      📝 Remarks / Additional Notes (Optional)
+                    </label>
+                    <input type="text" id="emp-mat-notes" placeholder="Any optional remarks about this material..." style="width: 100%; padding: 0.58rem 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.14); color: #fff; font-size: 0.88rem;">
+                  </div>
+
+                  <button type="submit" id="btn-emp-submit-mat-sheet" class="btn btn-success" style="width: 100%; padding: 0.75rem 1.25rem; font-size: 0.96rem; font-weight: 700; border-radius: 10px;">
+                    ✅ Submit Material Consumable Sheet
+                  </button>
+                </form>
+              </div>
+
+              <!-- EMPLOYEE'S SUBMITTED MATERIAL SHEETS -->
+              <div class="panel" style="background: rgba(15, 23, 42, 0.55); border: 1px solid var(--border-color); border-radius: 14px; padding: 1.15rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
+                  <h4 id="emp-mat-history-heading" style="margin: 0; font-size: 1rem; color: #fff;">
+                    📄 My Submitted Material Consumable Sheets
+                  </h4>
+                  <button type="button" id="btn-emp-refresh-mat-sheets" class="btn btn-secondary btn-sm" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;">
+                    🔄 Refresh
+                  </button>
+                </div>
+                <div id="emp-mat-submitted-list" class="fes-rendered-sheets-list">
+                  <div class="text-muted" style="font-size: 0.88rem;">Loading your material sheets...</div>
                 </div>
               </div>
             </div>
@@ -1695,68 +1695,149 @@
 
           <!-- TAB 5: SETTINGS -->
           
-        <!-- MATERIAL MANAGEMENT TAB -->
+        <!-- MATERIAL MANAGEMENT TAB (ADMIN: CONSUMABLE & FIXED MATERIAL + NAME / TENUREWISE / SITE-WISE SEARCH) -->
         <div id="tab-material-management" class="tab-pane">
-          <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <h2>Material Management</h2>
-              <button class="btn btn-secondary btn-sm" onclick="loadAdminMaterialTransactions()">Refresh</button>
-            </div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table data-table" id="admin-material-table">
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Material</th>
-                      <th>Date</th>
-                      <th>Prev Rem.</th>
-                      <th>Inward</th>
-                      <th>Outward</th>
-                      <th>Rem.</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
-                </table>
+          <div class="panel data-panel" style="margin-bottom: 1.5rem;">
+            <!-- Branded Header -->
+            <div class="fes-letterhead-banner" style="border-radius: 12px; margin-bottom: 1.25rem;">
+              <div class="fes-letterhead-brand">
+                <img src="/fes-logo.png" alt="Fast Engineering Solutions Logo" class="fes-company-logo">
+                <div>
+                  <div class="fes-company-name">Fast Engineering Solutions</div>
+                  <div class="fes-company-tagline">Admin Material Portal — Material Consumable &amp; Fixed Material</div>
+                </div>
               </div>
+              <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="loadAdminMaterialSheets()" style="font-weight: 600;">
+                  🔄 Refresh
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="exportAdminMaterialSheetsPDF()" style="font-weight: 600;">
+                  📄 Export PDF
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="exportAdminMaterialSheetsCSV()" style="font-weight: 600;">
+                  📊 Export CSV
+                </button>
+              </div>
+            </div>
+
+            <!-- Portion Selector Pills (All / Consumable / Fixed) -->
+            <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; margin-bottom: 1.15rem;">
+              <button type="button" class="btn btn-sm btn-primary admin-mat-type-btn active" data-admin-mat-type="ALL">
+                📦 All Material (<span id="admin-mat-count-all">0</span>)
+              </button>
+              <button type="button" class="btn btn-sm btn-secondary admin-mat-type-btn" data-admin-mat-type="CONSUMABLE">
+                🛠️ Material Consumable (<span id="admin-mat-count-consumable">0</span>)
+              </button>
+              <button type="button" class="btn btn-sm btn-secondary admin-mat-type-btn" data-admin-mat-type="FIXED">
+                🏗️ Fixed Material (<span id="admin-mat-count-fixed">0</span>)
+              </button>
+            </div>
+
+            <!-- ADMIN SEARCH CONTROLS: NAME SEARCH + SIDE/SITE-WISE SEARCH + TENUREWISE SEARCH -->
+            <div style="background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.1rem; margin-bottom: 1.25rem;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap: 0.85rem; align-items: end;">
+                <!-- 1. Search by Employee Name (Dropdown) -->
+                <div>
+                  <label for="admin-mat-emp-select" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    👤 Employee Select
+                  </label>
+                  <select id="admin-mat-emp-select" class="form-input" style="width: 100%; padding: 0.52rem 0.75rem; font-size: 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                    <option value="">All Employees</option>
+                  </select>
+                </div>
+
+                <!-- 1b. Search by Employee Name (Live Text Input) -->
+                <div>
+                  <label for="admin-mat-name-search" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    🔍 Search by Name
+                  </label>
+                  <input type="text" id="admin-mat-name-search" placeholder="Search employee name..." style="width: 100%; padding: 0.52rem 0.75rem; font-size: 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                </div>
+
+                <!-- 2. Side-wise / Site-wise Search (Dropdown) -->
+                <div>
+                  <label for="admin-mat-site-select" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    📍 Site / Side Select
+                  </label>
+                  <select id="admin-mat-site-select" class="form-input" style="width: 100%; padding: 0.52rem 0.75rem; font-size: 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                    <option value="">All Sites / Sides</option>
+                  </select>
+                </div>
+
+                <!-- 2b. Side-wise / Site-wise Search (Live Text Input) -->
+                <div>
+                  <label for="admin-mat-site-search" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    🏗️ Side-wise / Site Search
+                  </label>
+                  <input type="text" id="admin-mat-site-search" placeholder="Search site / side name..." style="width: 100%; padding: 0.52rem 0.75rem; font-size: 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                </div>
+
+                <!-- 3. Tenurewise Search Preset -->
+                <div>
+                  <label for="admin-mat-tenure-preset" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    📅 Tenurewise Search
+                  </label>
+                  <select id="admin-mat-tenure-preset" class="form-input" style="width: 100%; padding: 0.52rem 0.75rem; font-size: 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                    <option value="ALL" selected>All Time</option>
+                    <option value="TODAY">Today</option>
+                    <option value="LAST_7_DAYS">Last 7 Days</option>
+                    <option value="THIS_MONTH">This Month</option>
+                    <option value="LAST_MONTH">Last Month</option>
+                    <option value="LAST_3_MONTHS">Last 3 Months</option>
+                    <option value="THIS_YEAR">This Year</option>
+                    <option value="CUSTOM">Custom Tenure Range</option>
+                  </select>
+                </div>
+
+                <!-- 3b. Tenure From Date -->
+                <div>
+                  <label for="admin-mat-date-from" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    From Date
+                  </label>
+                  <input type="date" id="admin-mat-date-from" style="width: 100%; padding: 0.48rem 0.65rem; font-size: 0.84rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                </div>
+
+                <!-- 3c. Tenure To Date -->
+                <div>
+                  <label for="admin-mat-date-to" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 700;">
+                    To Date
+                  </label>
+                  <input type="date" id="admin-mat-date-to" style="width: 100%; padding: 0.48rem 0.65rem; font-size: 0.84rem; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); color: #fff;">
+                </div>
+
+                <!-- Reset Button -->
+                <div>
+                  <button type="button" id="btn-admin-mat-reset" class="btn btn-secondary btn-sm" style="width: 100%; padding: 0.55rem 0.85rem; font-size: 0.84rem; font-weight: 700;">
+                    ✕ Reset Search
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Results Summary Strip -->
+            <div id="admin-mat-results-summary" style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem; font-weight: 600;">
+              Loading material sheets...
+            </div>
+
+            <!-- Official FES Material Sheets Grid (Same Pattern as Employee Side) -->
+            <div id="admin-mat-sheets-container" class="fes-rendered-sheets-list">
+              <div class="text-muted">Loading material sheets...</div>
             </div>
           </div>
         </div>
 
-        <!-- ADMIN VERIFY/APPROVE MODAL -->
-        <div id="modal-material-admin" class="modal hidden">
-          <div class="modal-content" style="max-width: 600px;">
-            <div class="modal-header">
-              <h3 id="mat-admin-title">Review Transaction</h3>
-              <button class="close-btn" onclick="document.getElementById('modal-material-admin').classList.add('hidden')">&times;</button>
+        <!-- PRINT / PREVIEW SINGLE OFFICIAL MATERIAL SHEET MODAL -->
+        <div id="modal-fes-sheet-preview" class="modal hidden">
+          <div class="modal-content" style="max-width: 680px; background: #ffffff; color: #0f172a; padding: 0; border-radius: 16px; overflow: hidden;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1.25rem; background: #0f172a; color: #ffffff;">
+              <h3 style="margin: 0; font-size: 1rem; color: #ffffff;">Official Material Sheet Preview</h3>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="printSingleFesMaterialSheet()">🖨️ Print / Save PDF</button>
+                <button type="button" class="close-btn" style="color: #fff; font-size: 1.5rem; background: none; border: none; cursor: pointer;" onclick="document.getElementById('modal-fes-sheet-preview').classList.add('hidden')">&times;</button>
+              </div>
             </div>
-            <div class="modal-body">
-              <div class="card mb-2" style="background:#f8f9fa;">
-                <div class="card-body text-sm" id="mat-admin-details">
-                  <!-- details injected via JS -->
-                </div>
-              </div>
-              
-              <div class="form-group">
-                <label>Comment / Notes</label>
-                <input type="text" id="mat-admin-comment" class="form-control">
-              </div>
-              <div class="form-group">
-                <label>Attachment (Image/PDF)</label>
-                <input type="file" id="mat-admin-file" class="form-control" accept="image/*,.pdf">
-              </div>
-              
-              <div id="mat-admin-senior-passcode-group" class="form-group hidden">
-                <label>Senior Admin Passcode</label>
-                <input type="password" id="mat-admin-senior-passcode" class="form-control">
-              </div>
-              
-              <div style="display:flex; gap:10px; margin-top:1rem;">
-                <button class="btn btn-success" id="mat-admin-action-btn">VERIFY</button>
-                <button class="btn btn-danger" id="mat-admin-reject-btn">REJECT</button>
-              </div>
+            <div id="fes-sheet-preview-body" style="padding: 1.5rem; background: #ffffff;">
+              <!-- Populated by JS -->
             </div>
           </div>
         </div>
@@ -3694,6 +3775,6 @@ This action cannot be undone.</p>
 
   <!-- Script Load -->
   <script src="store.js?v=14"></script>
-  <script src="app.js?v=284"></script>
+  <script src="app.js?v=286"></script>
 </body>
 </html>

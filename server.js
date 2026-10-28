@@ -1018,6 +1018,67 @@ app.get('/api/salary/:employeeId', checkAdminAuth, async (req, res) => {
   }
 });
 
+// ─── MATERIAL SHEETS (CONSUMABLE & FIXED MATERIAL) API ROUTES ──────────────
+
+// GET /api/material-sheets (Scoped to employee if non-admin; all with filters if admin)
+app.get('/api/material-sheets', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || '').trim();
+    const isAdmin = isPasscodeValid(adminPass, settings);
+
+    let employeeId = req.query.employeeId || null;
+    if (!isAdmin) {
+      const clientEmpId = req.headers['x-employee-id'] || employeeId;
+      if (!clientEmpId) {
+        return res.status(401).json({ error: 'Unauthorized. Employee ID is required.' });
+      }
+      employeeId = clientEmpId;
+    }
+
+    const sheets = await db.getMaterialSheets({
+      employeeId,
+      materialType: req.query.materialType || null,
+      employeeName: req.query.employeeName || null,
+      siteName: req.query.siteName || null,
+      search: req.query.search || null,
+      startDate: req.query.startDate || null,
+      endDate: req.query.endDate || null
+    });
+
+    res.json({ success: true, sheets });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/material-sheets (Employee submits Consumable or Fixed Material sheet)
+app.post('/api/material-sheets', async (req, res) => {
+  try {
+    const sheet = await db.createMaterialSheet(req.body);
+    res.status(201).json({ success: true, sheet });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// DELETE /api/material-sheets/:id
+app.delete('/api/material-sheets/:id', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || req.query.passcode || '').trim();
+    const isAdmin = isPasscodeValid(adminPass, settings);
+    const clientEmpId = req.headers['x-employee-id'] || req.query.employeeId || (req.body && req.body.employeeId) || null;
+    if (!isAdmin && !clientEmpId) {
+      return res.status(401).json({ error: 'Unauthorized.' });
+    }
+    const result = await db.deleteMaterialSheet(req.params.id, clientEmpId, isAdmin);
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
 // ─── BILL & EXPENSE MANAGEMENT API ROUTES ──────────────────────────────────
 
 // GET /api/bills/next-number (Preview next bill number)
