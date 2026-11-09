@@ -110,6 +110,16 @@ const API = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   }),
+  notifyAbsentStaff: (data = {}) => fetchJson('/api/notifications/notify-absent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
+  getAbsentStatus: (date = null) => {
+    let url = '/api/notifications/absent-status';
+    if (date) url += `?date=${encodeURIComponent(date)}`;
+    return fetchJson(url);
+  },
   // Bills API endpoints
   getNextBillNumber: () => fetchJson('/api/bills/next-number'),
   submitBill: (data) => fetchJson('/api/bills', {
@@ -1150,7 +1160,11 @@ async function handleClockIn() {
   try {
     const res = await API.clockIn(selectedEmployee.id, userLocation);
     if (res.success) {
-      showToast(`Clock In successful for ${selectedEmployee.name}`, 'success');
+      if (res.isLate) {
+        showLateArrivalModal(res);
+      } else {
+        showToast(`Clock In successful for ${selectedEmployee.name}`, 'success');
+      }
       selectedEmployee.status = 'IN';
       updateEmployeeStatusBadge('IN');
       await loadEmployeesList(selectedEmployee.id);
@@ -1513,12 +1527,13 @@ function renderAttendanceLogsTable(logs) {
     const isLeave = isLeaveRecord(log);
     const statusCell = isLeave ? '<span class="badge-role" style="background: rgba(245, 158, 11, 0.16); color: var(--color-warning);">Leave</span>' : (log.clockOutTime ? 'Completed' : 'Active');
     const leaveLabel = isLeave ? 'Leave' : (log.clockOutTime ? formatDateTime(log.clockOutTime) : 'Active');
+    const lateBadge = log.isLate ? `<span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171; font-size:0.7rem; padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;" title="Clocked in late (${log.lateMinutes || 0}m late)">LATE${log.lateMinutes ? ` (${log.lateMinutes}m)` : ''}</span>` : '';
 
     tr.innerHTML = `
       <td><strong>${log.employeeName}</strong></td>
       <td><span class="badge-role">${log.role || 'Staff'}</span></td>
       <td>${log.date}</td>
-      <td style="color: ${isLeave ? 'var(--color-warning)' : 'var(--color-success)'}">${isLeave ? '—' : formatDateTime(log.clockInTime)}</td>
+      <td style="color: ${isLeave ? 'var(--color-warning)' : 'var(--color-success)'}">${isLeave ? '—' : `${formatDateTime(log.clockInTime)}${lateBadge}`}</td>
       <td style="color: ${isLeave ? 'var(--color-warning)' : (log.clockOutTime ? 'var(--color-danger)' : 'var(--text-muted)')}">
         ${leaveLabel}
       </td>
@@ -8526,6 +8541,26 @@ async function loadSalarySheet(monthOverride, force = false) {
         </td>
       `;
 
+      const lateCount = emp.lateCount || 0;
+      const lateDeductionAmount = emp.lateDeductionAmount || 0;
+      const lateDaysDeducted = emp.lateDaysDeducted || 0;
+      const lateCellHtml = `
+        <td class="cell-lates" style="text-align:center; min-width:130px; padding:6px 6px; vertical-align:middle;">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+            <span style="font-weight:700; font-size:0.85rem; color:${lateCount > 0 ? '#f87171' : '#94a3b8'};">
+              ${lateCount} late${lateCount !== 1 ? 's' : ''}
+            </span>
+            ${lateDaysDeducted > 0 ? `
+              <span style="background:rgba(239,68,68,0.2); color:#fca5a5; font-size:0.72rem; padding:1px 5px; border-radius:4px; font-weight:700;" title="4 lates = 1 day salary deducted">
+                -${lateDaysDeducted} day${lateDaysDeducted !== 1 ? 's' : ''} (-PKR ${fmtNum(lateDeductionAmount)})
+              </span>
+            ` : `
+              <span style="font-size:0.7rem; color:var(--text-muted);">${lateCount > 0 ? `${lateCount % 4}/4 towards penalty` : 'Punctual'}</span>
+            `}
+          </div>
+        </td>
+      `;
+
       const bankCreditsCellHtml = `
         <td style="text-align:right; background:rgba(99,102,241,0.04); min-width:130px; padding:6px 8px;">
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
@@ -8633,6 +8668,7 @@ async function loadSalarySheet(monthOverride, force = false) {
         <td class="cell-aug14-bonus" style="text-align:right; font-family:monospace; color:#4ade80;">${aug14Bonus > 0 ? fmtNum(aug14Bonus) : '—'}</td>
         <td class="cell-earned" style="text-align:right; font-family:monospace; color:#c4b5fd; font-weight:600;">${fmtNum(earnedSalary)}</td>
         ${expenseCellHtml}
+        ${lateCellHtml}
         <td class="cell-net ${netClass}" style="text-align:right; font-family:monospace;">${fmtNum(netSalary)}</td>
         <!-- Verification & Approval Columns -->
         ${bankCreditsCellHtml}
@@ -10196,9 +10232,22 @@ function extractSalaryDataForExport(month) {
         expenses = parseFloat(expEl.textContent.replace(/[^0-9.-]/g, '')) || 0;
       }
 
+      // Late arrival details
+      let lateCount = 0;
+      let lateDaysDeducted = 0;
+      let lateDeductionAmount = 0;
+      if (window.currentFinalizedSalaryReport && Array.isArray(window.currentFinalizedSalaryReport.employees)) {
+        const found = window.currentFinalizedSalaryReport.employees.find(x => x.id === empId);
+        if (found) {
+          lateCount = found.lateCount || 0;
+          lateDaysDeducted = found.lateDaysDeducted || 0;
+          lateDeductionAmount = found.lateDeductionAmount || 0;
+        }
+      }
+
       // Net Salary
       const netEl = tr.querySelector('.cell-net');
-      let netSalary = netEl ? (parseFloat(netEl.textContent.replace(/[^0-9.-]/g, '')) || 0) : (earnedSalary - expenses);
+      let netSalary = netEl ? (parseFloat(netEl.textContent.replace(/[^0-9.-]/g, '')) || 0) : (earnedSalary - expenses - lateDeductionAmount);
 
       employees.push({
         id: empId,
@@ -10212,6 +10261,9 @@ function extractSalaryDataForExport(month) {
         sundayBonus,
         earnedSalary,
         expenses,
+        lateCount,
+        lateDaysDeducted,
+        lateDeductionAmount,
         netSalary
       });
     });
@@ -10232,6 +10284,9 @@ function extractSalaryDataForExport(month) {
         sundayBonus: e.sundayBonus || 0,
         earnedSalary: e.earnedSalary || 0,
         expenses: e.totalExpenses !== undefined ? e.totalExpenses : (e.claimedExpenses || 0),
+        lateCount: e.lateCount || 0,
+        lateDaysDeducted: e.lateDaysDeducted || 0,
+        lateDeductionAmount: e.lateDeductionAmount || 0,
         netSalary: e.netSalary || 0,
         itemizedExpenses: e.itemizedExpenses || []
       });
@@ -10305,6 +10360,7 @@ async function printSalarySheet() {
   const totalBasic = employees.reduce((s, e) => s + (e.basicSalary || 0), 0);
   const totalEarned = employees.reduce((s, e) => s + (e.earnedSalary || 0), 0);
   const totalExpenses = employees.reduce((s, e) => s + (e.expenses || 0), 0);
+  const totalLateDeductions = employees.reduce((s, e) => s + (e.lateDeductionAmount || 0), 0);
   const totalNet = employees.reduce((s, e) => s + (e.netSalary || 0), 0);
 
   // Collect itemized expenses if available in report or DOM
@@ -10368,6 +10424,7 @@ async function printSalarySheet() {
             <th style="padding: 7px 4px; width: 60px; text-align: center; border: 1px solid #1e293b;">PRESENT DAYS</th>
             <th style="padding: 7px 8px; width: 110px; text-align: right; border: 1px solid #1e293b;">EARNED SALARY</th>
             <th style="padding: 7px 8px; width: 100px; text-align: right; border: 1px solid #1e293b; color: #fca5a5;">EXPENSES</th>
+            <th style="padding: 7px 8px; width: 95px; text-align: center; border: 1px solid #1e293b; color: #fca5a5;">LATES (−)</th>
             <th style="padding: 7px 8px; width: 115px; text-align: right; border: 1px solid #1e293b; color: #86efac;">NET SALARY</th>
             <th style="padding: 7px 8px; width: 120px; text-align: center; border: 1px solid #1e293b;">SIGNATURE</th>
           </tr>
@@ -10385,6 +10442,9 @@ async function printSalarySheet() {
               <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; color: ${e.expenses > 0 ? '#dc2626' : '#64748b'}; border: 1px solid #e2e8f0;">
                 ${e.expenses > 0 ? 'PKR ' + fmt(e.expenses) : '0'}
               </td>
+              <td style="padding: 6px 6px; text-align: center; font-family: monospace; font-weight: 600; color: ${(e.lateDeductionAmount || 0) > 0 ? '#dc2626' : '#64748b'}; border: 1px solid #e2e8f0;">
+                ${(e.lateDaysDeducted || 0) > 0 ? `${e.lateCount} (-${fmt(e.lateDeductionAmount)})` : (e.lateCount > 0 ? `${e.lateCount} lates` : '0')}
+              </td>
               <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 800; color: #15803d; background: #f0fdf4; border: 1px solid #e2e8f0; font-size: 11.5px;">
                 PKR ${fmt(e.netSalary)}
               </td>
@@ -10401,6 +10461,7 @@ async function printSalarySheet() {
             <td colspan="2" style="border: 1px solid #334155; text-align: center; color: #94a3b8; font-size: 9.5px;">${totalEmployees} Staff</td>
             <td style="padding: 8px; text-align: right; font-family: monospace; border: 1px solid #334155;">PKR ${fmt(totalEarned)}</td>
             <td style="padding: 8px; text-align: right; font-family: monospace; color: #fca5a5; border: 1px solid #334155;">PKR ${fmt(totalExpenses)}</td>
+            <td style="padding: 8px; text-align: center; font-family: monospace; color: #fca5a5; border: 1px solid #334155;">PKR ${fmt(totalLateDeductions)}</td>
             <td style="padding: 8px; text-align: right; font-family: monospace; color: #86efac; border: 1px solid #334155; font-size: 11.5px;">PKR ${fmt(totalNet)}</td>
             <td style="border: 1px solid #334155;"></td>
           </tr>
@@ -11780,7 +11841,7 @@ async function executeProgrammaticSalaryPDFExport(overrideWarning = false) {
       </div>
       <div style="border-top:1px solid #94a3b8; padding-top:8px; text-align:center;">
         <div style="font-weight:700; font-size:11px; color:#0f172a;">Approved By (Senior Admin)</div>
-        <div style="font-size:10px; color:#64748b; margin-top:2px;">Signature & Stamp (Passcode 9999)</div>
+        <div style="font-size:10px; color:#64748b; margin-top:2px;">Signature & Stamp</div>
       </div>
     </div>
   `;
@@ -12975,6 +13036,9 @@ async function loadWhatsAppSettings() {
     const elEnabled = document.getElementById('wa-settings-enabled');
     const elProvider = document.getElementById('wa-settings-provider');
     const elTime = document.getElementById('wa-settings-time');
+    const elDutyTiming = document.getElementById('wa-settings-duty-timing');
+    const elGraceMins = document.getElementById('wa-settings-grace-mins');
+    const elLateThreshold = document.getElementById('wa-settings-late-threshold');
     const elGroupId = document.getElementById('wa-settings-group-id');
     const elApiKey = document.getElementById('wa-settings-apikey');
     const elGatewayUrl = document.getElementById('wa-settings-gateway-url');
@@ -12982,6 +13046,9 @@ async function loadWhatsAppSettings() {
     if (elEnabled) elEnabled.checked = Boolean(st.enabled);
     if (elProvider) elProvider.value = st.provider || 'callmebot';
     if (elTime) elTime.value = st.scheduledTime || '21:00';
+    if (elDutyTiming) elDutyTiming.value = st.dutyTiming || '21:00';
+    if (elGraceMins) elGraceMins.value = st.dutyGraceMinutes !== undefined ? st.dutyGraceMinutes : 0;
+    if (elLateThreshold) elLateThreshold.value = st.lateDeductionThreshold || 4;
     if (elGroupId) elGroupId.value = st.groupId || st.phoneNumber || '';
     if (elApiKey) elApiKey.value = st.apiKey || '';
     if (elGatewayUrl) elGatewayUrl.value = st.gatewayUrl || '';
@@ -13005,7 +13072,7 @@ function renderWhatsAppDispatchLogs(logs) {
   logs.forEach(l => {
     const badgeColor = l.delivered ? '#10b981' : (l.status === 'NOT_CONFIGURED' ? '#f59e0b' : '#ef4444');
     const dateFormatted = l.timestamp ? new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : l.date;
-    const typeTag = l.isAutomated ? '⏰ Auto (9 PM)' : (l.isTest ? '⚡ Test' : '👤 Manual');
+    const typeTag = l.type === 'ABSENT_STAFF_ALERT' ? '🚨 Absent Alert' : (l.isAutomated ? '⏰ Auto (9 PM)' : (l.isTest ? '⚡ Test' : '👤 Manual'));
 
     html += `
       <div style="background: rgba(255,255,255,0.03); border-left: 3px solid ${badgeColor}; padding: 0.4rem 0.6rem; border-radius: 4px;">
@@ -13038,6 +13105,9 @@ async function saveWhatsAppSettingsForm(event) {
   const enabled = document.getElementById('wa-settings-enabled')?.checked ?? true;
   const provider = document.getElementById('wa-settings-provider')?.value || 'callmebot';
   const scheduledTime = document.getElementById('wa-settings-time')?.value || '21:00';
+  const dutyTiming = document.getElementById('wa-settings-duty-timing')?.value || '21:00';
+  const dutyGraceMinutes = parseInt(document.getElementById('wa-settings-grace-mins')?.value || '0', 10);
+  const lateDeductionThreshold = parseInt(document.getElementById('wa-settings-late-threshold')?.value || '4', 10);
   const groupId = (document.getElementById('wa-settings-group-id')?.value || '').trim();
   const apiKey = (document.getElementById('wa-settings-apikey')?.value || '').trim();
   const gatewayUrl = (document.getElementById('wa-settings-gateway-url')?.value || '').trim();
@@ -13047,6 +13117,9 @@ async function saveWhatsAppSettingsForm(event) {
       enabled,
       provider,
       scheduledTime,
+      dutyTiming,
+      dutyGraceMinutes,
+      lateDeductionThreshold,
       groupId,
       phoneNumber: groupId,
       apiKey,
@@ -13058,10 +13131,10 @@ async function saveWhatsAppSettingsForm(event) {
       feedback.style.background = 'rgba(16, 185, 129, 0.15)';
       feedback.style.border = '1px solid #10b981';
       feedback.style.color = '#34d399';
-      feedback.innerText = '💾 WhatsApp settings saved successfully! Automated 9:00 PM summary is active.';
+      feedback.innerText = '💾 Settings saved! Duty timing is 9:00 PM (4 lates = 1 day salary deducted). Automated alerts active.';
       setTimeout(() => feedback.classList.add('hidden'), 4000);
     }
-    showToast('WhatsApp settings saved!', 'success');
+    showToast('WhatsApp & Duty settings saved!', 'success');
   } catch (err) {
     if (feedback) {
       feedback.classList.remove('hidden');
@@ -13072,6 +13145,52 @@ async function saveWhatsAppSettingsForm(event) {
     }
     showToast(`Error: ${err.message}`, 'error');
   }
+}
+
+async function triggerAbsentStaffAlertNow() {
+  const btn = document.getElementById('btn-notify-absentees');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Checking Absentees...';
+  }
+  showToast('Running absent staff check and notifying management...', 'info');
+  try {
+    const res = await API.notifyAbsentStaff({ isTest: false });
+    if (res.success) {
+      if (res.absentCount > 0) {
+        showToast(`🚨 Management Alert: ${res.absentCount} staff absent. Notification sent!`, 'warning');
+      } else {
+        showToast('✅ 100% staff attendance recorded today! No absentees.', 'success');
+      }
+      await openDailySummaryModal(res.targetDate);
+    } else {
+      showToast(res.error || 'Failed to dispatch absent alert', 'error');
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚨</span> Notify Management of Absentees';
+    }
+  }
+}
+
+function showLateArrivalModal(res) {
+  const modal = document.getElementById('modal-late-notice');
+  const textEl = document.getElementById('late-notice-modal-text');
+  const warningMsg = res.lateWarning || res.message || 'Late arrival recorded.';
+  if (textEl) {
+    textEl.innerText = warningMsg;
+  }
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+}
+
+function closeLateNoticeModal() {
+  const modal = document.getElementById('modal-late-notice');
+  if (modal) modal.classList.add('hidden');
 }
 
 async function testWhatsAppDispatchNow() {

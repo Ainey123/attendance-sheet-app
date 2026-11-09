@@ -242,7 +242,7 @@ function loadLocalData() {
         attendance: file.attendance || [],
         workRecords: file.workRecords || [],
         workProfiles: file.workProfiles || {},
-        settings: file.settings || { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' },
+        settings: file.settings || { adminPasscode: '1280', seniorAdminPasscode: '9999', officeName: 'My Office' },
         formSubmissions: file.formSubmissions || [],
         employeeEvaluations: file.employeeEvaluations || [],
         comments: file.comments || [],
@@ -280,7 +280,7 @@ function loadLocalData() {
     attendance: [],
     workRecords: [],
     workProfiles: {},
-    settings: { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' },
+    settings: { adminPasscode: '1280', seniorAdminPasscode: '9999', officeName: 'My Office' },
     formSubmissions: [],
     employeeEvaluations: [],
     comments: [],
@@ -346,6 +346,66 @@ function getLocalDateString(dateInput = new Date()) {
 
 function isLeaveAttendanceRecord(record) {
   return Boolean(record && String(record.performanceNotes || '').trim().toUpperCase().startsWith('LEAVE'));
+}
+
+// Calculate if a clock-in is late based on duty timing (default 21:00 / 9:00 PM PKT)
+function calculateLateStatus(clockInTime, dutyTiming = '21:00', graceMinutes = 0) {
+  if (!clockInTime) return { isLate: false, lateMinutes: 0, clockInPktTime: '' };
+  try {
+    const d = clockInTime instanceof Date ? clockInTime : new Date(clockInTime);
+    if (isNaN(d.getTime())) return { isLate: false, lateMinutes: 0, clockInPktTime: '' };
+
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Karachi',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    }).formatToParts(d);
+
+    const curHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+    const curMin = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
+    const curTotalMins = curHour * 60 + curMin;
+
+    const clockInPktTime = d.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Karachi',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    const [dHourStr, dMinStr] = String(dutyTiming || '21:00').split(':');
+    const dutyHour = parseInt(dHourStr, 10) || 21;
+    const dutyMin = parseInt(dMinStr, 10) || 0;
+    const dutyTotalMins = dutyHour * 60 + dutyMin;
+
+    let lateMinutes = 0;
+    if (dutyHour >= 12) {
+      // Evening / night duty (e.g. 21:00 / 9:00 PM)
+      if (curTotalMins > dutyTotalMins) {
+        // Clocked in same evening after duty start (e.g. 21:15 > 21:00 -> 15 mins)
+        lateMinutes = curTotalMins - dutyTotalMins;
+      } else if (curHour < 12) {
+        // Clocked in past midnight (e.g. 00:30 next morning for a 21:00 shift -> 210 mins)
+        lateMinutes = (24 * 60 + curTotalMins) - dutyTotalMins;
+      }
+    } else {
+      // Morning / daytime duty (e.g. 09:00 AM)
+      if (curTotalMins > dutyTotalMins) {
+        lateMinutes = curTotalMins - dutyTotalMins;
+      }
+    }
+
+    const grace = Number(graceMinutes) || 0;
+    const isLate = lateMinutes > grace;
+
+    return {
+      isLate,
+      lateMinutes: isLate ? lateMinutes : 0,
+      clockInPktTime
+    };
+  } catch (err) {
+    return { isLate: false, lateMinutes: 0, clockInPktTime: '' };
+  }
 }
 
 function isQuotaOrNetworkError(error) {
@@ -782,10 +842,13 @@ const db = {
       const data = loadLocalData();
       const s = data.settings || {};
       return {
-        adminPasscode: s.adminPasscode || '1200',
+        adminPasscode: s.adminPasscode || '1280',
         seniorAdminPasscode: s.seniorAdminPasscode || '9999',
         officeName: s.officeName || 'My Office',
-        adminToken: s.adminToken || null
+        adminToken: s.adminToken || null,
+        dutyTiming: s.dutyTiming || '21:00',
+        dutyGraceMinutes: s.dutyGraceMinutes !== undefined ? Number(s.dutyGraceMinutes) : 0,
+        lateDeductionThreshold: s.lateDeductionThreshold ? Number(s.lateDeductionThreshold) : 4
       };
     }
     if (cachedSettings && (Date.now() - lastSettingsFetch < 60000)) {
@@ -811,8 +874,11 @@ const db = {
         }
         cachedSettings = {
           ...data,
-          adminPasscode: data.adminPasscode || '1200',
-          seniorAdminPasscode: data.seniorAdminPasscode || '9999'
+          adminPasscode: data.adminPasscode || '1280',
+          seniorAdminPasscode: data.seniorAdminPasscode || '9999',
+          dutyTiming: data.dutyTiming || '21:00',
+          dutyGraceMinutes: data.dutyGraceMinutes !== undefined ? Number(data.dutyGraceMinutes) : 0,
+          lateDeductionThreshold: data.lateDeductionThreshold ? Number(data.lateDeductionThreshold) : 4
         };
         lastSettingsFetch = Date.now();
       } finally {
@@ -830,12 +896,15 @@ const db = {
       const local = loadLocalData();
       const s = local.settings || {};
       return {
-        adminPasscode: s.adminPasscode || '1200',
+        adminPasscode: s.adminPasscode || '1280',
         seniorAdminPasscode: s.seniorAdminPasscode || '9999',
-        officeName: s.officeName || 'My Office'
+        officeName: s.officeName || 'My Office',
+        dutyTiming: s.dutyTiming || '21:00',
+        dutyGraceMinutes: s.dutyGraceMinutes !== undefined ? Number(s.dutyGraceMinutes) : 0,
+        lateDeductionThreshold: s.lateDeductionThreshold ? Number(s.lateDeductionThreshold) : 4
       };
     }
-    return cachedSettings || { adminPasscode: '1200', seniorAdminPasscode: '9999', officeName: 'My Office' };
+    return cachedSettings || { adminPasscode: '1280', seniorAdminPasscode: '9999', officeName: 'My Office', dutyTiming: '21:00', dutyGraceMinutes: 0, lateDeductionThreshold: 4 };
   },
 
   async updateSettings(newSettings) {
@@ -1087,6 +1156,11 @@ const db = {
     const now = new Date();
     const today = getLocalDateString(now);
 
+    const settings = await this.getSettings().catch(() => ({}));
+    const dutyTiming = settings.dutyTiming || '21:00';
+    const dutyGraceMinutes = settings.dutyGraceMinutes || 0;
+    const lateCheck = (typeof this.calculateLateStatus === 'function' ? this.calculateLateStatus : calculateLateStatus)(now, dutyTiming, dutyGraceMinutes);
+
     if (useLocalFallback) {
       const data = loadLocalData();
       const employee = data.employees.find(e => e.id === employeeId);
@@ -1111,6 +1185,45 @@ const db = {
         return { record: activeRecord, employee, alreadyActive: true };
       }
 
+      const monthPrefix = today.slice(0, 7);
+      let priorLateCount = 0;
+      (data.attendance || []).forEach(r => {
+        if (r.employeeId === employeeId && r.date && r.date.startsWith(monthPrefix) && r.date !== today && r.isLate) {
+          priorLateCount++;
+        }
+      });
+      const monthLateCount = priorLateCount + (lateCheck.isLate ? 1 : 0);
+      let lateWarning = null;
+      if (lateCheck.isLate) {
+        const threshold = Number(settings.lateDeductionThreshold) || 4;
+        const remainder = monthLateCount % threshold;
+        const totalDeductions = Math.floor(monthLateCount / threshold);
+        if (remainder === 0) {
+          lateWarning = `⚠️ LATE ARRIVAL PENALTY (Late #${monthLateCount}): You clocked in at ${lateCheck.clockInPktTime} (${lateCheck.lateMinutes} mins late). Duty timing is 9:00 PM. You have reached ${monthLateCount} late arrivals this month. In accordance with policy, 1 day salary has been deducted (Total penalty: ${totalDeductions} day(s) salary).`;
+        } else {
+          const remainingUntilDeduct = threshold - remainder;
+          lateWarning = `⚠️ LATE ARRIVAL NOTICE (Late #${monthLateCount}): You clocked in at ${lateCheck.clockInPktTime} (${lateCheck.lateMinutes} mins late). Duty timing is 9:00 PM. You have ${remainder}/${threshold} lates recorded this month. Policy reminder: ${threshold} late arrivals result in 1 day salary deduction (${remainingUntilDeduct} more late(s) before deduction).`;
+        }
+
+        // Post in-app notice for employee
+        await this.addComment({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          sender: 'management',
+          senderName: 'Office Management (Late Policy)',
+          message: lateWarning
+        }).catch(() => {});
+
+        // Post notice for management monitor
+        await this.addComment({
+          employeeId: 'system',
+          employeeName: 'System Monitor',
+          sender: 'system',
+          senderName: 'Late Attendance Alert',
+          message: `⏰ Late Arrival Alert: ${employee.name} (${employee.role}) clocked in at ${lateCheck.clockInPktTime} (${lateCheck.lateMinutes} mins late). Month lates: ${monthLateCount}/${threshold}.${remainder === 0 ? ' [1 Day Salary Deducted]' : ''}`
+        }).catch(() => {});
+      }
+
       const record = {
         id: generateId('att'),
         employeeId: employee.id,
@@ -1121,13 +1234,22 @@ const db = {
         clockOutTime: null,
         clockInLocation: location || null,
         clockOutLocation: null,
-        duration: null
+        duration: null,
+        isLate: lateCheck.isLate,
+        lateMinutes: lateCheck.lateMinutes
       };
 
       data.attendance.push(record);
       employee.status = 'IN';
       saveLocalData(data);
-      return { record, employee };
+      return {
+        record,
+        employee,
+        isLate: lateCheck.isLate,
+        lateMinutes: lateCheck.lateMinutes,
+        monthLateCount,
+        lateWarning
+      };
     }
     try {
       const { data: employee, error: empError } = await supabase
@@ -1182,6 +1304,54 @@ const db = {
         return { record: activeRecord, employee: updatedEmployee || employee, alreadyActive: true };
       }
 
+      const monthPrefix = today.slice(0, 7);
+      let priorLateCount = 0;
+      try {
+        const { data: mRecords } = await supabase
+          .from('attendance')
+          .select('id, date, isLate')
+          .eq('employeeId', employeeId)
+          .gte('date', `${monthPrefix}-01`)
+          .lte('date', `${monthPrefix}-31`);
+        (mRecords || []).forEach(r => {
+          if (r.date !== today && r.isLate) {
+            priorLateCount++;
+          }
+        });
+      } catch (e) {}
+
+      const monthLateCount = priorLateCount + (lateCheck.isLate ? 1 : 0);
+      let lateWarning = null;
+      if (lateCheck.isLate) {
+        const threshold = Number(settings.lateDeductionThreshold) || 4;
+        const remainder = monthLateCount % threshold;
+        const totalDeductions = Math.floor(monthLateCount / threshold);
+        if (remainder === 0) {
+          lateWarning = `⚠️ LATE ARRIVAL PENALTY (Late #${monthLateCount}): You clocked in at ${lateCheck.clockInPktTime} (${lateCheck.lateMinutes} mins late). Duty timing is 9:00 PM. You have reached ${monthLateCount} late arrivals this month. In accordance with policy, 1 day salary has been deducted (Total penalty: ${totalDeductions} day(s) salary).`;
+        } else {
+          const remainingUntilDeduct = threshold - remainder;
+          lateWarning = `⚠️ LATE ARRIVAL NOTICE (Late #${monthLateCount}): You clocked in at ${lateCheck.clockInPktTime} (${lateCheck.lateMinutes} mins late). Duty timing is 9:00 PM. You have ${remainder}/${threshold} lates recorded this month. Policy reminder: ${threshold} late arrivals result in 1 day salary deduction (${remainingUntilDeduct} more late(s) before deduction).`;
+        }
+
+        // Post in-app notice for employee
+        await this.addComment({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          sender: 'management',
+          senderName: 'Office Management (Late Policy)',
+          message: lateWarning
+        }).catch(() => {});
+
+        // Post notice for management monitor
+        await this.addComment({
+          employeeId: 'system',
+          employeeName: 'System Monitor',
+          sender: 'system',
+          senderName: 'Late Attendance Alert',
+          message: `⏰ Late Arrival Alert: ${employee.name} (${employee.role}) clocked in at ${lateCheck.clockInPktTime} (${lateCheck.lateMinutes} mins late). Month lates: ${monthLateCount}/${threshold}.${remainder === 0 ? ' [1 Day Salary Deducted]' : ''}`
+        }).catch(() => {});
+      }
+
       const record = {
         id: generateId('att'),
         employeeId: employee.id,
@@ -1192,16 +1362,41 @@ const db = {
         clockOutTime: null,
         clockInLocation: location || null,
         clockOutLocation: null,
-        duration: null
+        duration: null,
+        isLate: lateCheck.isLate,
+        lateMinutes: lateCheck.lateMinutes
       };
 
-      const { data: newRecord, error: insertError } = await supabase
+      let newRecord;
+      const { data: insertedData, error: insertError } = await supabase
         .from('attendance')
         .insert([record])
         .select()
         .single();
 
-      if (insertError) handleSupabaseError(insertError, 'clock in');
+      if (insertError) {
+        if (String(insertError.message || '').includes('column') || String(insertError.message || '').includes('isLate')) {
+          const fallbackRec = { ...record };
+          delete fallbackRec.isLate;
+          delete fallbackRec.lateMinutes;
+          if (lateCheck.isLate) {
+            fallbackRec.performanceNotes = fallbackRec.performanceNotes
+              ? `${fallbackRec.performanceNotes} | LATE: ${lateCheck.lateMinutes}m`
+              : `LATE: ${lateCheck.lateMinutes}m`;
+          }
+          const { data: retryData, error: retryErr } = await supabase
+            .from('attendance')
+            .insert([fallbackRec])
+            .select()
+            .single();
+          if (retryErr) handleSupabaseError(retryErr, 'clock in');
+          newRecord = { ...retryData, isLate: lateCheck.isLate, lateMinutes: lateCheck.lateMinutes };
+        } else {
+          handleSupabaseError(insertError, 'clock in');
+        }
+      } else {
+        newRecord = insertedData;
+      }
 
       const { data: updatedEmployee, error: updateError } = await supabase
         .from('employees')
@@ -1211,7 +1406,14 @@ const db = {
         .single();
 
       if (updateError) handleSupabaseError(updateError, 'update employee status');
-      return { record: newRecord, employee: updatedEmployee };
+      return {
+        record: newRecord,
+        employee: updatedEmployee,
+        isLate: lateCheck.isLate,
+        lateMinutes: lateCheck.lateMinutes,
+        monthLateCount,
+        lateWarning
+      };
     } catch (error) {
       if (isQuotaOrNetworkError(error)) {
         console.warn('Supabase clockIn failed, automatically using local storage:', error.message || error);
@@ -3246,8 +3448,27 @@ const db = {
     // GrossEarnedSalary = RegularSalary + ExtraDaysBonus + SundayBonus + 14AugBonus
     const earnedSalary = Math.round((regularEarned + extraDaysBonus + sundayBonus + aug14Bonus) * 100) / 100;
 
-    // NetSalary = GrossEarnedSalary - Expenses
-    const netSalary = Math.round((earnedSalary - totalExpenses) * 100) / 100;
+    // Calculate late arrivals and salary deductions (4 lates = 1 day salary deducted)
+    let lateCount = 0;
+    let totalLateMinutes = 0;
+    attendanceLogs.forEach(a => {
+      let isLateRec = false;
+      let lateMins = 0;
+      if (a.isLate !== undefined && a.isLate !== null) {
+        isLateRec = Boolean(a.isLate);
+        lateMins = Number(a.lateMinutes) || 0;
+      }
+      if (isLateRec) {
+        lateCount++;
+        totalLateMinutes += lateMins;
+      }
+    });
+
+    const lateDaysDeducted = Math.floor(lateCount / 4);
+    const lateDeductionAmount = Math.round(lateDaysDeducted * perDaySalary * 100) / 100;
+
+    // NetSalary = GrossEarnedSalary - Expenses - LateDeductions
+    const netSalary = Math.max(0, Math.round((earnedSalary - totalExpenses - lateDeductionAmount) * 100) / 100);
 
     Object.assign(salRec, {
       employeeName: emp ? emp.name : salRec.employeeName,
@@ -3275,6 +3496,10 @@ const db = {
       sundayBonus,
       earnedSalary,
       totalExpenses: Math.round(totalExpenses),
+      lateCount,
+      lateDaysDeducted,
+      lateDeductionAmount,
+      totalLateMinutes,
       netSalary,
       generatedAt: new Date().toISOString()
     });
@@ -4853,6 +5078,8 @@ const db = {
     let totalEarnedSalary = 0;
     let totalClaimedExpenses = 0;
     let totalEffectiveExpenses = 0;
+    let totalLateDeductions = 0;
+    let totalLateCount = 0;
     let totalNetSalary = 0;
     let totalBankCredits = 0;
     let totalVerifiedCount = 0;
@@ -5040,7 +5267,30 @@ const db = {
         effectiveExpense = verifiedAmount;
       }
 
-      const netSalary = Math.round((earnedSalary - effectiveExpense) * 100) / 100;
+      // Late arrival tracking and salary deduction
+      // Policy: 4 lates = 1 day salary deducted
+      let lateCount = 0;
+      let totalLateMinutes = 0;
+      const lateDates = [];
+
+      empAtt.forEach(a => {
+        let isLateRec = false;
+        let lateMins = 0;
+        if (a.isLate !== undefined && a.isLate !== null) {
+          isLateRec = Boolean(a.isLate);
+          lateMins = Number(a.lateMinutes) || 0;
+        }
+        if (isLateRec) {
+          lateCount++;
+          totalLateMinutes += lateMins;
+          lateDates.push({ date: a.date, clockInTime: a.clockInTime, lateMinutes: lateMins });
+        }
+      });
+
+      const lateDaysDeducted = Math.floor(lateCount / 4);
+      const lateDeductionAmount = Math.round(lateDaysDeducted * perDaySalary * 100) / 100;
+
+      const netSalary = Math.max(0, Math.round((earnedSalary - effectiveExpense - lateDeductionAmount) * 100) / 100);
 
       // Bank statement credits from Accounts PDF
       const pdfVr = bankCreditsMap[empId] || null;
@@ -5063,6 +5313,8 @@ const db = {
       totalEarnedSalary += earnedSalary;
       totalClaimedExpenses += totalExpenses;
       totalEffectiveExpenses += effectiveExpense;
+      totalLateDeductions += lateDeductionAmount;
+      totalLateCount += lateCount;
       totalNetSalary += netSalary;
       totalBankCredits += bankCredits;
 
@@ -5099,6 +5351,11 @@ const db = {
         earnedSalary,
         itemizedExpenses,
         totalExpenses,
+        lateCount,
+        lateDaysDeducted,
+        lateDeductionAmount,
+        totalLateMinutes,
+        lateDates,
         isExpVerified,
         isExpRejected,
         verifiedAmount,
@@ -5133,6 +5390,8 @@ const db = {
         totalEarnedSalary: Math.round(totalEarnedSalary * 100) / 100,
         totalClaimedExpenses: Math.round(totalClaimedExpenses * 100) / 100,
         totalEffectiveExpenses: Math.round(totalEffectiveExpenses * 100) / 100,
+        totalLateCount,
+        totalLateDeductions: Math.round(totalLateDeductions * 100) / 100,
         totalNetSalary: Math.round(totalNetSalary * 100) / 100,
         totalBankCredits: Math.round(totalBankCredits * 100) / 100,
         totalVerifiedCount,
@@ -7291,6 +7550,8 @@ const db = {
       }
 
       const locFormatted = formatLocationString(att.clockInLocation);
+      const isLate = Boolean(att.isLate);
+      const lateMinutes = Number(att.lateMinutes) || 0;
 
       presentEmployees.push({
         employeeId: empId,
@@ -7299,6 +7560,8 @@ const db = {
         clockInTime: inTime,
         clockOutTime: outTime,
         isWorking,
+        isLate,
+        lateMinutes,
         duration: durationStr,
         location: locFormatted || null,
         expenseAmount: Number(att.expenseAmount || att.moneySpent || 0)
@@ -7468,6 +7731,7 @@ const db = {
         presentCount: presentEmployees.length,
         absentCount: absentEmployees.length,
         leaveCount: leaveEmployees.length,
+        lateCount: presentEmployees.filter(p => p.isLate).length,
         approvedBillsCount: approvedBills.length,
         totalApprovedAmount,
         rejectedBillsCount: rejectedBills.length,
@@ -7481,17 +7745,16 @@ const db = {
     };
   },
 
-  async dispatchDailyWhatsAppSummary(targetDateInput = null, options = {}) {
-    const targetDate = targetDateInput || getLocalDateString();
-    const summary = await this.generateDailyAttendanceSummary(targetDate);
-    const settings = await this.getWhatsAppSettings();
-
+  async dispatchWhatsAppTextMessage(messageText, options = {}) {
+    const settings = await this.getWhatsAppSettings().catch(() => ({}));
     const provider = options.provider || settings.provider || 'callmebot';
     const gatewayUrl = options.gatewayUrl || settings.gatewayUrl || '';
-    const groupId = options.groupId || settings.groupId || '';
-    const phoneNumber = options.phoneNumber || settings.phoneNumber || '';
+    const groupId = options.groupId || options.to || options.phoneNumber || settings.groupId || settings.phoneNumber || '';
+    const phoneNumber = options.phoneNumber || options.to || options.groupId || settings.phoneNumber || settings.groupId || '';
     const apiKey = options.apiKey || settings.apiKey || '';
     const isTest = Boolean(options.isTest);
+    const targetDate = options.date || getLocalDateString();
+    const type = options.type || 'TEXT_MESSAGE';
 
     let dispatchResult = {
       attempted: false,
@@ -7501,23 +7764,21 @@ const db = {
       message: 'No WhatsApp Gateway or Webhook URL configured in Settings.'
     };
 
-    // If gateway or provider credentials provided, attempt HTTP dispatch
     if (gatewayUrl || (provider === 'callmebot' && (groupId || phoneNumber) && apiKey)) {
       dispatchResult.attempted = true;
       try {
         let endpoint = gatewayUrl;
         let fetchOptions = {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: summary.summaryText,
-            text: summary.summaryText,
+            message: messageText,
+            text: messageText,
             groupId: groupId || phoneNumber,
             to: groupId || phoneNumber,
             date: targetDate,
-            isTest
+            isTest,
+            type
           })
         };
 
@@ -7526,10 +7787,10 @@ const db = {
         }
 
         if (provider === 'callmebot') {
-          if (groupId) {
-            endpoint = `https://api.callmebot.com/whatsapp.php?source=group&group=${encodeURIComponent(groupId)}&text=${encodeURIComponent(summary.summaryText)}&apikey=${encodeURIComponent(apiKey)}`;
+          if (groupId && groupId.includes('@')) {
+            endpoint = `https://api.callmebot.com/whatsapp.php?source=group&group=${encodeURIComponent(groupId)}&text=${encodeURIComponent(messageText)}&apikey=${encodeURIComponent(apiKey)}`;
           } else {
-            endpoint = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phoneNumber)}&text=${encodeURIComponent(summary.summaryText)}&apikey=${encodeURIComponent(apiKey)}`;
+            endpoint = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phoneNumber || groupId)}&text=${encodeURIComponent(messageText)}&apikey=${encodeURIComponent(apiKey)}`;
           }
           fetchOptions = { method: 'GET' };
         } else if (provider === 'ultramsg') {
@@ -7540,7 +7801,7 @@ const db = {
             body: JSON.stringify({
               token: apiKey,
               to: groupId || phoneNumber,
-              body: summary.summaryText
+              body: messageText
             })
           };
         } else if (provider === 'greenapi') {
@@ -7549,8 +7810,8 @@ const db = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chatId: groupId.includes('@') ? groupId : `${groupId}@g.us`,
-              message: summary.summaryText
+              chatId: (groupId || phoneNumber).includes('@') ? (groupId || phoneNumber) : `${groupId || phoneNumber}@g.us`,
+              message: messageText
             })
           };
         }
@@ -7573,7 +7834,210 @@ const db = {
       }
     }
 
-    // Record dispatch history log
+    if (options.recordLog !== false) {
+      const nowIso = new Date().toISOString();
+      const logEntry = {
+        id: generateId('wa_log'),
+        date: targetDate,
+        timestamp: nowIso,
+        type,
+        isAutomated: Boolean(options.isAutomated),
+        isTest,
+        provider,
+        delivered: dispatchResult.delivered,
+        status: dispatchResult.status,
+        message: dispatchResult.message,
+        summaryStats: options.summaryStats || null
+      };
+
+      try {
+        const data = loadLocalData();
+        data.whatsappDispatchLogs = data.whatsappDispatchLogs || [];
+        data.whatsappDispatchLogs.unshift(logEntry);
+        if (data.whatsappDispatchLogs.length > 50) {
+          data.whatsappDispatchLogs = data.whatsappDispatchLogs.slice(0, 50);
+        }
+        saveLocalData(data);
+      } catch (e) {}
+    }
+
+    return dispatchResult;
+  },
+
+  async checkAndNotifyAbsentStaff(targetDateInput = null, options = {}) {
+    const targetDate = targetDateInput || getLocalDateString();
+    const settings = await this.getSettings().catch(() => ({}));
+    const officeName = (settings && settings.officeName) || 'My Office';
+    const dutyTiming = settings.dutyTiming || '21:00';
+
+    // 1. Fetch active employees (exclude archived & deleted)
+    const allEmployees = await this.getEmployees().catch(() => []);
+    const activeEmployees = (allEmployees || []).filter(e => !e.isArchived && e.status !== 'DELETED');
+
+    // 2. Fetch target date attendance
+    const attendanceRecords = await this.getAttendance(targetDate).catch(() => []);
+
+    // 3. Separate real attendance from leave notes
+    const presentMap = new Map();
+    attendanceRecords.forEach(r => {
+      if (!isLeaveAttendanceRecord(r)) {
+        presentMap.set(r.employeeId, r);
+      }
+    });
+
+    // 4. Check leaves
+    const leaveSet = new Set();
+    attendanceRecords.forEach(r => {
+      if (isLeaveAttendanceRecord(r)) {
+        leaveSet.add(r.employeeId);
+      }
+    });
+
+    try {
+      const leaveFormSubmissions = await this.getFormSubmissions(null, 'Leave').catch(() => []);
+      (leaveFormSubmissions || []).forEach(sub => {
+        const fd = sub.formData || {};
+        if (fd.leaveDate && String(fd.leaveDate) === targetDate) leaveSet.add(sub.employeeId);
+        if (fd.startDate && fd.endDate && String(fd.startDate) <= targetDate && String(fd.endDate) >= targetDate) {
+          leaveSet.add(sub.employeeId);
+        }
+      });
+    } catch (e) {}
+
+    // 5. Determine absent staff
+    const absentStaff = activeEmployees.filter(emp => {
+      return !presentMap.has(emp.id) && !leaveSet.has(emp.id);
+    }).map(emp => ({
+      employeeId: emp.id,
+      name: emp.name,
+      role: emp.role || 'Staff',
+      phone: emp.phone || emp.phoneNumber || ''
+    }));
+
+    const presentCount = presentMap.size;
+    const absentCount = absentStaff.length;
+    const leaveCount = leaveSet.size;
+    const totalStaff = activeEmployees.length;
+
+    let dutyTimingDisplay = dutyTiming;
+    try {
+      const [dh, dm] = dutyTiming.split(':');
+      const dObj = new Date();
+      dObj.setHours(parseInt(dh, 10), parseInt(dm, 10), 0);
+      dutyTimingDisplay = dObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    } catch (e) {}
+
+    let dateDisplay = targetDate;
+    try {
+      const dateObj = new Date(`${targetDate}T12:00:00Z`);
+      if (!isNaN(dateObj.getTime())) {
+        dateDisplay = dateObj.toLocaleDateString('en-GB', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        });
+      }
+    } catch (e) {}
+
+    // Construct Management Notification Message
+    let msg = `🚨 *MANAGEMENT ALERT: ABSENT STAFF NOTIFICATION* 🚨\n`;
+    msg += `🏢 *${officeName}*\n`;
+    msg += `📅 *Date:* ${dateDisplay}\n`;
+    msg += `⏰ *Duty Timing:* ${dutyTimingDisplay} PKT\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    if (absentCount === 0) {
+      msg += `🎉 *Full Attendance:* All staff members have clocked in or are on authorized leave today!\n\n`;
+    } else {
+      msg += `⚠️ *The following ${absentCount} staff member(s) have NOT reported for duty:*\n\n`;
+      absentStaff.forEach((a, idx) => {
+        msg += `${idx + 1}. ❌ *${a.name}* (${a.role})\n`;
+      });
+      msg += `\n`;
+    }
+
+    msg += `👥 *Shift Attendance Overview:*\n`;
+    msg += `• Total Staff: *${totalStaff}*\n`;
+    msg += `• Present / Clocked-In: *${presentCount}* 🟢\n`;
+    msg += `• Absent: *${absentCount}* 🔴\n`;
+    msg += `• On Leave: *${leaveCount}* 🏖️\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `🤖 _Automated Management Notification • Office Attendance App_`;
+
+    let dispatchResult = { attempted: false, delivered: false, status: 'SKIPPED', message: 'Preview only mode' };
+
+    if (!options.isPreviewOnly) {
+      // 1. Post notification to internal system comments for Management
+      try {
+        await this.addComment({
+          employeeId: 'system',
+          employeeName: 'Management Alert System',
+          sender: 'system',
+          senderName: 'Attendance Monitor',
+          message: absentCount > 0
+            ? `🚨 Management Absent Staff Alert (${targetDate}): ${absentCount} staff absent (${absentStaff.map(s => s.name).join(', ')}). Duty started at ${dutyTimingDisplay}.`
+            : `✅ Attendance Check (${targetDate}): 100% staff attendance recorded. No staff absent.`
+        });
+      } catch (e) {}
+
+      // 2. Dispatch to Management WhatsApp Gateway
+      try {
+        dispatchResult = await this.dispatchWhatsAppTextMessage(msg, {
+          date: targetDate,
+          type: 'ABSENT_STAFF_ALERT',
+          isAutomated: Boolean(options.isAutomated),
+          isTest: Boolean(options.isTest)
+        });
+      } catch (e) {
+        dispatchResult = { attempted: true, delivered: false, status: 'ERROR', message: e.message };
+      }
+    }
+
+    return {
+      success: true,
+      targetDate,
+      date: targetDate,
+      officeName,
+      dutyTiming: dutyTimingDisplay,
+      totalStaff,
+      presentCount,
+      absentCount,
+      leaveCount,
+      absentStaff,
+      absentEmployees: absentStaff,
+      messageText: msg,
+      summaryText: msg,
+      deliveredToFeed: !options.isPreviewOnly,
+      dispatchResult
+    };
+  },
+
+  async dispatchDailyWhatsAppSummary(targetDateInput = null, options = {}) {
+    const targetDate = targetDateInput || getLocalDateString();
+    const summary = await this.generateDailyAttendanceSummary(targetDate);
+    const settings = await this.getWhatsAppSettings();
+
+    const provider = options.provider || settings.provider || 'callmebot';
+    const gatewayUrl = options.gatewayUrl || settings.gatewayUrl || '';
+    const groupId = options.groupId || settings.groupId || '';
+    const phoneNumber = options.phoneNumber || settings.phoneNumber || '';
+    const apiKey = options.apiKey || settings.apiKey || '';
+    const isTest = Boolean(options.isTest);
+
+    const dispatchResult = await this.dispatchWhatsAppTextMessage(summary.summaryText, {
+      provider,
+      gatewayUrl,
+      groupId,
+      phoneNumber,
+      apiKey,
+      isTest,
+      isAutomated: Boolean(options.isAutomated),
+      date: targetDate,
+      type: 'DAILY_SUMMARY',
+      summaryStats: summary.stats
+    });
+
     const nowIso = new Date().toISOString();
     const logEntry = {
       id: generateId('wa_log'),
@@ -7587,16 +8051,6 @@ const db = {
       message: dispatchResult.message,
       summaryStats: summary.stats
     };
-
-    try {
-      const data = loadLocalData();
-      data.whatsappDispatchLogs = data.whatsappDispatchLogs || [];
-      data.whatsappDispatchLogs.unshift(logEntry);
-      if (data.whatsappDispatchLogs.length > 50) {
-        data.whatsappDispatchLogs = data.whatsappDispatchLogs.slice(0, 50);
-      }
-      saveLocalData(data);
-    } catch (e) {}
 
     // Post notification comment in admin feed
     try {
@@ -8117,5 +8571,9 @@ function attachDuplicateVerificationToBills(bills, allReferenceBills = null) {
     };
   });
 }
+
+db.calculateLateStatus = calculateLateStatus;
+db.getBillDuplicateVerification = getBillDuplicateVerification;
+db.attachDuplicateVerificationToBills = attachDuplicateVerificationToBills;
 
 module.exports = db;

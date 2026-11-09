@@ -29,11 +29,18 @@ ALTER TABLE employees ADD COLUMN IF NOT EXISTS "minusScore" INTEGER DEFAULT 0;
 
 -- 2. Settings Table (single-row config)
 CREATE TABLE IF NOT EXISTS settings (
-  "id"            TEXT PRIMARY KEY DEFAULT 'default',
-  "adminPasscode" TEXT DEFAULT '1234',
-  "officeName"    TEXT DEFAULT 'My Office',
-  "adminToken"    TEXT
+  "id"                     TEXT PRIMARY KEY DEFAULT 'default',
+  "adminPasscode"          TEXT DEFAULT '1280',
+  "officeName"             TEXT DEFAULT 'My Office',
+  "adminToken"             TEXT,
+  "dutyTiming"             TEXT DEFAULT '21:00',
+  "dutyGraceMinutes"       INTEGER DEFAULT 0,
+  "lateDeductionThreshold" INTEGER DEFAULT 4
 );
+
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS "dutyTiming" TEXT DEFAULT '21:00';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS "dutyGraceMinutes" INTEGER DEFAULT 0;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS "lateDeductionThreshold" INTEGER DEFAULT 4;
 
 -- 3. Attendance Table
 CREATE TABLE IF NOT EXISTS attendance (
@@ -51,8 +58,13 @@ CREATE TABLE IF NOT EXISTS attendance (
   "receivedAmount"   NUMERIC DEFAULT 0,
   "expenseAmount"    NUMERIC DEFAULT 0,
   "moneySpent"       NUMERIC DEFAULT 0,
-  "image"            TEXT
+  "image"            TEXT,
+  "isLate"           BOOLEAN DEFAULT FALSE,
+  "lateMinutes"      INTEGER DEFAULT 0
 );
+
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "isLate" BOOLEAN DEFAULT FALSE;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "lateMinutes" INTEGER DEFAULT 0;
 
 -- 4. Work Records Table (monthly daily entries per employee)
 CREATE TABLE IF NOT EXISTS work_records (
@@ -196,5 +208,5 @@ CREATE POLICY "Allow all access for bills" ON bills FOR ALL USING (true) WITH CH
 
 -- ── Seed default settings row ─────────────────────────────
 INSERT INTO settings ("id", "adminPasscode", "officeName")
-VALUES ('default', '1234', 'My Office')
+VALUES ('default', '1280', 'My Office')
 ON CONFLICT ("id") DO NOTHING;

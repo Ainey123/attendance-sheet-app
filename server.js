@@ -30,12 +30,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 function isPasscodeValid(passcode, settings) {
   const clean = String(passcode || '').trim();
   if (!clean) return false;
-  const target = (settings && settings.adminPasscode && String(settings.adminPasscode).trim()) || '1200';
+  const target = (settings && settings.adminPasscode && String(settings.adminPasscode).trim()) || '1280';
   const senior = (settings && settings.seniorAdminPasscode && String(settings.seniorAdminPasscode).trim()) || '9999';
   if (clean === target || clean === senior) return true;
-  if (!settings || !settings.adminPasscode || settings.adminPasscode === '1200' || settings.adminPasscode === '1289' || settings.adminPasscode === '1234' || settings.adminPasscode === '1290') {
-    return clean === '1200' || clean === '1289' || clean === '1234' || clean === '9999' || clean === '1290';
-  }
   return false;
 }
 
@@ -328,7 +325,15 @@ app.post('/api/attendance/clock-in', async (req, res) => {
   }
   try {
     const result = await db.clockIn(employeeId, location);
-    res.json({ success: true, message: 'Clocked in successfully!', data: result });
+    res.json({
+      success: true,
+      message: result.lateWarning || 'Clocked in successfully!',
+      isLate: Boolean(result.isLate),
+      lateMinutes: result.lateMinutes || 0,
+      monthLateCount: result.monthLateCount || 0,
+      lateWarning: result.lateWarning || null,
+      data: result
+    });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -1417,6 +1422,32 @@ app.post('/api/settings/whatsapp', checkAdminAuth, async (req, res) => {
   }
 });
 
+// POST /api/notifications/notify-absent (Trigger management notification for absent staff)
+app.post('/api/notifications/notify-absent', checkAdminAuth, async (req, res) => {
+  try {
+    const { date, isTest, isPreviewOnly } = req.body || {};
+    const result = await db.checkAndNotifyAbsentStaff(date, {
+      isTest: Boolean(isTest),
+      isPreviewOnly: Boolean(isPreviewOnly),
+      isAutomated: false
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/notifications/absent-status (Fetch absent staff preview and status)
+app.get('/api/notifications/absent-status', checkAdminAuth, async (req, res) => {
+  try {
+    const targetDate = req.query.date || null;
+    const result = await db.checkAndNotifyAbsentStaff(targetDate, { isPreviewOnly: true });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/cron/daily-summary (Automated trigger endpoint for Vercel Cron or webhooks)
 app.get('/api/cron/daily-summary', async (req, res) => {
   try {
@@ -1436,8 +1467,9 @@ app.get('/api/cron/daily-summary', async (req, res) => {
   }
 });
 
-// Automated 9:00 PM PKT Scheduler for daily summary
+// Automated 9:00 PM PKT Scheduler for daily summary & absent staff management alerts
 let lastAutomatedSummaryDate = null;
+let lastAutomatedAbsentAlertDate = null;
 async function checkAutomatedDailySummary() {
   try {
     const now = new Date();
@@ -1449,7 +1481,15 @@ async function checkAutomatedDailySummary() {
     });
     const pktDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
 
-    // Check if 21:00 (9:00 PM) PKT
+    // 1. Shift Absent Staff Alert to Management (triggered at 21:05 PKT, right after duty starts at 9:00 PM)
+    if (pktTimeStr === '21:05' && lastAutomatedAbsentAlertDate !== pktDateStr) {
+      lastAutomatedAbsentAlertDate = pktDateStr;
+      console.log(`[Absent Alert] Running automated absent staff check for ${pktDateStr}...`);
+      const absentRes = await db.checkAndNotifyAbsentStaff(pktDateStr, { isAutomated: true });
+      console.log(`[Absent Alert] Automated check completed: ${absentRes.absentCount} absent staff.`);
+    }
+
+    // 2. Daily Summary at 21:00 (9:00 PM) PKT
     if (pktTimeStr === '21:00' && lastAutomatedSummaryDate !== pktDateStr) {
       lastAutomatedSummaryDate = pktDateStr;
       console.log(`[WhatsApp Daily Summary] Triggering 9:00 PM PKT automated summary for ${pktDateStr}...`);
@@ -1457,7 +1497,7 @@ async function checkAutomatedDailySummary() {
       console.log(`[WhatsApp Daily Summary] Automated dispatch result: ${res.status} (${res.message})`);
     }
   } catch (err) {
-    console.error('[WhatsApp Daily Summary] Scheduler error:', err.message);
+    console.error('[Automation Scheduler] Scheduler error:', err.message);
   }
 }
 setInterval(checkAutomatedDailySummary, 30000);

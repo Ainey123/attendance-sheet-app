@@ -1029,9 +1029,14 @@
           <div id="tab-dashboard" class="tab-pane active">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
               <h2 class="admin-tab-title" style="margin: 0;">Overview Dashboard</h2>
-              <button type="button" id="btn-open-daily-summary" class="btn" onclick="openDailySummaryModal()" style="background: linear-gradient(135deg, #059669, #10b981); color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.55rem 1rem; border-radius: 8px; border: none; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); cursor: pointer;">
-                <span style="font-size: 1.1rem;">📲</span> 9 PM Daily WhatsApp Summary
-              </button>
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button type="button" id="btn-notify-absentees" class="btn" onclick="triggerAbsentStaffAlertNow()" style="background: linear-gradient(135deg, #b91c1c, #ef4444); color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.55rem 1rem; border-radius: 8px; border: none; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); cursor: pointer;">
+                  <span style="font-size: 1.1rem;">🚨</span> Notify Management of Absentees
+                </button>
+                <button type="button" id="btn-open-daily-summary" class="btn" onclick="openDailySummaryModal()" style="background: linear-gradient(135deg, #059669, #10b981); color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.55rem 1rem; border-radius: 8px; border: none; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); cursor: pointer;">
+                  <span style="font-size: 1.1rem;">📲</span> 9 PM Daily WhatsApp Summary
+                </button>
+              </div>
             </div>
             
             <!-- Stats Grid -->
@@ -2051,7 +2056,7 @@
                   <div class="form-group">
                     <label for="settings-passcode">Admin Passcode</label>
                     <input type="password" id="settings-passcode" placeholder="Change admin passcode" minlength="4">
-                    <small class="form-help-text">Used to unlock the administrator dashboard. Default: 1234</small>
+                    <small class="form-help-text">Used to unlock the administrator dashboard.</small>
                   </div>
                   <button type="submit" class="btn btn-primary">Save Settings</button>
                 </form>
@@ -2121,6 +2126,33 @@
                     <label for="wa-settings-gateway-url" style="font-weight: 600;">Gateway / Webhook URL (Optional for CallMeBot)</label>
                     <input type="url" id="wa-settings-gateway-url" placeholder="https://api.ultramsg.com/... or https://your-webhook-gateway.com/send" style="background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 0.55rem; width: 100%;">
                     <small class="form-help-text">Required if using UltraMsg, GreenAPI, or your own custom WhatsApp bridge.</small>
+                  </div>
+
+                  <!-- Duty Timing & Late Deduction Policy Configuration -->
+                  <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+                    <div style="font-weight: 700; color: #f59e0b; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+                      <span>⏰</span> Duty Timing &amp; Late Penalty Policy
+                    </div>
+                    <p style="font-size: 0.8rem; color: #cbd5e1; margin: 0 0 0.85rem 0;">
+                      Staff arriving after duty timing will be notified and marked late. Reaching 4 late arrivals in a month automatically deducts 1 day of salary.
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label for="wa-settings-duty-timing" style="font-weight: 600; font-size: 0.85rem;">Duty Timing (PKT)</label>
+                        <input type="time" id="wa-settings-duty-timing" value="21:00" style="background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 0.55rem; width: 100%;">
+                        <small class="form-help-text">Default: 21:00 (9:00 PM PKT).</small>
+                      </div>
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label for="wa-settings-grace-mins" style="font-weight: 600; font-size: 0.85rem;">Grace Period (Minutes)</label>
+                        <input type="number" id="wa-settings-grace-mins" min="0" max="60" value="0" style="background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 0.55rem; width: 100%;">
+                        <small class="form-help-text">Extra minutes permitted before marking late.</small>
+                      </div>
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label for="wa-settings-late-threshold" style="font-weight: 600; font-size: 0.85rem;">Lates per 1 Day Deduction</label>
+                        <input type="number" id="wa-settings-late-threshold" min="1" max="30" value="4" style="background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 0.55rem; width: 100%;">
+                        <small class="form-help-text">Default: 4 late arrivals = 1 day salary deduction.</small>
+                      </div>
+                    </div>
                   </div>
 
                   <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
@@ -2474,6 +2506,7 @@
                       <th>🇵🇰 14 Aug Bonus</th>
                       <th>Total Salary</th>
                       <th>Expenses (−)</th>
+                      <th>⏰ Lates / Penalty (−)</th>
                       <th>Net Salary</th>
                       <!-- Accounts PDF Verification & Approval Columns -->
                       <th style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Bank Credits</th>
@@ -2852,7 +2885,7 @@
                 <label for="cat-approve-senior-passcode" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem; display: block;">
                   Senior Admin Passcode *
                 </label>
-                <input type="password" id="cat-approve-senior-passcode" placeholder="Enter Senior Passcode (9999)" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+                <input type="password" id="cat-approve-senior-passcode" placeholder="Enter Senior Passcode" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
               </div>
             </div>
             <div class="form-group" style="margin-bottom: 1rem;">
@@ -3469,7 +3502,7 @@
           </div>
           <div>
             <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Admin Passcode *</label>
-            <input type="password" id="exp-verify-passcode" class="form-input" placeholder="Passcode (1290)" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+            <input type="password" id="exp-verify-passcode" class="form-input" placeholder="Enter Passcode" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
           </div>
         </div>
 
@@ -3543,7 +3576,7 @@
           </div>
           <div>
             <label style="display:block; font-size:0.82rem; color:#cbd5e1; margin-bottom:0.35rem;">Senior Admin Passcode *</label>
-            <input type="password" id="exp-approve-passcode" class="form-input" placeholder="Passcode (9999)" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
+            <input type="password" id="exp-approve-passcode" class="form-input" placeholder="Enter Senior Passcode" style="width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.15); color:#fff; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem;" />
           </div>
         </div>
 
@@ -3640,6 +3673,33 @@
 
       <div class="modal-footer" style="margin-top:1.25rem; display:flex; justify-content:flex-end;">
         <button type="button" class="btn btn-secondary" onclick="closeCreditHistoryModal()" style="padding:0.5rem 1.25rem;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LATE ARRIVAL EMPLOYEE NOTICE MODAL -->
+  <div id="modal-late-notice" class="modal-overlay hidden" style="z-index: 10007;">
+    <div class="modal-content" style="max-width: 520px; width: 92%; background: #0f172a; border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 14px; padding: 1.5rem; box-shadow: 0 25px 60px rgba(0,0,0,0.9); color: #f1f5f9;">
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem;">
+        <span style="font-size: 1.8rem;">⚠️</span>
+        <div>
+          <h3 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: #f87171;">Late Arrival Notification</h3>
+          <p style="margin: 0.2rem 0 0; font-size: 0.82rem; color: #94a3b8;">Official Company Attendance &amp; Payroll Policy</p>
+        </div>
+      </div>
+
+      <div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 0.85rem 1rem; border-radius: 6px; margin-bottom: 1.2rem;">
+        <p id="late-notice-modal-text" style="margin: 0; font-size: 0.95rem; font-weight: 600; color: #fca5a5; line-height: 1.45;"></p>
+      </div>
+
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.85rem 1rem; font-size: 0.83rem; color: #cbd5e1; line-height: 1.5; margin-bottom: 1.25rem;">
+        <strong style="color: #f59e0b;">Policy Notice:</strong> Duty time starts at <strong>9:00 PM</strong>. As per company rules, accumulating <strong>4 late arrivals</strong> in a single calendar month results in <strong>1 full day of salary deduction</strong>. Management has also been notified of this clock-in.
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-primary" onclick="closeLateNoticeModal()" style="background: #ef4444; border-color: #ef4444; padding: 0.55rem 1.5rem; font-weight: 600; cursor: pointer;">
+          Understood &amp; Acknowledge
+        </button>
       </div>
     </div>
   </div>

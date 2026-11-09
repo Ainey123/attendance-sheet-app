@@ -1,0 +1,549 @@
+{
+  "Ali Shehzad": [
+    {
+      "date": "09-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK48JCMA*********250",
+      "amount": 40000.0,
+      "description": "RAAST P2P FT TO ALI SHAHZAD JAZZCASH ACCT: PK48JCMA*********- 250 MSGID: UBL091026071549215- 481603"
+    },
+    {
+      "date": "22-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK48JCMA*********250",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO ALI SHAHZAD JAZZCASH ACCT: PK48JCMA*********- 250 MSGID: UBL221026020301001- 161043"
+    }
+  ],
+  "Muhammad Ibrahim": [
+    {
+      "date": "15-10-2026",
+      "bank": "Bank Alfalah",
+      "channel": "IBFT",
+      "account": "Meezan Bank 11640113815198 (Asaan A/C)",
+      "amount": 29333.0,
+      "description": "IBFT From FAST ENGINEERING SOLUTIONS - Bank Alfalah Limited - 00761007345220 To MUHAMMAD IBRAHIM (ASAAN AC) - Meezan Bank Limited - 11640113815198 | Via Alfa/Online"
+    }
+  ],
+  "Muhammad Danish Ali (Danish Ali)": [
+    {
+      "date": "06-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL061026055516767592849"
+    },
+    {
+      "date": "08-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL081026061227403493390"
+    },
+    {
+      "date": "10-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL101026070357345105838"
+    },
+    {
+      "date": "13-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL131026050158785666925"
+    },
+    {
+      "date": "15-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 39372.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL151026122509441605937"
+    },
+    {
+      "date": "15-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL151026122624927860180"
+    },
+    {
+      "date": "28-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL281026014021161543547"
+    },
+    {
+      "date": "31-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK33TMFB*********452",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD DANISH ALI EASYPAISA ACCT: PK33TMFB*********452 MSGID: UBL311026025506146846013"
+    }
+  ],
+  "Muhammad Ali": [
+    {
+      "date": "03-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 6000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL031026010249983- 558299"
+    },
+    {
+      "date": "05-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App IBFT",
+      "account": "Mobilink Microfinance Bank",
+      "amount": 7000.0,
+      "description": "DIGITAL APP-IBFT FUND TRANSFER, TO: MUHAMMAD ALI BANK: MOBILINK MICROFINANCE BANK"
+    },
+    {
+      "date": "06-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL061026055026867- 153289"
+    },
+    {
+      "date": "10-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL101026070248559- 504802"
+    },
+    {
+      "date": "14-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 14352.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL141026104347271- 672891"
+    },
+    {
+      "date": "15-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 3000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL151026043339719- 271695"
+    },
+    {
+      "date": "15-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL151026051229080- 240470"
+    },
+    {
+      "date": "16-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL161026085301483- 508265"
+    },
+    {
+      "date": "19-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 8650.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL191026115224992- 689488"
+    },
+    {
+      "date": "20-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL201026052947810- 326201"
+    },
+    {
+      "date": "21-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL211026044834557- 275613"
+    },
+    {
+      "date": "27-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK62JCMA*********807",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ALI JAZZCASH ACCT: PK62JCMA*********- 807 MSGID: UBL271026055630891- 769890"
+    }
+  ],
+  "FES Faisal Elec Vehari (FES Ali Vehari / Muhammad Faisal)": [
+    {
+      "date": "06-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK19JCMA*********145",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH ACCT: PK19JCMA****- *****145 MSGID: UBL061026102348516- 898591"
+    },
+    {
+      "date": "06-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK19JCMA*********145",
+      "amount": 10000.0,
+      "description": "RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH ACCT: PK19JCMA****- *****145 MSGID: UBL061026055400708720842"
+    },
+    {
+      "date": "13-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK19JCMA*********145",
+      "amount": 12731.0,
+      "description": "RAAST P2P FT TO FES FAISAL ELEC VEHA JAZZCASH ACCT: PK19JCMA****- *****145 MSGID: UBL131026123209661- 454397"
+    }
+  ],
+  "Faisal Shehzad": [
+    {
+      "date": "07-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK82JCMA*********137",
+      "amount": 4150.0,
+      "description": "RAAST P2P FT TO FAISAL SHEHZAD JAZZCASH ACCT: PK82JCMA*********- 137 MSGID: UBL071026051715957- 424559"
+    }
+  ],
+  "Rehman Ali": [
+    {
+      "date": "14-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App Internal Transfer",
+      "account": "UBL A/C 0003****9374",
+      "amount": 77202.0,
+      "description": "UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374) - BANK: UBL"
+    },
+    {
+      "date": "20-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App Internal Transfer",
+      "account": "UBL A/C 0003****9374",
+      "amount": 10000.0,
+      "description": "UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374) - BANK: UBL"
+    },
+    {
+      "date": "24-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App Internal Transfer",
+      "account": "UBL A/C 0003****9374",
+      "amount": 10000.0,
+      "description": "UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374) - BANK: UBL"
+    },
+    {
+      "date": "27-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App Internal Transfer",
+      "account": "UBL A/C 0003****9374",
+      "amount": 10000.0,
+      "description": "UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374) - BANK: UBL"
+    },
+    {
+      "date": "28-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App Internal Transfer",
+      "account": "UBL A/C 0003****9374",
+      "amount": 10000.0,
+      "description": "UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374) - BANK: UBL"
+    },
+    {
+      "date": "31-Oct-2026",
+      "bank": "UBL",
+      "channel": "Digital App Internal Transfer",
+      "account": "UBL A/C 0003****9374",
+      "amount": 100000.0,
+      "description": "UBL DIGITAL:INTERNAL FUNDS TRANSFER TO REHMAN ALI (A/C 0003****9374) - BANK: UBL"
+    }
+  ],
+  "Ali Rehman (Separate Account)": [
+    {
+      "date": "16-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Meezan Bank PK16MEZN*********937",
+      "amount": 70000.0,
+      "description": "RAAST P2P FT TO ALI REHMAN MEBL ACCT: PK16MEZN*********937 MSGID: UBL161026084830303587248"
+    }
+  ],
+  "Abaid Ullah (Ubaid Ullah)": [
+    {
+      "date": "07-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK22TMFB*********337",
+      "amount": 15000.0,
+      "description": "RAAST P2P FT TO UBAID ULLAH EASYPAISA ACCT: PK22TMFB*********- 337 MSGID: UBL071026042145367- 689340"
+    },
+    {
+      "date": "30-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK22TMFB*********337",
+      "amount": 20000.0,
+      "description": "RAAST P2P FT TO UBAID ULLAH EASYPAISA ACCT: PK22TMFB*********- 337 MSGID: UBL301026022807410- 404456"
+    }
+  ],
+  "Muhammad Asif": [
+    {
+      "date": "05-10-2026",
+      "bank": "Bank Alfalah",
+      "channel": "IBFT",
+      "account": "Easypaisa / Telenor Microfinance Bank 03104626317",
+      "amount": 2000.0,
+      "description": "IBFT From FAST ENGINEERING SOLUTIONS - Bank Alfalah Limited - 00761007345220 To MUHAMMAD ASIF - Easypaisa/Telenor Microfinance Bank - 03104626317 | Via Alfa/Online"
+    },
+    {
+      "date": "07-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 2000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL071026052925474- 334856"
+    },
+    {
+      "date": "09-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 2000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL091026024535373- 718606"
+    },
+    {
+      "date": "10-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 1000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL101026051418258- 121953"
+    },
+    {
+      "date": "12-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK63TMFB*********454",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK63TMFB*********- 454 MSGID: UBL121026012942245- 478638"
+    },
+    {
+      "date": "13-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 1500.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL131026023616665- 078915"
+    },
+    {
+      "date": "13-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 36044.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL131026072053218- 797899"
+    },
+    {
+      "date": "19-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 1500.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL191026010346499- 710838"
+    },
+    {
+      "date": "19-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL191026085654587- 522754"
+    },
+    {
+      "date": "20-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL191026114004886- 596319 (VALUE DATE: 19-OCT-2026)"
+    },
+    {
+      "date": "20-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL201026035750778- 778066"
+    },
+    {
+      "date": "21-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL211026051900541- 282952"
+    },
+    {
+      "date": "23-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 1500.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL231026060348032- 075987"
+    },
+    {
+      "date": "29-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 1500.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL291026103037901- 358232"
+    },
+    {
+      "date": "29-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL291026094338754- 622588"
+    },
+    {
+      "date": "31-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK80TMFB*********494",
+      "amount": 1500.0,
+      "description": "RAAST P2P FT TO MUHAMMAD ASIF EASYPAISA ACCT: PK80TMFB*********- 494 MSGID: UBL311026034853087- 846103"
+    }
+  ],
+  "Asif Rasheed": [
+    {
+      "date": "01-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL011026105843486- 369985"
+    },
+    {
+      "date": "10-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 2000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL101026070524649- 611871"
+    },
+    {
+      "date": "14-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL141026103559252- 102757"
+    },
+    {
+      "date": "14-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 36350.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL141026105114818- 396287"
+    },
+    {
+      "date": "15-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 3000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL151026052106560- 128122"
+    },
+    {
+      "date": "20-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 7000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL201026053153013- 195490"
+    },
+    {
+      "date": "22-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL221026092054079- 364191"
+    },
+    {
+      "date": "27-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK43JCMA*********935",
+      "amount": 12000.0,
+      "description": "RAAST P2P FT TO ASIF RASHEED JAZZCASH ACCT: PK43JCMA*********- 935 MSGID: UBL271026124030917- 377668"
+    }
+  ],
+  "Wajahat Afzal (Muhammad Wajahat Afz)": [
+    {
+      "date": "13-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK15JCMA*********531",
+      "amount": 2770.0,
+      "description": "RAAST P2P FT TO MUHAMMAD WAJAHAT AFZ JAZZCASH ACCT: PK15JCMA*********531 MSGID: UBL131026092638473493918"
+    },
+    {
+      "date": "18-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK29TMFB*********710",
+      "amount": 5000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD WAJAHAT AFZ EASYPAISA ACCT: PK29TMFB*********710 MSGID: UBL181026085006567049123"
+    },
+    {
+      "date": "27-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK15JCMA*********531",
+      "amount": 1000.0,
+      "description": "RAAST P2P FT TO MUHAMMAD WAJAHAT AFZ JAZZCASH ACCT: PK15JCMA*********531 MSGID: UBL271026103415588740719"
+    }
+  ],
+  "Muhammad Afzal (Separate Account)": [
+    {
+      "date": "05-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "JazzCash PK40JCMA*********926",
+      "amount": 4400.0,
+      "description": "RAAST P2P FT TO MUHAMMAD AFZAL JAZZCASH ACCT: PK40JCMA*********- 926 MSGID: UBL051026040841223- 207001"
+    },
+    {
+      "date": "18-Oct-2026",
+      "bank": "UBL",
+      "channel": "RAAST P2P FT",
+      "account": "Easypaisa PK66TMFB*********214",
+      "amount": 7400.0,
+      "description": "RAAST P2P FT TO MUHAMMAD AFZAL EASYPAISA ACCT: PK66TMFB*********- 214 MSGID: UBL181026054816762- 478278"
+    }
+  ],
+  "Asjad": []
+}

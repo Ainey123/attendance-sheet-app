@@ -125,7 +125,7 @@ function createMockReqRes({ method = 'GET', url = '/api/health', headers = {}, q
 
     // 5. Admin search by Name, Tenurewise search, and Side-wise / Site-wise search
     const settings = await db.getSettings();
-    const adminPass = settings.adminPasscode || '1200';
+    const adminPass = settings.adminPasscode || '1280';
 
     // 5a. Search by Employee Name
     {

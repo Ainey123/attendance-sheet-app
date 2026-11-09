@@ -1,0 +1,1983 @@
+[
+  {
+    "page": 1,
+    "raw_lines": [
+      "01-Oct-2026 **OpeningBalance 0 0 4,685,953.45"
+    ]
+  },
+  {
+    "page": 1,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOHAMMADAHMED 18,000 0 4,667,953.45",
+      "JAZZCASHACCT:PK93JCMA*********-",
+      "739MSGID:UBL011026081138297-",
+      "498133"
+    ]
+  },
+  {
+    "page": 1,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOZAHEERAHMED 3,300 0 4,664,653.45",
+      "JAZZCASHACCT:PK35JCMA*********-",
+      "378MSGID:UBL011026081327172-",
+      "593354"
+    ]
+  },
+  {
+    "page": 1,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOHAROONHASSAN 3,000 0 4,661,653.45",
+      "EASYPAISAACCT:PK29TMFB*********-",
+      "666MSGID:UBL011026082402945-",
+      "430854"
+    ]
+  },
+  {
+    "page": 1,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOCHANDKHALIL 27,500 0 4,634,153.45",
+      "EASYPAISAACCT:PK29TMFB*********-",
+      "716MSGID:UBL011026093952936-",
+      "814346"
+    ]
+  },
+  {
+    "page": 1,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOASIFRASHEED 5,000 0 4,629,153.45",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL011026105843486-",
+      "369985"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOKHALIDHUSSAIN 2,400 0 4,621,753.45",
+      "JAZZCASHACCT:PK57JCMA*********-",
+      "792MSGID:UBL011026054158398-",
+      "573241"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "01-Oct-2026 RAASTP2PFTTOQAMARABBAS 10,500 0 4,611,253.45",
+      "EASYPAISAACCT:PK46TMFB*********-",
+      "614MSGID:UBL011026075915774-",
+      "432015"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "02-Oct-2026 RAASTP2PFTTOBALTISTANMOTORS 25,900 0 4,585,353.45",
+      "ANDBAHLACCT:PK54BAHL*********-",
+      "501MSGID:UBL021026093521716-",
+      "295410"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "02-Oct-2026 RAASTP2PFTTORANAMUHAMMAD 13,000 0 4,572,353.45",
+      "IMRANMEBLACCT:PK90MEZN*******-",
+      "**893MSGID:UBL021026124251689-",
+      "628178"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "02-Oct-2026 RAASTP2PFTTOMUDASSARUL 5,000 0 4,567,353.45",
+      "HAMEEDJAZZCASHACCT:PK31JCMA*-",
+      "********145MSGID:",
+      "UBL021026030636841719726"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "02-Oct-2026 RAASTP2PFTTOFAIZAHMED 700 0 4,566,653.45",
+      "JAZZCASHACCT:PK10JCMA*********-",
+      "301MSGID:UBL021026053757094-",
+      "984490"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "02-Oct-2026 RAASTP2PFTTOMEHMOODAHMED 17,000 0 4,549,653.45",
+      "JAZZCASHACCT:PK31JCMA*********-",
+      "029MSGID:UBL021026060217020-",
+      "065768"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "02-Oct-2026 POSSALE-MASTERCARDATSAVOUR 2,262 0 4,547,391.45",
+      "FOODSLAHOREPAK"
+    ]
+  },
+  {
+    "page": 2,
+    "raw_lines": [
+      "03-Oct-2026 RAASTP2PFTTOMUHAMMADIJAZ 6,000 0 4,541,391.45",
+      "JAZZCASHACCT:PK21JCMA*********-",
+      "904MSGID:UBL031026125503116-",
+      "200528"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "03-Oct-2026 RAASTP2PFTTOSARWERJAZZCASH 6,200 0 4,529,191.45",
+      "ACCT:PK05JCMA*********731MSGID:",
+      "UBL031026014053430274977"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "03-Oct-2026 RAASTP2PFTTOKHALIDHUSSAIN 2,400 0 4,526,791.45",
+      "JAZZCASHACCT:PK57JCMA*********-",
+      "792MSGID:UBL031026051423286-",
+      "999445"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "03-Oct-2026 RAASTP2PFTTONAZEERAHMED 3,500 0 4,523,291.45",
+      "JAZZCASHACCT:PK04JCMA*********-",
+      "840MSGID:UBL031026072721122-",
+      "630181"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "04-Oct-2026 POSSALE-MASTERCARDATARAMCO 10,501.53 0 4,512,789.92",
+      "LAHOREPAK"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "04-Oct-2026 RAASTP2PFTTOQURATULAIN 5,000 0 4,507,789.92",
+      "EASYPAISAACCT:PK10TMFB*********-",
+      "622MSGID:UBL041026094204275-",
+      "197922"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "04-Oct-2026 RAASTP2PFTTOHAFIZMUHAMMAD 5,000 0 4,502,789.92",
+      "ISLAMEASYPAISAACCT:PK51TMFB***-",
+      "******334MSGID:",
+      "UBL041026094308943274548"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "04-Oct-2026 POSSALE-MASTERCARDATPAKISTAN 8,033 0 4,494,756.92",
+      "PETROLEUMSERCHISTIANPAK"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "04-Oct-2026 RAASTP2PFTTORAJANOUMAN 23,000 0 4,471,756.92",
+      "AHMADMEBLACCT:PK31MEZN******-",
+      "***848MSGID:UBL041026022435429-",
+      "785113"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "04-Oct-2026 RAASTP2PFTTOKHALIDHUSSAIN 2,400 0 4,469,356.92",
+      "JAZZCASHACCT:PK57JCMA*********-",
+      "792MSGID:UBL041026053307869-",
+      "515090"
+    ]
+  },
+  {
+    "page": 3,
+    "raw_lines": [
+      "05-Oct-2026 RAASTP2PFTTOIBTISAMULHAQ 5,000 0 4,464,356.92",
+      "JAZZCASHACCT:PK09JCMA*********-",
+      "498MSGID:UBL051026085001880-",
+      "509921"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "05-Oct-2026 RAASTP2PFTTOMUHAMMAD 1,400 0 4,452,456.92",
+      "HASAANTAHIJAZZCASHACCT:",
+      "PK79JCMA*********854MSGID:",
+      "UBL051026110904501880245"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "05-Oct-2026 RAASTP2PFTTOANWARLUQMAN 24,600 0 4,427,856.92",
+      "BAHLACCT:PK95BAHL*********850",
+      "MSGID:UBL051026011104842397863"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "05-Oct-2026 RAASTP2PFTTOQAMARBATOL 3,000 0 4,424,856.92",
+      "EASYPAISAACCT:PK92TMFB*********-",
+      "677MSGID:UBL051026011421884-",
+      "065920"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "05-Oct-2026 RAASTP2PFTTOMUHAMMADAFZAL 4,400 0 4,420,456.92",
+      "JAZZCASHACCT:PK40JCMA*********-",
+      "926MSGID:UBL051026040841223-",
+      "207001"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "05-Oct-2026 DIGITALAPP-IBFTFUNDTRANSFER, 7,000 0 4,413,456.92",
+      "TO:MUHAMMADALIBANK:MOBILINK",
+      "MICROFINANCEBANK"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "06-Oct-2026 UBLCPS-MINORMAINTENANCEFMO 0 22,196 4,435,652.92",
+      "JULY2",
+      "026"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOFESFAISALELEC 5,000 0 4,430,652.92",
+      "VEHAJAZZCASHACCT:PK19JCMA****-",
+      "*****145MSGID:UBL061026102348516-",
+      "898591"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOUSAMABUTT 4,900 0 4,425,752.92",
+      "JAZZCASHACCT:PK54JCMA*********-",
+      "293MSGID:UBL061026122228694-",
+      "299769"
+    ]
+  },
+  {
+    "page": 4,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOMUHAMMADRIAZ 5,200 0 4,420,552.92",
+      "EASYPAISAACCT:PK83TMFB*********-",
+      "857MSGID:UBL061026122803183-",
+      "004338"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOZAHEERAHMED 1,850 0 4,416,852.92",
+      "JAZZCASHACCT:PK84JCMA*********-",
+      "284MSGID:UBL061026123636740-",
+      "146274"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 UBLCPS-MINORMAINTENANCEFMO 0 194,323 4,611,175.92",
+      "JULY2",
+      "026"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOWAQASHAZIR 5,100 0 4,606,075.92",
+      "EASYPAISAACCT:PK30TMFB*********-",
+      "065MSGID:UBL061026043554943-",
+      "521786"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOMUHAMMADALI 10,000 0 4,596,075.92",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL061026055026867-",
+      "153289"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOFESFAISALELEC 10,000 0 4,586,075.92",
+      "VEHAJAZZCASHACCT:PK19JCMA****-",
+      "*****145MSGID:",
+      "UBL061026055400708720842"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOMUHAMMAD 10,000 0 4,576,075.92",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL061026055516767592849"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 REFNO.5610222207350251UDCP:FT 0 61,164 4,637,239.92",
+      "FR-310911029TO-317846744",
+      "TXNTYPE-0010"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 RAASTP2PFTTOMIANMUHAMMAD 17,500 0 4,619,739.92",
+      "ALIFBLACCT:PK83FAYS*********024",
+      "MSGID:UBL061026074447843525588"
+    ]
+  },
+  {
+    "page": 5,
+    "raw_lines": [
+      "06-Oct-2026 POSSALE-MASTERCARDAT 1,628 0 4,618,111.92",
+      "EUROSTORERAIWINDROADLHRCITY",
+      "PAK"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOIMPERIALELECTRIC 59,700 0 4,553,411.92",
+      "STMEBLACCT:PK17MEZN*********598",
+      "MSGID:UBL071026125636270410190"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOMUHAMMADIMRAN 2,060 0 4,551,351.92",
+      "MEBLACCT:PK62MEZN*********185",
+      "MSGID:UBL071026123856462125054"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOSUBHANNAVEED 15,650 0 4,535,701.92",
+      "MEBLACCT:PK51MEZN*********400",
+      "MSGID:UBL071026124110408626843"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOASIMRIZWAN 1,250 0 4,534,451.92",
+      "EASYPAISAACCT:PK60TMFB*********-",
+      "619MSGID:UBL071026024326927-",
+      "954651"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOUBAIDULLAH 15,000 0 4,519,451.92",
+      "EASYPAISAACCT:PK22TMFB*********-",
+      "337MSGID:UBL071026042145367-",
+      "689340"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOFAISALSHEHZAD 4,150 0 4,515,301.92",
+      "JAZZCASHACCT:PK82JCMA*********-",
+      "137MSGID:UBL071026051715957-",
+      "424559"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 2,000 0 4,513,301.92",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL071026052925474-",
+      "334856"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "07-Oct-2026 RAASTP2PFTTOMHSTONEAND 150,000 0 4,363,301.92",
+      "GRANITEFBLACCT:PK15FAYS********-",
+      "*490MSGID:UBL071026055001204-",
+      "583062"
+    ]
+  },
+  {
+    "page": 6,
+    "raw_lines": [
+      "08-Oct-2026 RAASTP2PFTTOHAFIZMUHAMMAD 2,000 0 4,361,301.92",
+      "ISLAMEASYPAISAACCT:PK51TMFB***-",
+      "******334MSGID:",
+      "UBL081026110329415995094"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "08-Oct-2026 RAASTP2PFTTOSAJJADHASSAN 10,000 0 4,151,301.92",
+      "GONDALJAZZCASHACCT:PK52JCMA*-",
+      "********320MSGID:",
+      "UBL081026013411804579274"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "08-Oct-2026 RAASTP2PFTTOMUHAMMAD 4,600 0 4,146,701.92",
+      "SHAHZADMEBLACCT:PK89MEZN****-",
+      "*****544MSGID:",
+      "UBL081026014544870944163"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "08-Oct-2026 RAASTP2PFTTOMUHAMMAD 10,000 0 4,136,701.92",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL081026061227403493390"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "08-Oct-2026 POSSALE-MASTERCARDATMS 1,285 0 4,135,416.92",
+      "CHEEZIOUSLAHOREPAK"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "08-Oct-2026 POSSALE-MASTERCARDAT 557 0 4,134,859.92",
+      "EUROSTORERAIWINDROADLHRCITY",
+      "PAK"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "08-Oct-2026 POSSALE-MASTERCARDAT 1,281 0 4,133,578.92",
+      "EUROSTORERAIWINDROADLHRCITY",
+      "PAK"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOAZIZULLAH 1,500 0 4,132,078.92",
+      "JAZZCASHACCT:PK92JCMA*********-",
+      "290MSGID:UBL091026071444985-",
+      "709769"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOALISHAHZAD 40,000 0 4,092,078.92",
+      "JAZZCASHACCT:PK48JCMA*********-",
+      "250MSGID:UBL091026071549215-",
+      "481603"
+    ]
+  },
+  {
+    "page": 7,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOFINETECHMEBL 12,000 0 4,080,078.92",
+      "ACCT:PK26MEZN*********509MSGID:",
+      "UBL091026015408600359670"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOMUHAMMAD 50,000 0 4,028,078.92",
+      "FAHEEMABLACCT:PK28ABPA********-",
+      "*015MSGID:UBL091026051355359-",
+      "291014"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOMUHAMMAD 18,000 0 4,010,078.92",
+      "HUSSAINEASYPAISAACCT:",
+      "PK29TMFB*********409MSGID:",
+      "UBL091026073712830539727"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOUMARNIAZ 5,000 0 4,005,078.92",
+      "EASYPAISAACCT:PK60TMFB*********-",
+      "473MSGID:UBL091026074136186-",
+      "402379"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 CASHWITHDRAWAL-ATM(BR:2790) 50,000 0 3,955,078.92"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 POSSALE-MASTERCARDATEDHI 12,246.46 0 3,942,832.46",
+      "SERVICESTATIONLAHOREPAK"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOMUHAMMAD 4,500 0 3,938,332.46",
+      "HUSSAINJAZZCASHACCT:",
+      "PK85JCMA*********089MSGID:",
+      "UBL091026084640463253875"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "09-Oct-2026 RAASTP2PFTTOMUHAMMADIMRAN 5,000 0 3,933,332.46",
+      "EASYPAISAACCT:PK24TMFB*********-",
+      "303MSGID:UBL091026084744236-",
+      "141674"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOMUHAMMAD 54,000 0 3,879,332.46",
+      "HUSSAINJAZZCASHACCT:",
+      "PK85JCMA*********089MSGID:",
+      "UBL101026080145728323270"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "10-Oct-2026 UBLDIGITAL:INTERNALFUNDS 50,000 0 3,829,332.46",
+      "TRANSFERTOMUHAMMADARSHAD",
+      "(A/C0003****0214)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 8,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOMUHAMMADFAIZ 4,500 0 3,824,832.46",
+      "JAZZCASHACCT:PK83JCMA*********-",
+      "631MSGID:UBL101026121732594-",
+      "138604"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 1,000 0 3,821,632.46",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL101026051418258-",
+      "121953"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOMUHAMMADALI 10,000 0 3,811,632.46",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL101026070248559-",
+      "504802"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOMUHAMMAD 5,000 0 3,806,632.46",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL101026070357345105838"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOASIFRASHEED 2,000 0 3,804,632.46",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL101026070524649-",
+      "611871"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "10-Oct-2026 RAASTP2PFTTOHAFIZMUHAMMAD 5,000 0 3,799,632.46",
+      "ISLAMEASYPAISAACCT:PK51TMFB***-",
+      "******334MSGID:",
+      "UBL101026082255339030874"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "11-Oct-2026 RAASTP2PFTTOABUSUFIAN 6,120 0 3,793,512.46",
+      "EASYPAISAACCT:PK73TMFB*********-",
+      "277MSGID:UBL111026033954788-",
+      "023894"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOMUHAMMAD 9,300 0 3,784,212.46",
+      "SALMANNBPACCT:PK49NBPA*******-",
+      "**306MSGID:UBL121026012451065-",
+      "097791"
+    ]
+  },
+  {
+    "page": 9,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 5,000 0 3,779,212.46",
+      "EASYPAISAACCT:PK63TMFB*********-",
+      "454MSGID:UBL121026012942245-",
+      "478638"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 UBLDIGITAL:INTERNALFUNDS 8,000 0 3,762,492.46",
+      "TRANSFERTOMUHAMMADUMAR",
+      "IRSHADULLAH(A/C0003****2061)-",
+      "BANK:UBL"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOIMRANAHMEDKHAN 1,500 0 3,760,992.46",
+      "JAZZCASHACCT:PK27JCMA*********-",
+      "699MSGID:UBL121026043950438-",
+      "247081"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOADILLIAQUAT 4,350 0 3,756,642.46",
+      "EASYPAISAACCT:PK20TMFB*********-",
+      "500MSGID:UBL121026044858287-",
+      "339962"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOKHALIDHUSSAIN 1,200 0 3,755,442.46",
+      "JAZZCASHACCT:PK57JCMA*********-",
+      "792MSGID:UBL121026064217671161345"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOS.BTRADERSMEBL 493,110 0 3,262,332.46",
+      "ACCT:PK52MEZN*********944MSGID:",
+      "UBL121026071114374066106"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOMUHAMMADANWAR 5,300 0 3,257,032.46",
+      "JAZZCASHACCT:PK20JCMA*********-",
+      "446MSGID:UBL121026072125633113319"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "12-Oct-2026 RAASTP2PFTTOMUHAMMAD 50,000 0 3,207,032.46",
+      "FAHEEMABLACCT:PK28ABPA********-",
+      "*015MSGID:UBL121026072254853-",
+      "843745"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTORAJANOUMAN 4,500 0 3,202,532.46",
+      "AHMADMEBLACCT:PK31MEZN******-",
+      "***848MSGID:UBL131026112045269-",
+      "943588"
+    ]
+  },
+  {
+    "page": 10,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOFESFAISALELEC 12,731 0 3,189,801.46",
+      "VEHAJAZZCASHACCT:PK19JCMA****-",
+      "*****145MSGID:UBL131026123209661-",
+      "454397"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 1,500 0 3,148,301.46",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL131026023616665-",
+      "078915"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMUHAMMADIMTIAZ 1,500 0 3,146,801.46",
+      "MEBLACCT:PK96MEZN*********815",
+      "MSGID:UBL131026040028573124963"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMUHAMMAD 5,000 0 3,141,801.46",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL131026050158785666925"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 UBLDIGITAL:INTERNALFUNDS 13,000 0 3,128,801.46",
+      "TRANSFERTOMUHAMMAD",
+      "MUDASSAR(A/C0003****5381)-BANK:-",
+      "UBL"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOEHTISHAMHASNAIN 5,000 0 3,123,801.46",
+      "MEBLACCT:PK10MEZN*********699",
+      "MSGID:UBL131026061801932036718"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOSHAHIDABEVI 2,000 0 3,121,801.46",
+      "JAZZCASHACCT:PK73JCMA*********-",
+      "053MSGID:UBL131026070538650-",
+      "710999"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMOHSINALI 4,300 0 3,117,501.46",
+      "JAZZCASHACCT:PK85JCMA*********-",
+      "874MSGID:UBL131026070907342-",
+      "739312"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMOHSINALI 3,000 0 3,114,501.46",
+      "JAZZCASHACCT:PK85JCMA*********-",
+      "874MSGID:UBL131026071149205-",
+      "564392"
+    ]
+  },
+  {
+    "page": 11,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMUHAMMAD 2,000 0 3,112,501.46",
+      "ASADULLAHBJAZZCASHACCT:",
+      "PK48JCMA*********449MSGID:",
+      "UBL131026071337680550177"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 36,044 0 3,067,757.46",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL131026072053218-",
+      "797899"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "13-Oct-2026 RAASTP2PFTTOMUHAMMAD 2,770 0 3,064,987.46",
+      "WAJAHATAFZJAZZCASHACCT:",
+      "PK15JCMA*********531MSGID:",
+      "UBL131026092638473493918"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOIBTISAMULHAQ 5,000 0 3,059,987.46",
+      "JAZZCASHACCT:PK09JCMA*********-",
+      "498MSGID:UBL141026103449099-",
+      "004715"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOASIFRASHEED 5,000 0 3,054,987.46",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL141026103559252-",
+      "102757"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOMUHAMMADAMIN 1,300 0 3,053,687.46",
+      "JAZZCASHACCT:PK38JCMA*********-",
+      "910MSGID:UBL141026110123689-",
+      "935690"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOMUHAMMAD 7,500 0 3,046,187.46",
+      "ZOHAIBJAZZCASHACCT:PK95JCMA**-",
+      "*******227MSGID:",
+      "UBL141026115140008816129"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOFAQEERHUSSAIN 900 0 3,045,287.46",
+      "JAZZCASHACCT:PK16JCMA*********-",
+      "278MSGID:UBL141026010251415-",
+      "722962"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 POSSALE-MASTERCARDATARAMCO 10,195.21 0 3,035,092.25",
+      "LAHGOREPAK"
+    ]
+  },
+  {
+    "page": 12,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOMUZAFARJAZZCASH 2,000 0 3,033,092.25",
+      "ACCT:PK24JCMA*********700MSGID:",
+      "UBL141026025435248130721"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "14-Oct-2026 POSSALE-MASTERCARDAT 3,781 0 2,899,311.25",
+      "EUROSTORERAIWINDROADLHRCITY",
+      "PAK"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOMUHAMMADALI 14,352 0 2,884,959.25",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL141026104347271-",
+      "672891"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "14-Oct-2026 RAASTP2PFTTOASIFRASHEED 36,350 0 2,848,609.25",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL141026105114818-",
+      "396287"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "14-Oct-2026 UBLDIGITAL:INTERNALFUNDS 77,202 0 2,771,407.25",
+      "TRANSFERTOREHMANALI(A/C",
+      "0003****9374)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOSAJIDALIJAZZCASH 2,250 0 2,769,157.25",
+      "ACCT:PK17JCMA*********098MSGID:",
+      "UBL151026103951141824914"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOMUHAMMAD 39,372 0 2,729,785.25",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL151026122509441605937"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOMUHAMMAD 5,000 0 2,724,785.25",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL151026122624927860180"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOMUHAMMADIMRAN 5,000 0 2,719,785.25",
+      "EASYPAISAACCT:PK24TMFB*********-",
+      "303MSGID:UBL151026020656160-",
+      "878444"
+    ]
+  },
+  {
+    "page": 13,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTONAVEEDANJUM 12,870 0 2,706,915.25",
+      "JAZZCASHACCT:PK64JCMA*********-",
+      "742MSGID:UBL151026042257659-",
+      "704247"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOGHULAM 10,000 0 2,693,915.25",
+      "MUHAMMADEASYPAISAACCT:",
+      "PK07TMFB*********007MSGID:",
+      "UBL151026050707275405985"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOMUHAMMADALI 5,000 0 2,688,915.25",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL151026051229080-",
+      "240470"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOASIFRASHEED 3,000 0 2,685,915.25",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL151026052106560-",
+      "128122"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "15-Oct-2026 RAASTP2PFTTOMUHAMMADAYAZ 50,000 0 2,635,915.25",
+      "MEBLACCT:PK83MEZN*********143",
+      "MSGID:UBL151026095703520631456"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOMALIKALIABBAS 6,000 0 2,629,915.25",
+      "JAZZCASHACCT:PK28JCMA*********-",
+      "590MSGID:UBL161026114211852-",
+      "210246"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOMUHAMMADANWAR 1,300 0 2,628,615.25",
+      "EASYPAISAACCT:PK86TMFB*********-",
+      "164MSGID:UBL161026115754863624471"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOMUHAMMADISLAM 8,000 0 2,620,615.25",
+      "EASYPAISAACCT:PK21TMFB*********-",
+      "445MSGID:UBL161026010019934-",
+      "921191"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOMUHAMMADBILAL 6,500 0 2,614,115.25",
+      "SADIQJAZZCASHACCT:PK22JCMA***-",
+      "******085MSGID:",
+      "UBL161026014657779535567"
+    ]
+  },
+  {
+    "page": 14,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOZAHEERAHMED 2,000 0 2,612,115.25",
+      "JAZZCASHACCT:PK35JCMA*********-",
+      "378MSGID:UBL161026014753639-",
+      "779561"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOAFZALAHMED 2,150 0 2,054,965.25",
+      "BHATTIJAZZCASHACCT:PK78JCMA**-",
+      "*******321MSGID:",
+      "UBL161026030843645088763"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOSYAMSHAUKAT 16,100 0 2,038,865.25",
+      "JAZZCASHACCT:PK77JCMA*********-",
+      "843MSGID:UBL161026044721037-",
+      "930167"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "16-Oct-2026 POSSALE-MASTERCARD 1,804 0 2,037,061.25"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOALIREHMANMEBL 70,000 0 1,967,061.25",
+      "ACCT:PK16MEZN*********937MSGID:",
+      "UBL161026084830303587248"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "16-Oct-2026 RAASTP2PFTTOMUHAMMADALI 5,000 0 1,962,061.25",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL161026085301483-",
+      "508265"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOAZIZULLAH 1,410 0 1,960,651.25",
+      "JAZZCASHACCT:PK92JCMA*********-",
+      "290MSGID:UBL171026075439546-",
+      "454568"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOFAHADALI 2,600 0 1,958,051.25",
+      "JAZZCASHACCT:PK58JCMA*********-",
+      "376MSGID:UBL171026081533896-",
+      "147072"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOGHULAMFAREED 1,000 0 1,957,051.25",
+      "JAZZCASHACCT:PK09JCMA*********-",
+      "586MSGID:UBL171026105206962-",
+      "307244"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOUSAMABILALABID 35,000 0 1,922,051.25",
+      "FBLACCT:PK32FAYS*********909",
+      "MSGID:UBL171026042621480665539"
+    ]
+  },
+  {
+    "page": 15,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOMUHAMMADAWAIS 3,000 0 1,919,051.25",
+      "EASYPAISAACCT:PK78TMFB*********-",
+      "171MSGID:UBL171026050728981528517"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOMUHAMMADABU 33,000 0 1,883,943.25",
+      "BAKARSMEBLACCT:PK07MEZN*****-",
+      "****045MSGID:UBL171026085453613-",
+      "901781"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "17-Oct-2026 RAASTP2PFTTOFAHADALI 3,400 0 1,880,543.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "613MSGID:UBL171026085633980-",
+      "659870"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTOSHAHIDHAYATMCB 35,600 0 1,844,943.25",
+      "ACCT:PK84MUCB*********204MSGID:",
+      "UBL181026083548147850376"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTOMUJAHIDALIMCB 8,600 0 1,836,343.25",
+      "ACCT:PK37MUCB*********823MSGID:",
+      "UBL181026094022710766861"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTOMUBASHIR 3,000 0 1,833,343.25",
+      "JAZZCASHACCT:PK04JCMA*********-",
+      "801MSGID:UBL181026011924996-",
+      "009563"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTONASEERAHMED 1,280 0 1,832,063.25",
+      "JAZZCASHACCT:PK07JCMA*********-",
+      "127MSGID:UBL181026012123438-",
+      "620988"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTOMUHAMMADAWAIS 3,500 0 1,828,563.25",
+      "EASYPAISAACCT:PK78TMFB*********-",
+      "171MSGID:UBL181026042302447-",
+      "597649"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTOMUHAMMADAFZAL 7,400 0 1,821,163.25",
+      "EASYPAISAACCT:PK66TMFB*********-",
+      "214MSGID:UBL181026054816762-",
+      "478278"
+    ]
+  },
+  {
+    "page": 16,
+    "raw_lines": [
+      "18-Oct-2026 RAASTP2PFTTOMUHAMMAD 5,000 0 1,816,163.25",
+      "WAJAHATAFZEASYPAISAACCT:",
+      "PK29TMFB*********710MSGID:",
+      "UBL181026085006567049123"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "19-Oct-2026 RAASTP2PFTTOFAHADALI 4,600 0 1,808,963.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "613MSGID:UBL191026063705015-",
+      "564641"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "19-Oct-2026 RAASTP2PFTTOMUHAMMADALI 8,650 0 1,800,313.25",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL191026115224992-",
+      "689488"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "19-Oct-2026 RAASTP2PFTTOFURQANRAZZAQ 10,000 0 1,790,313.25",
+      "ABLACCT:PK08ABPA*********012",
+      "MSGID:UBL191026125915436685451"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "19-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 1,500 0 1,788,813.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL191026010346499-",
+      "710838"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "19-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 5,000 0 1,783,813.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL191026085654587-",
+      "522754"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 5,000 0 1,778,813.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL191026114004886-",
+      "596319(VALUEDATE:19-OCT-2026)"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "20-Oct-2026 DIGITALAPP-IBFTFUNDTRANSFER, 50,000 0 1,728,813.25",
+      "TO:QURATULAINBANK:TELENOR",
+      "MICROFINANCELIMITED"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "20-Oct-2026 IBFTFEEFORDIGITALCHANNEL 31.08 0 1,728,782.17"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "20-Oct-2026 FEDERALEXCISEDUTY(FED)/ 5.92 0 1,728,776.25",
+      "PROVINCIALSALESTAX(PST)"
+    ]
+  },
+  {
+    "page": 17,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOHAFIZMUHAMMAD 10,000 0 1,718,776.25",
+      "ISLAMEASYPAISAACCT:PK51TMFB***-",
+      "******334MSGID:",
+      "UBL201026110618532234989"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOHASSANALI 6,900 0 1,702,876.25",
+      "HARDWAREFBLACCT:PK61FAYS*****-",
+      "****501MSGID:UBL201026123551582-",
+      "385554"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 UBLDIGITAL:INTERNALFUNDS 10,000 0 1,692,876.25",
+      "TRANSFERTOREHMANALI(A/C",
+      "0003****9374)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOMUHAMMADAMIN 4,460 0 1,688,416.25",
+      "EASYPAISAACCT:PK53TMFB*********-",
+      "610MSGID:UBL201026032102065-",
+      "095893"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOMUHAMMADIMRAN 990 0 1,687,426.25",
+      "MEBLACCT:PK62MEZN*********185",
+      "MSGID:UBL201026035025748735871"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 5,000 0 1,682,426.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL201026035750778-",
+      "778066"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOMUHAMMADALI 10,000 0 1,672,426.25",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL201026052947810-",
+      "326201"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOASIFRASHEED 7,000 0 1,665,426.25",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL201026053153013-",
+      "195490"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOFAHADALI 5,800 0 1,659,626.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "613MSGID:UBL201026082130387-",
+      "879188"
+    ]
+  },
+  {
+    "page": 18,
+    "raw_lines": [
+      "20-Oct-2026 RAASTP2PFTTOMUHAMMADIMRAN 5,000 0 1,654,626.25",
+      "EASYPAISAACCT:PK24TMFB*********-",
+      "303MSGID:UBL201026082215329-",
+      "089368"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 RAASTP2PFTTOALIRAZAEASYPAISA 4,500 0 1,638,419.25",
+      "ACCT:PK16TMFB*********077MSGID:",
+      "UBL211026022305205965282"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 RAASTP2PFTTOMUHAMMAD 3,800 0 1,634,619.25",
+      "ASADULLAHBJAZZCASHACCT:",
+      "PK48JCMA*********449MSGID:",
+      "UBL211026044100522138459"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 DIGITALAPP-IBFTFUNDTRANSFER, 2,000 0 1,632,619.25",
+      "TO:MUHAMMADSALMANBANK:",
+      "NATIONALBANKOFPAKISTAN"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 RAASTP2PFTTOMUNAWARHAYAT 2,600 0 1,630,019.25",
+      "ALIJAZZCASHACCT:PK83JCMA******-",
+      "***996MSGID:UBL211026044716737-",
+      "277793"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 RAASTP2PFTTOMUHAMMADALI 5,000 0 1,625,019.25",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL211026044834557-",
+      "275613"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 5,000 0 1,620,019.25",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL211026051900541-",
+      "282952"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 IBFTFEEFORDIGITALCHANNEL 1.68 0 1,620,017.57"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "21-Oct-2026 FEDERALEXCISEDUTY(FED)/ 0.32 0 1,620,017.25",
+      "PROVINCIALSALESTAX(PST)"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOMUHAMMAD 50,000 0 1,570,017.25",
+      "FAHEEMABLACCT:PK28ABPA********-",
+      "*015MSGID:UBL221026091928230-",
+      "128378"
+    ]
+  },
+  {
+    "page": 19,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOASIFRASHEED 5,000 0 1,565,017.25",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL221026092054079-",
+      "364191"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 DIGITALAPP-IBFTFUNDTRANSFER, 1,800 0 1,548,217.25",
+      "TO:MUHAMMADRIZWANBANK:",
+      "MEEZANBANKLIMITED"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 IBFTFEEFORDIGITALCHANNEL 1.51 0 1,548,215.74"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 FEDERALEXCISEDUTY(FED)/ 0.29 0 1,548,215.45",
+      "PROVINCIALSALESTAX(PST)"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOMUHAMMADAZEEM 30,000 0 1,518,215.45",
+      "ANSAREASYPAISAACCT:PK29TMFB**-",
+      "*******651MSGID:",
+      "UBL221026010541256649728"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOALISHAHZAD 5,000 0 1,513,215.45",
+      "JAZZCASHACCT:PK48JCMA*********-",
+      "250MSGID:UBL221026020301001-",
+      "161043"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOMUHAMMAD 10,000 0 1,503,215.45",
+      "NAVEEDMEBLACCT:PK19MEZN******-",
+      "***055MSGID:UBL221026024640754-",
+      "217322"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOMUHAMMADBILAL 10,000 0 1,493,215.45",
+      "EASYPAISAACCT:PK27TMFB*********-",
+      "308MSGID:UBL221026050123478-",
+      "802621"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "22-Oct-2026 RAASTP2PFTTOKHALIDHUSSAIN 8,200 0 1,485,015.45",
+      "JAZZCASHACCT:PK57JCMA*********-",
+      "792MSGID:UBL221026054131181332184"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "23-Oct-2026 RAASTP2PFTTOHUSSNAINJAZZCASH 8,000 0 1,477,015.45",
+      "ACCT:PK27JCMA*********878MSGID:",
+      "UBL231026043355494492745"
+    ]
+  },
+  {
+    "page": 20,
+    "raw_lines": [
+      "23-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 1,500 0 1,475,515.45",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL231026060348032-",
+      "075987"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "24-Oct-2026 UBLDIGITAL:INTERNALFUNDS 10,000 0 1,443,515.45",
+      "TRANSFERTOREHMANALI(A/C",
+      "0003****9374)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "24-Oct-2026 RAASTP2PFTTOMUHAMMADIMRAN 5,000 0 1,438,515.45",
+      "EASYPAISAACCT:PK24TMFB*********-",
+      "303MSGID:UBL241026091335548-",
+      "679371"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "24-Oct-2026 RAASTP2PFTTOQASIMALIJAZZCASH 5,500 0 1,433,015.45",
+      "ACCT:PK61JCMA*********509MSGID:",
+      "UBL241026102509996741131"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "26-Oct-2026 RAASTP2PFTTOFAHADALI 4,600 0 1,428,415.45",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "613MSGID:UBL261026080621109-",
+      "704843"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "26-Oct-2026 RAASTP2PFTTOMUHAMMADARIF- 16,960 0 1,411,455.45",
+      "EASYPAISAACCT:PK89TMFB*********-",
+      "035MSGID:UBL261026081053699-",
+      "965867"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "26-Oct-2026 RAASTP2PFTTOMUHAMMAD 5,000 0 1,406,455.45",
+      "JAMEELJAZZCASHACCT:PK62JCMA**-",
+      "*******700MSGID:",
+      "UBL261026100521081844903"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "26-Oct-2026 UBLDIGITAL:INTERNALFUNDS 57,000 0 1,349,455.45",
+      "TRANSFERTOJAVEDAHMADKHAN",
+      "(A/C0003****9672)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "26-Oct-2026 RAASTP2PFTTOMUHAMMADATEEQ 2,850 0 1,346,605.45",
+      "ULREJAZZCASHACCT:PK34JCMA****-",
+      "*****939MSGID:UBL261026011052324-",
+      "540554"
+    ]
+  },
+  {
+    "page": 21,
+    "raw_lines": [
+      "26-Oct-2026 POSSALE-MASTERCARDATTOTAL 13,464 0 1,333,141.45",
+      "PARCOLAHOREPAK"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "26-Oct-2026 RAASTP2PFTTOMUHAMMADBILAL 13,900 0 1,299,241.45",
+      "EASYPAISAACCT:PK27TMFB*********-",
+      "308MSGID:UBL261026061340256-",
+      "946862"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOFURQANRAZZAQ 50,000 0 1,249,241.45",
+      "ABLACCT:PK08ABPA*********012",
+      "MSGID:UBL271026073235375244088"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOMUHAMMAD 1,000 0 1,248,241.45",
+      "WAJAHATAFZJAZZCASHACCT:",
+      "PK15JCMA*********531MSGID:",
+      "UBL271026103415588740719"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOMUHAMMAD 50,000 0 1,198,241.45",
+      "FAHEEMABLACCT:PK28ABPA********-",
+      "*015MSGID:UBL271026123821372-",
+      "600528"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 UBLDIGITAL:INTERNALFUNDS 10,000 0 1,188,241.45",
+      "TRANSFERTOREHMANALI(A/C",
+      "0003****9374)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOASIFRASHEED 12,000 0 1,176,241.45",
+      "JAZZCASHACCT:PK43JCMA*********-",
+      "935MSGID:UBL271026124030917-",
+      "377668"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOQAMARBATOL 1,300 0 1,174,941.45",
+      "EASYPAISAACCT:PK92TMFB*********-",
+      "677MSGID:UBL271026055040654-",
+      "669668"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 DIGITALAPP-IBFTFUNDTRANSFER, 20,000 0 1,154,941.45",
+      "TO:MUHAMMADIMRANBANK:",
+      "TELENORMICROFINANCELIMITED"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOMUHAMMADALI 5,000 0 1,149,941.45",
+      "JAZZCASHACCT:PK62JCMA*********-",
+      "807MSGID:UBL271026055630891-",
+      "769890"
+    ]
+  },
+  {
+    "page": 22,
+    "raw_lines": [
+      "27-Oct-2026 IBFTFEEFORDIGITALCHANNEL 16.8 0 1,149,924.65"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "27-Oct-2026 RAASTP2PFTTOJAVEDHBLACCT: 20,500 0 1,129,421.45",
+      "PK87HABB*********101MSGID:",
+      "UBL271026064724416906708"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "27-Oct-2026 POSSALE-MASTERCARDAT 925 0 1,128,496.45",
+      "EUROSTORERAIWINDROADLHRCITY",
+      "PAK"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "27-Oct-2026 POSSALE-MASTERCARDAT 7,997 0 1,120,499.45",
+      "EUROSTORERAIWINDROADLHRCITY",
+      "PAK"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 RAASTP2PFTTOAZIZULLAH 2,200 0 1,118,299.45",
+      "JAZZCASHACCT:PK92JCMA*********-",
+      "290MSGID:UBL281026073811709-",
+      "544852"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 RAASTP2PFTTOMUHAMMAD 10,000 0 1,108,299.45",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL281026014021161543547"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 RAASTP2PFTTOMUHAMMADAWAIS 1,100 0 1,107,199.45",
+      "JAZZCASHACCT:PK14JCMA*********-",
+      "521MSGID:UBL281026032532025-",
+      "729937"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 UBLDIGITAL:INTERNALFUNDS 7,500 0 1,099,699.45",
+      "TRANSFERTOMUZAFAR(A/C0003***-",
+      "*8649)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 RAASTP2PFTTOMUHAMMADIKRAM 47,500 0 1,052,199.45",
+      "MEBLACCT:PK61MEZN*********290",
+      "MSGID:UBL281026052205923170601"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 UBLDIGITAL:INTERNALFUNDS 10,000 0 1,042,199.45",
+      "TRANSFERTOREHMANALI(A/C",
+      "0003****9374)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 23,
+    "raw_lines": [
+      "28-Oct-2026 RAASTP2PFTTOQAMARBATOL 1,300 0 1,040,899.45",
+      "EASYPAISAACCT:PK92TMFB*********-",
+      "677MSGID:UBL281026055408211-",
+      "980447"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "28-Oct-2026 RAASTP2PFTTOIBTISAMULHAQ 5,000 0 1,031,899.45",
+      "JAZZCASHACCT:PK09JCMA*********-",
+      "498MSGID:UBL281026081539260-",
+      "792502"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "29-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 1,500 0 1,030,399.45",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL291026103037901-",
+      "358232"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "29-Oct-2026 UBLDIGITAL:INTERNALFUNDS 100,000 0 930,399.45",
+      "TRANSFERTOSYEDTAQIHAIDER",
+      "SHAH(A/C0002****8736)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "29-Oct-2026 RAASTP2PFTTOMUHAMMADBILAL 13,700 0 916,699.45",
+      "EASYPAISAACCT:PK27TMFB*********-",
+      "308MSGID:UBL291026050606206-",
+      "357219"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "29-Oct-2026 RAASTP2PFTTOICHRATILEBOND 55,000 0 861,699.45",
+      "AWAIMEBLACCT:PK22MEZN********-",
+      "*047MSGID:UBL291026081308367-",
+      "780290"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "29-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 5,000 0 856,699.45",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL291026094338754-",
+      "622588"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "30-Oct-2026 RAASTP2PFTTOMUNAWARALI 12,000 0 844,699.45",
+      "JAZZCASHACCT:PK66JCMA*********-",
+      "155MSGID:UBL301026011110864-",
+      "809835"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "30-Oct-2026 RAASTP2PFTTOUSAMABILALABID 3,700 0 840,999.45",
+      "JAZZCASHACCT:PK90JCMA*********-",
+      "015MSGID:UBL301026093520415-",
+      "579813"
+    ]
+  },
+  {
+    "page": 24,
+    "raw_lines": [
+      "30-Oct-2026 RAASTP2PFTTOABDULREHMAN 7,700 0 833,299.45",
+      "MEBLACCT:PK34MEZN*********529",
+      "MSGID:UBL301026012150411819241"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "30-Oct-2026 RAASTP2PFTTOGULNABIEASYPAISA 7,200 0 806,099.45",
+      "ACCT:PK76TMFB*********247MSGID:",
+      "UBL301026040617573729533"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMAD 6,600 0 799,499.45",
+      "RABNAWAZJAZZCASHACCT:",
+      "PK31JCMA*********082MSGID:",
+      "UBL311026091007960897579"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 UBLDIGITAL:INTERNALFUNDS 38,000 0 761,499.45",
+      "TRANSFERTOJAVEDAHMADKHAN",
+      "(A/C0003****9672)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 UBLDIGITAL:INTERNALFUNDS 74,610 0 686,889.45",
+      "TRANSFERTOALIAKRAM(A/C0002**-",
+      "**0078)-BANK:UBL"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMAD 50,000 0 636,889.45",
+      "FAHEEMABLACCT:PK28ABPA********-",
+      "*015MSGID:UBL311026124755264-",
+      "105701"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMAD 3,400 0 633,489.45",
+      "RABNAWAZJAZZCASHACCT:",
+      "PK31JCMA*********082MSGID:",
+      "UBL311026012421517635453"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMAD 10,000 0 623,489.45",
+      "DANISHALIEASYPAISAACCT:",
+      "PK33TMFB*********452MSGID:",
+      "UBL311026025506146846013"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMAD 500 0 622,989.45",
+      "SHEHZADALIEASYPAISAACCT:",
+      "PK04TMFB*********718MSGID:",
+      "UBL311026034751750649193"
+    ]
+  },
+  {
+    "page": 25,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMADASIF 1,500 0 621,489.45",
+      "EASYPAISAACCT:PK80TMFB*********-",
+      "494MSGID:UBL311026034853087-",
+      "846103"
+    ]
+  },
+  {
+    "page": 26,
+    "raw_lines": [
+      "31-Oct-2026 RAASTP2PFTTOMUHAMMADIHSAN 50,000 0 528,489.45",
+      "BAFLACCT:PK82ALFH*********959",
+      "MSGID:UBL311026040508692057564"
+    ]
+  },
+  {
+    "page": 26,
+    "raw_lines": [
+      "31-Oct-2026 UBLDIGITAL:INTERNALFUNDS 100,000 0 428,489.45",
+      "TRANSFERTOREHMANALI(A/C",
+      "0003****9374)-BANK:UBL",
+      "Forlatestscheduleofcharges,kindlyvisityourbranchor",
+      "UBLwebsitewww.ubldigital.com www.ubldigital.com"
+    ]
+  }
+]
