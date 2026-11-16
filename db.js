@@ -6690,7 +6690,10 @@ const db = {
       const dbUpdates = hasIntegrationCols
         ? updates
         : { siteName: branchName, auditLog, updatedAt: nowIso };
-      await supabase.from('bills').update(dbUpdates).eq('id', bill.id);
+      const { error: updErr } = await supabase.from('bills').update(dbUpdates).eq('id', bill.id);
+      if (updErr) {
+        console.error('Supabase linkBillToAccountsTicket error:', updErr.message);
+      }
 
       try {
         const data = loadLocalData();
@@ -6904,6 +6907,7 @@ const db = {
             accountsApprovalStatus: incomingApprovalStatus,
             verifiedAmount: incomingVerified ?? calc.totalVerifiedAmount,
             approvedAmount: incomingApproved ?? calc.totalApprovedAmount,
+            categories,
             syncMetadata: {
               externalExpenseId: payload.externalExpenseId ?? bill.externalExpenseId ?? null,
               integrationSyncStatus: 'SYNCED',
@@ -6979,7 +6983,10 @@ const db = {
         dbUpdates.integrationSyncedAt = updates.integrationSyncedAt;
         dbUpdates.integrationSyncError = updates.integrationSyncError;
       }
-      await supabase.from('bills').update(dbUpdates).eq('id', bill.id);
+      const { error: updErr } = await supabase.from('bills').update(dbUpdates).eq('id', bill.id);
+      if (updErr) {
+        console.error('Supabase applyAccountsStatusUpdate error:', updErr.message);
+      }
 
       try {
         const data = loadLocalData();
