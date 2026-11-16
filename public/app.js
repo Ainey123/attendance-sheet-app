@@ -121,6 +121,16 @@ const API = {
     return fetchJson(url);
   },
   // Bills API endpoints
+  searchAccountsTickets: (data = {}) => {
+    const headers = { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() };
+    const empId = data.employeeId || (selectedEmployee && selectedEmployee.id) || '';
+    if (empId) headers['X-Employee-Id'] = empId;
+    return fetchJson('/api/integration/tickets/search', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...data, employeeId: empId })
+    });
+  },
   getNextBillNumber: () => fetchJson('/api/bills/next-number'),
   submitBill: (data) => fetchJson('/api/bills', {
     method: 'POST',
@@ -144,6 +154,23 @@ const API = {
   }),
   getBillById: (id) => fetchJson(`/api/bills/${encodeURIComponent(id)}`, {
     headers: { 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  retryBillSync: (id) => fetchJson(`/api/bills/${encodeURIComponent(id)}/sync-accounts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  retryFailedBillSyncs: () => fetchJson('/api/bills/retry-failed-syncs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify({ includePending: true })
+  }),
+  getIntegrationHealth: () => fetchJson('/api/integration/health', {
+    headers: { 'X-Admin-Passcode': getAdminPasscode() }
+  }),
+  linkBillToTicket: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/link-ticket`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Passcode': getAdminPasscode() },
+    body: JSON.stringify(data)
   }),
   verifyBillCategory: (id, data) => fetchJson(`/api/bills/${encodeURIComponent(id)}/verify-category`, {
     method: 'POST',
@@ -5716,6 +5743,10 @@ let currentAdminBillFilter = 'ALL';
 let currentActiveAdminBillId = null;
 let currentActiveAdminBillData = null;
 let isAdminBillsLoading = false;
+let currentBillTicketResults = [];
+let currentSelectedBillTicket = null;
+let currentBillTicketSelectionMode = 'UNLINKED';
+let isSearchingAccountsTickets = false;
 
 function openClockOutBillPrompt() {
   const modal = document.getElementById('modal-clockout-bill-prompt');
@@ -5767,11 +5798,279 @@ function closeBillSubmissionScreen() {
   switchView('employee');
 }
 
+function applyBillSiteLockState(locked, branchValue = null) {
+  const siteInput = document.getElementById('bill-site-name');
+  const lockHint = document.getElementById('bill-site-lock-hint');
+  if (!siteInput) return;
+
+  if (locked && branchValue !== null) {
+    siteInput.value = branchValue;
+    siteInput.readOnly = true;
+    siteInput.style.cursor = 'not-allowed';
+    siteInput.style.opacity = '0.88';
+    siteInput.style.borderColor = 'rgba(34, 197, 94, 0.45)';
+    if (lockHint) lockHint.classList.remove('hidden');
+  } else {
+    siteInput.readOnly = false;
+    siteInput.style.cursor = '';
+    siteInput.style.opacity = '';
+    siteInput.style.borderColor = '';
+    if (lockHint) lockHint.classList.add('hidden');
+  }
+}
+
+function updateBillTicketModeBadge() {
+  const badge = document.getElementById('bill-ticket-mode-badge');
+  if (!badge) return;
+  if (currentSelectedBillTicket && currentBillTicketSelectionMode === 'LINKED') {
+    badge.innerText = `LINKED • TKT #${currentSelectedBillTicket.serialNo}`;
+    badge.style.background = 'rgba(34, 197, 94, 0.18)';
+    badge.style.color = '#4ade80';
+    badge.style.borderColor = 'rgba(34, 197, 94, 0.45)';
+  } else {
+    badge.innerText = 'UNLINKED';
+    badge.style.background = 'rgba(148, 163, 184, 0.18)';
+    badge.style.color = '#cbd5e1';
+    badge.style.borderColor = 'rgba(148, 163, 184, 0.35)';
+  }
+}
+
+function resetBillTicketLookupUI(clearInput = true) {
+  currentBillTicketResults = [];
+  currentSelectedBillTicket = null;
+  currentBillTicketSelectionMode = 'UNLINKED';
+
+  const searchInput = document.getElementById('bill-ticket-search-input');
+  if (searchInput && clearInput) searchInput.value = '';
+
+  const controls = document.getElementById('bill-ticket-search-controls');
+  const selectedCard = document.getElementById('bill-ticket-selected-card');
+  const loadingEl = document.getElementById('bill-ticket-search-loading');
+  const errorEl = document.getElementById('bill-ticket-search-error');
+  const emptyEl = document.getElementById('bill-ticket-search-empty');
+  const resultsEl = document.getElementById('bill-ticket-search-results');
+
+  if (controls) controls.classList.remove('hidden');
+  if (selectedCard) selectedCard.classList.add('hidden');
+  if (loadingEl) loadingEl.classList.add('hidden');
+  if (errorEl) {
+    errorEl.classList.add('hidden');
+    errorEl.innerHTML = '';
+  }
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (resultsEl) {
+    resultsEl.classList.add('hidden');
+    resultsEl.innerHTML = '';
+  }
+
+  ['bill-auth-branch', 'bill-auth-client', 'bill-auth-work-nature', 'bill-auth-subject'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  applyBillSiteLockState(false);
+  updateBillTicketModeBadge();
+}
+
+function renderBillTicketSearchResults(tickets = [], multipleMatches = false) {
+  const resultsEl = document.getElementById('bill-ticket-search-results');
+  const emptyEl = document.getElementById('bill-ticket-search-empty');
+  if (!resultsEl) return;
+
+  resultsEl.innerHTML = '';
+  if (!Array.isArray(tickets) || tickets.length === 0) {
+    resultsEl.classList.add('hidden');
+    if (emptyEl) emptyEl.classList.remove('hidden');
+    return;
+  }
+
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  if (multipleMatches) {
+    const headerNote = document.createElement('div');
+    headerNote.style.cssText = 'font-size:0.8rem; color:#7dd3fc; font-weight:600; padding:0.35rem 0.5rem; background:rgba(56,189,248,0.1); border-radius:6px;';
+    headerNote.innerText = `Found ${tickets.length} matching tickets. Please verify details and choose the exact ticket below:`;
+    resultsEl.appendChild(headerNote);
+  }
+
+  tickets.forEach(t => {
+    const isAlreadySelected = Boolean(currentSelectedBillTicket && Number(currentSelectedBillTicket.ticketId) === Number(t.ticketId));
+    const card = document.createElement('div');
+    card.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:0.75rem; padding:0.7rem 0.9rem; border-radius:8px; border:1px solid rgba(148,163,184,0.28); background:rgba(15,23,42,0.85);';
+    card.innerHTML = `
+      <div style="min-width:0; flex:1;">
+        <div style="display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-bottom:0.2rem;">
+          <strong style="color:#38bdf8; font-size:0.92rem;">TKT #${escapeHtml(t.serialNo)}</strong>
+          <span style="font-size:0.72rem; padding:0.12rem 0.45rem; border-radius:999px; background:rgba(56,189,248,0.16); color:#7dd3fc; font-weight:600;">${escapeHtml(t.workNature)}</span>
+          ${t.exactMatch ? '<span style="font-size:0.7rem; padding:0.1rem 0.4rem; border-radius:999px; background:rgba(34,197,94,0.18); color:#4ade80; font-weight:700;">EXACT MATCH</span>' : ''}
+        </div>
+        <div style="font-size:0.84rem; color:#f1f5f9; font-weight:600;">${escapeHtml(t.branchName)} — ${escapeHtml(t.clientName)}</div>
+        <div class="text-muted" style="font-size:0.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          ${t.subject ? escapeHtml(t.subject) : 'No subject'}${t.personOfContact ? ` • Contact: ${escapeHtml(t.personOfContact)}` : ''}
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm ${isAlreadySelected ? 'btn-secondary' : 'btn-primary'}" ${isAlreadySelected ? 'disabled' : ''} style="white-space:nowrap; font-weight:600;" onclick="selectAccountsTicketForBill(${Number(t.ticketId)})">
+        ${isAlreadySelected ? 'Selected' : 'Select Ticket'}
+      </button>
+    `;
+    resultsEl.appendChild(card);
+  });
+
+  resultsEl.classList.remove('hidden');
+}
+
+async function searchAccountsTicketsForBill() {
+  if (isSearchingAccountsTickets) return;
+
+  const inputEl = document.getElementById('bill-ticket-search-input');
+  const siteFallback = (document.getElementById('bill-site-name')?.value || '').trim();
+  const queryText = (inputEl?.value || '').trim() || siteFallback;
+
+  const loadingEl = document.getElementById('bill-ticket-search-loading');
+  const errorEl = document.getElementById('bill-ticket-search-error');
+  const emptyEl = document.getElementById('bill-ticket-search-empty');
+  const resultsEl = document.getElementById('bill-ticket-search-results');
+  const searchBtn = document.getElementById('btn-bill-ticket-search');
+
+  if (errorEl) {
+    errorEl.classList.add('hidden');
+    errorEl.innerHTML = '';
+  }
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (resultsEl) resultsEl.classList.add('hidden');
+
+  if (!queryText) {
+    if (errorEl) {
+      errorEl.innerHTML = '⚠️ Please enter a ticket number, client name, branch/site, or work nature to search.';
+      errorEl.classList.remove('hidden');
+    }
+    if (inputEl) inputEl.focus();
+    return;
+  }
+
+  isSearchingAccountsTickets = true;
+  if (loadingEl) loadingEl.classList.remove('hidden');
+  if (searchBtn) {
+    searchBtn.disabled = true;
+    searchBtn.innerText = 'Searching...';
+  }
+
+  try {
+    const res = await API.searchAccountsTickets({
+      query: queryText,
+      employeeId: selectedEmployee ? selectedEmployee.id : ''
+    });
+
+    if (!res || res.success === false) {
+      const safeMsg = (res && res.error) || 'Accounts ticket lookup is currently unavailable. You may continue with an Unlinked bill.';
+      if (errorEl) {
+        errorEl.innerHTML = `⚠️ <strong>Lookup Unavailable:</strong> ${escapeHtml(safeMsg)} <div style="margin-top:0.45rem;"><button type="button" class="btn btn-sm btn-secondary" onclick="continueAsUnlinkedBill()">Continue as Unlinked Bill</button></div>`;
+        errorEl.classList.remove('hidden');
+      }
+      currentBillTicketResults = [];
+      return;
+    }
+
+    currentBillTicketResults = Array.isArray(res.tickets) ? res.tickets : [];
+    renderBillTicketSearchResults(currentBillTicketResults, Boolean(res.multipleMatches));
+  } catch (err) {
+    const safeMsg = err && err.message ? err.message : 'Network error reaching Accounts lookup service.';
+    if (errorEl) {
+      errorEl.innerHTML = `⚠️ <strong>Ticket Lookup Notice:</strong> ${escapeHtml(safeMsg)}. Your bill submission is not blocked — you can submit as Unlinked.`;
+      errorEl.classList.remove('hidden');
+    }
+    currentBillTicketResults = [];
+  } finally {
+    isSearchingAccountsTickets = false;
+    if (loadingEl) loadingEl.classList.add('hidden');
+    if (searchBtn) {
+      searchBtn.disabled = false;
+      searchBtn.innerText = '🔍 Search Tickets';
+    }
+  }
+}
+
+function selectAccountsTicketForBill(ticketId) {
+  const numericId = Number(ticketId);
+  if (currentSelectedBillTicket && Number(currentSelectedBillTicket.ticketId) === numericId) {
+    showToast(`Ticket #${currentSelectedBillTicket.serialNo} is already selected.`, 'info');
+    return;
+  }
+
+  const found = (currentBillTicketResults || []).find(t => Number(t.ticketId) === numericId);
+  if (!found || !found.serialNo || !found.jobMetadataId || !found.branchName || !found.clientName || !found.workNature) {
+    showToast('Selected ticket is missing required authoritative metadata.', 'error');
+    return;
+  }
+
+  currentSelectedBillTicket = { ...found };
+  currentBillTicketSelectionMode = 'LINKED';
+
+  const controls = document.getElementById('bill-ticket-search-controls');
+  const selectedCard = document.getElementById('bill-ticket-selected-card');
+  const resultsEl = document.getElementById('bill-ticket-search-results');
+  const serialEl = document.getElementById('bill-selected-ticket-serial');
+  const branchEl = document.getElementById('bill-auth-branch');
+  const clientEl = document.getElementById('bill-auth-client');
+  const workEl = document.getElementById('bill-auth-work-nature');
+  const subjectEl = document.getElementById('bill-auth-subject');
+
+  if (serialEl) serialEl.innerText = `TKT #${found.serialNo}`;
+  if (branchEl) branchEl.value = found.branchName;
+  if (clientEl) clientEl.value = found.clientName;
+  if (workEl) workEl.value = found.workNature;
+  if (subjectEl) subjectEl.value = found.subject || '—';
+
+  if (resultsEl) resultsEl.classList.add('hidden');
+  if (controls) controls.classList.add('hidden');
+  if (selectedCard) selectedCard.classList.remove('hidden');
+
+  applyBillSiteLockState(true, found.branchName);
+  updateBillTicketModeBadge();
+  updateBillReviewSummary();
+  showToast(`Linked to Accounts Ticket #${found.serialNo}`, 'success');
+}
+
+function changeSelectedBillTicket() {
+  currentSelectedBillTicket = null;
+  currentBillTicketSelectionMode = 'UNLINKED';
+
+  const controls = document.getElementById('bill-ticket-search-controls');
+  const selectedCard = document.getElementById('bill-ticket-selected-card');
+  const searchInput = document.getElementById('bill-ticket-search-input');
+
+  if (selectedCard) selectedCard.classList.add('hidden');
+  if (controls) controls.classList.remove('hidden');
+
+  applyBillSiteLockState(false);
+  updateBillTicketModeBadge();
+  if (Array.isArray(currentBillTicketResults) && currentBillTicketResults.length > 0) {
+    renderBillTicketSearchResults(currentBillTicketResults, currentBillTicketResults.length > 1);
+  }
+  updateBillReviewSummary();
+  if (searchInput) searchInput.focus();
+}
+
+function clearSelectedBillTicket() {
+  resetBillTicketLookupUI(false);
+  updateBillReviewSummary();
+  showToast('Ticket unlinked. Bill will be submitted as Unlinked.', 'info');
+}
+
+function continueAsUnlinkedBill() {
+  resetBillTicketLookupUI(false);
+  updateBillReviewSummary();
+  const siteInput = document.getElementById('bill-site-name');
+  if (siteInput) siteInput.focus();
+}
+
 async function initBillSubmissionForm() {
   const formCard = document.getElementById('bill-form-card');
   const successCard = document.getElementById('bill-success-card');
   if (formCard) formCard.classList.remove('hidden');
   if (successCard) successCard.classList.add('hidden');
+
+  resetBillTicketLookupUI(true);
 
   const siteInput = document.getElementById('bill-site-name');
   if (siteInput) siteInput.value = '';
@@ -5835,6 +6134,20 @@ function updateBillReviewSummary() {
 
   const revNum = document.getElementById('rev-bill-number');
   if (revNum) revNum.innerText = billNum;
+  const revTicket = document.getElementById('rev-bill-ticket');
+  if (revTicket) {
+    revTicket.innerText = currentSelectedBillTicket && currentBillTicketSelectionMode === 'LINKED'
+      ? `TKT #${currentSelectedBillTicket.serialNo}`
+      : 'Unlinked';
+  }
+  const revClient = document.getElementById('rev-bill-client');
+  if (revClient) {
+    revClient.innerText = currentSelectedBillTicket ? (currentSelectedBillTicket.clientName || '—') : '—';
+  }
+  const revWorkNature = document.getElementById('rev-bill-work-nature');
+  if (revWorkNature) {
+    revWorkNature.innerText = currentSelectedBillTicket ? (currentSelectedBillTicket.workNature || '—') : '—';
+  }
   const revSite = document.getElementById('rev-bill-site');
   if (revSite) revSite.innerText = site || '—';
   const revDate = document.getElementById('rev-bill-date');
@@ -6058,10 +6371,13 @@ async function submitBillForm() {
   isSubmittingBill = true;
 
   try {
+    const isLinked = Boolean(currentSelectedBillTicket && currentBillTicketSelectionMode === 'LINKED');
+    const finalSiteName = isLinked ? currentSelectedBillTicket.branchName : siteName;
+
     const payload = {
       employeeId: selectedEmployee.id,
       employeeName: selectedEmployee.name,
-      siteName,
+      siteName: finalSiteName,
       date,
       billDate: date,
       transportationExpense: trans,
@@ -6070,7 +6386,16 @@ async function submitBillForm() {
       accommodationExpense: acc,
       otherExpense: oth,
       description,
-      attachments: Array.isArray(currentBillAttachments) ? currentBillAttachments : []
+      attachments: Array.isArray(currentBillAttachments) ? currentBillAttachments : [],
+      ticketSelectionMode: isLinked ? 'LINKED' : 'UNLINKED',
+      externalTicketId: isLinked ? currentSelectedBillTicket.ticketId : null,
+      externalTicketSerialNo: isLinked ? currentSelectedBillTicket.serialNo : null,
+      externalJobMetadataId: isLinked ? currentSelectedBillTicket.jobMetadataId : null,
+      branchName: isLinked ? currentSelectedBillTicket.branchName : null,
+      clientName: isLinked ? currentSelectedBillTicket.clientName : null,
+      workNature: isLinked ? currentSelectedBillTicket.workNature : null,
+      ticketSubject: isLinked ? currentSelectedBillTicket.subject : null,
+      ticketSelectionToken: isLinked ? (currentSelectedBillTicket.selectionToken || null) : null
     };
 
     const res = await API.submitBill(payload);
@@ -6294,9 +6619,209 @@ function normalizeDateToYMD(val) {
   return val.slice(0, 10);
 }
 
+async function loadAdminIntegrationHealth() {
+  try {
+    const res = await API.getIntegrationHealth();
+    const health = res && res.health ? res.health : null;
+    if (!health) return;
+
+    const pill = document.getElementById('sync-config-status-pill');
+    if (pill) {
+      if (!health.enabled) {
+        pill.innerText = 'Disabled';
+        pill.style.background = 'rgba(239,68,68,0.18)';
+        pill.style.color = '#fca5a5';
+      } else if (health.configured) {
+        pill.innerText = 'Configured';
+        pill.style.background = 'rgba(34,197,94,0.18)';
+        pill.style.color = '#4ade80';
+      } else {
+        pill.innerText = 'Not Configured';
+        pill.style.background = 'rgba(245,158,11,0.18)';
+        pill.style.color = '#fcd34d';
+      }
+    }
+
+    const setEl = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = Number(val || 0).toLocaleString();
+    };
+    setEl('sync-stat-linked', health.linkedCount);
+    setEl('sync-stat-synced', health.syncedCount);
+    setEl('sync-stat-pending', health.pendingSyncCount);
+    setEl('sync-stat-failed', health.syncFailedCount);
+    setEl('sync-stat-unlinked', health.unlinkedCount);
+
+    const failBadge = document.getElementById('badge-sync-failed-count');
+    if (failBadge) {
+      if (health.syncFailedCount > 0) {
+        failBadge.innerText = health.syncFailedCount;
+        failBadge.style.display = 'inline-block';
+      } else {
+        failBadge.style.display = 'none';
+      }
+    }
+  } catch (err) {
+    console.warn('Integration health fetch notice:', err.message);
+  }
+}
+
+async function retrySingleBillSync(billId) {
+  try {
+    showToast('Retrying Accounts sync...', 'info');
+    const res = await API.retryBillSync(billId);
+    if (res && res.success) {
+      showToast('Bill synced to Accounts App successfully!', 'success');
+    } else {
+      const msg = res?.syncResult?.integrationSyncError || res?.error || 'Sync failed cleanly (retryable).';
+      showToast('Sync retry failed: ' + msg, 'warning');
+    }
+    await loadAdminBills();
+    if (currentActiveAdminBillId === billId) {
+      await openAdminBillModal(billId, currentActiveAdminBillIsReadOnly);
+    }
+  } catch (err) {
+    showToast('Sync retry error: ' + err.message, 'error');
+  }
+}
+
+async function retryModalBillSync() {
+  if (!currentActiveAdminBillId) return;
+  await retrySingleBillSync(currentActiveAdminBillId);
+}
+
+async function retryAllFailedSyncsUI() {
+  const btn = document.getElementById('btn-retry-failed-syncs');
+  const orig = btn ? btn.innerText : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = '⏳ Retrying...';
+  }
+  try {
+    const res = await API.retryFailedBillSyncs();
+    const msg = `Retry finished: ${res.succeeded || 0} succeeded, ${res.failed || 0} failed (${res.totalAttempted || 0} attempted).`;
+    showToast(msg, (res.failed || 0) > 0 ? 'warning' : 'success');
+    await loadAdminBills();
+  } catch (err) {
+    showToast('Bulk retry error: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = orig || '🔁 Retry Failed Syncs';
+    }
+  }
+}
+
+let currentAdminModalTicketResults = [];
+
+async function searchAccountsTicketsForAdminModal() {
+  const input = document.getElementById('admin-modal-ticket-search-input');
+  const statusEl = document.getElementById('admin-modal-ticket-search-status');
+  const resultsEl = document.getElementById('admin-modal-ticket-results');
+  const q = (input?.value || '').trim();
+
+  if (statusEl) {
+    statusEl.classList.add('hidden');
+    statusEl.innerText = '';
+  }
+  if (resultsEl) {
+    resultsEl.classList.add('hidden');
+    resultsEl.innerHTML = '';
+  }
+
+  if (!q) {
+    if (statusEl) {
+      statusEl.innerText = 'Enter a ticket number, client name, branch, or work nature to search Accounts.';
+      statusEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  try {
+    if (statusEl) {
+      statusEl.innerText = '⏳ Searching Accounts tickets...';
+      statusEl.classList.remove('hidden');
+    }
+    const res = await API.searchAccountsTickets({ query: q });
+    if (!res || res.success === false) {
+      if (statusEl) {
+        statusEl.innerText = '⚠️ ' + ((res && res.error) || 'Unable to query Accounts App right now.');
+        statusEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    currentAdminModalTicketResults = Array.isArray(res.tickets) ? res.tickets : [];
+    if (currentAdminModalTicketResults.length === 0) {
+      if (statusEl) {
+        statusEl.innerText = 'No active Accounts ticket with complete JobMetadata matched your search.';
+        statusEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (statusEl) statusEl.classList.add('hidden');
+    if (resultsEl) {
+      resultsEl.innerHTML = '';
+      currentAdminModalTicketResults.forEach(t => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:0.6rem; padding:0.55rem 0.75rem; border-radius:6px; border:1px solid rgba(148,163,184,0.28); background:rgba(0,0,0,0.3); font-size:0.8rem;';
+        row.innerHTML = `
+          <div style="min-width:0; flex:1;">
+            <strong style="color:#38bdf8;">TKT #${escapeHtml(t.serialNo)}</strong>
+            <span style="margin-left:6px; color:#7dd3fc;">[${escapeHtml(t.workNature)}]</span>
+            <div style="color:#e2e8f0;">${escapeHtml(t.branchName)} — ${escapeHtml(t.clientName)}</div>
+            <div class="text-muted" style="font-size:0.74rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(t.subject || 'No subject')}</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="confirmAdminLinkTicket(${Number(t.ticketId)})" style="white-space:nowrap; font-weight:600;">
+            Link &amp; Sync
+          </button>
+        `;
+        resultsEl.appendChild(row);
+      });
+      resultsEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.innerText = '⚠️ Search failed: ' + err.message;
+      statusEl.classList.remove('hidden');
+    }
+  }
+}
+
+async function confirmAdminLinkTicket(ticketId) {
+  if (!currentActiveAdminBillId) return;
+  const ticket = currentAdminModalTicketResults.find(t => Number(t.ticketId) === Number(ticketId));
+  if (!ticket) return;
+
+  try {
+    const res = await API.linkBillToTicket(currentActiveAdminBillId, {
+      ticketId: ticket.ticketId,
+      serialNo: ticket.serialNo,
+      jobMetadataId: ticket.jobMetadataId,
+      branchName: ticket.branchName,
+      clientName: ticket.clientName,
+      workNature: ticket.workNature,
+      subject: ticket.subject,
+      ticketSelectionToken: ticket.selectionToken,
+      linkedBy: 'Admin'
+    });
+    if (res && res.success) {
+      showToast(`Linked bill to Ticket #${ticket.serialNo}`, 'success');
+      await loadAdminBills();
+      await openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly);
+    } else {
+      showToast((res && res.error) || 'Failed to link ticket.', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to link ticket: ' + err.message, 'error');
+  }
+}
+
 async function loadAdminBills() {
   isAdminBillsLoading = true;
   await populateAdminBillEmployeeDropdown();
+  loadAdminIntegrationHealth().catch(() => {});
 
   try {
     const statsRes = await API.getBillStats();
@@ -6376,6 +6901,8 @@ function renderAdminBillsTable() {
         (b.employeeName && b.employeeName.toLowerCase().includes(query)) ||
         (b.employeeId && b.employeeId.toLowerCase().includes(query)) ||
         (b.siteName && b.siteName.toLowerCase().includes(query)) ||
+        (b.externalTicketSerialNo && String(b.externalTicketSerialNo).toLowerCase().includes(query)) ||
+        (b.clientName && b.clientName.toLowerCase().includes(query)) ||
         (billDateStr && billDateStr.toLowerCase().includes(query)) ||
         (b.status && b.status.toLowerCase().includes(query));
     });
@@ -6472,6 +6999,10 @@ function renderAdminBillsTable() {
     rowsToRender = rowsToRender.filter(b => b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED');
   } else if (currentAdminBillFilter === 'DUPLICATE') {
     rowsToRender = rowsToRender.filter(b => b.isDuplicate || (b.duplicateVerification && b.duplicateVerification.isDuplicate));
+  } else if (currentAdminBillFilter === 'UNLINKED') {
+    rowsToRender = rowsToRender.filter(b => (b.ticketSelectionMode || 'UNLINKED') !== 'LINKED');
+  } else if (currentAdminBillFilter === 'SYNC_FAILED') {
+    rowsToRender = rowsToRender.filter(b => b.ticketSelectionMode === 'LINKED' && b.integrationSyncStatus === 'SYNC_FAILED');
   } else if (currentAdminBillFilter !== 'ALL') {
     rowsToRender = rowsToRender.filter(b => b.status === currentAdminBillFilter);
   }
@@ -6558,9 +7089,20 @@ function renderAdminBillsTable() {
         btnLabel = 'Approve / Review';
       }
 
+      const isLinked = bill.ticketSelectionMode === 'LINKED' && bill.externalTicketSerialNo;
+      const syncStatus = String(bill.integrationSyncStatus || (isLinked ? 'PENDING_SYNC' : 'UNLINKED_LOCAL')).toUpperCase();
+      let syncBadgeHtml = '';
+      if (isLinked) {
+        const sColor = syncStatus === 'SYNCED' ? '#4ade80' : (syncStatus === 'SYNC_FAILED' ? '#f87171' : '#fbbf24');
+        syncBadgeHtml = `<div style="margin-top:3px; font-size:0.7rem; color:${sColor}; font-weight:700;">🎫 TKT #${escapeHtml(bill.externalTicketSerialNo)} • ${escapeHtml(syncStatus)}</div>`;
+      } else {
+        syncBadgeHtml = `<div style="margin-top:3px; font-size:0.7rem; color:#94a3b8;">🔓 UNLINKED</div>`;
+      }
+
       tr.innerHTML = `
         <td>
           <strong style="color:#38bdf8;">${bill.billNumber}</strong>
+          ${syncBadgeHtml}
           ${dupBadgeHtml}
         </td>
         <td>${bill.billDate || bill.date || '—'}</td>
@@ -6572,9 +7114,13 @@ function renderAdminBillsTable() {
         <td>${attachmentsHtml}</td>
         <td>${badgeHtml}</td>
         <td>
-          <button type="button" class="btn btn-sm ${isDup ? 'btn-danger' : 'btn-primary'}" onclick="openAdminBillModal('${bill.id}')">
-            ${btnLabel}
-          </button>
+          <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+            <button type="button" class="btn btn-sm ${isDup ? 'btn-danger' : 'btn-primary'}" onclick="openAdminBillModal('${bill.id}')">
+              ${btnLabel}
+            </button>
+            ${isLinked && syncStatus === 'SYNC_FAILED' ? `<button type="button" class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); retrySingleBillSync('${bill.id}')" title="Retry failed Accounts sync" style="color:#f87171; border-color:rgba(248,113,113,0.45);">↻ Retry</button>` : ''}
+            ${!isLinked ? `<button type="button" class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openAdminBillModal('${bill.id}')" title="Link to Accounts Ticket">🔗 Link</button>` : ''}
+          </div>
         </td>
       `;
       tbody.appendChild(tr);
@@ -7525,6 +8071,64 @@ async function openAdminBillModal(billId, isReadOnly = false) {
     document.getElementById('admin-bill-modal-emp').innerText = bill.employeeName || '—';
     document.getElementById('admin-bill-modal-empid').innerText = bill.employeeId || '—';
     document.getElementById('admin-bill-modal-site').innerText = bill.siteName || '—';
+    const modalTicketEl = document.getElementById('admin-bill-modal-ticket');
+    if (modalTicketEl) {
+      modalTicketEl.innerText = bill.ticketSelectionMode === 'LINKED' && bill.externalTicketSerialNo
+        ? `TKT #${bill.externalTicketSerialNo} (LINKED)`
+        : 'Unlinked';
+    }
+    const modalClientWorkEl = document.getElementById('admin-bill-modal-client-work');
+    if (modalClientWorkEl) {
+      modalClientWorkEl.innerText = (bill.clientName || bill.workNature)
+        ? `${bill.clientName || '—'} • ${bill.workNature || '—'}`
+        : '—';
+    }
+    const modalSyncEl = document.getElementById('admin-bill-modal-sync-status');
+    const modalSyncActions = document.getElementById('admin-bill-modal-sync-actions');
+    const modalSyncMeta = document.getElementById('admin-bill-modal-sync-meta');
+    const modalSyncErr = document.getElementById('admin-bill-modal-sync-error');
+    const modalRetryBtn = document.getElementById('btn-admin-modal-retry-sync');
+    const linkPanel = document.getElementById('admin-bill-link-ticket-panel');
+    const linkResults = document.getElementById('admin-modal-ticket-results');
+    const linkStatus = document.getElementById('admin-modal-ticket-search-status');
+    const linkSearchInput = document.getElementById('admin-modal-ticket-search-input');
+
+    const isLinked = bill.ticketSelectionMode === 'LINKED';
+    const syncSt = bill.integrationSyncStatus || (isLinked ? 'PENDING_SYNC' : 'UNLINKED_LOCAL');
+    if (modalSyncEl) modalSyncEl.innerText = syncSt;
+    if (modalSyncActions) {
+      if (isLinked && !currentActiveAdminBillIsReadOnly) {
+        modalSyncActions.classList.remove('hidden');
+        if (modalSyncMeta) {
+          modalSyncMeta.innerText = `Sync State: ${syncSt}${bill.externalExpenseId ? ` (Accounts Expense #${bill.externalExpenseId})` : ''}${bill.integrationSyncedAt ? ` · Last Synced: ${new Date(bill.integrationSyncedAt).toLocaleString()}` : ''}`;
+        }
+        if (modalSyncErr) {
+          if (bill.integrationSyncError) {
+            modalSyncErr.innerText = 'Error: ' + bill.integrationSyncError;
+            modalSyncErr.classList.remove('hidden');
+          } else {
+            modalSyncErr.classList.add('hidden');
+          }
+        }
+        if (modalRetryBtn) {
+          modalRetryBtn.style.display = syncSt === 'SYNCED' ? 'none' : 'inline-flex';
+        }
+      } else {
+        modalSyncActions.classList.add('hidden');
+      }
+    }
+
+    if (linkPanel) {
+      if (!isLinked && !currentActiveAdminBillIsReadOnly) {
+        linkPanel.classList.remove('hidden');
+        if (linkSearchInput) linkSearchInput.value = bill.siteName && bill.siteName !== 'General Site' ? bill.siteName : '';
+        if (linkResults) { linkResults.classList.add('hidden'); linkResults.innerHTML = ''; }
+        if (linkStatus) { linkStatus.classList.add('hidden'); linkStatus.innerText = ''; }
+      } else {
+        linkPanel.classList.add('hidden');
+      }
+    }
+
     document.getElementById('admin-bill-modal-date').innerText = bill.billDate || bill.date || '—';
     document.getElementById('admin-bill-modal-time').innerText = bill.createdAt ? new Date(bill.createdAt).toLocaleString() : '—';
 
@@ -7657,6 +8261,15 @@ function initBillEventListeners() {
   const siteInput = document.getElementById('bill-site-name');
   if (siteInput) {
     siteInput.addEventListener('input', updateBillReviewSummary);
+  }
+  const ticketSearchInput = document.getElementById('bill-ticket-search-input');
+  if (ticketSearchInput) {
+    ticketSearchInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        searchAccountsTicketsForBill();
+      }
+    });
   }
 
   const btnSubmitBill = document.getElementById('btn-submit-bill-final');
@@ -7806,6 +8419,17 @@ function initBillEventListeners() {
   }
 
   // Global window bindings for inline HTML handlers
+  window.searchAccountsTicketsForBill = searchAccountsTicketsForBill;
+  window.selectAccountsTicketForBill = selectAccountsTicketForBill;
+  window.changeSelectedBillTicket = changeSelectedBillTicket;
+  window.clearSelectedBillTicket = clearSelectedBillTicket;
+  window.continueAsUnlinkedBill = continueAsUnlinkedBill;
+  window.loadAdminIntegrationHealth = loadAdminIntegrationHealth;
+  window.retrySingleBillSync = retrySingleBillSync;
+  window.retryModalBillSync = retryModalBillSync;
+  window.retryAllFailedSyncsUI = retryAllFailedSyncsUI;
+  window.searchAccountsTicketsForAdminModal = searchAccountsTicketsForAdminModal;
+  window.confirmAdminLinkTicket = confirmAdminLinkTicket;
   window.openBillSubmissionScreen = openBillSubmissionScreen;
   window.closeBillSubmissionScreen = closeBillSubmissionScreen;
   window.initBillSubmissionForm = initBillSubmissionForm;

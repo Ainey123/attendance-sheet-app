@@ -1,7 +1,24 @@
 // api/index.js — single serverless function handling ALL routes
 const db = require('../db');
+const integration = require('../integration-client');
 
 // Parse request body
+// Parse request body
+function readRawBody(req) {
+  return new Promise((resolve) => {
+    if (req.rawBody !== undefined) return resolve(String(req.rawBody));
+    if (req.body !== undefined) {
+      if (typeof req.body === 'string') return resolve(req.body);
+      if (Buffer.isBuffer(req.body)) return resolve(req.body.toString('utf8'));
+      if (typeof req.body === 'object') return resolve(JSON.stringify(req.body));
+    }
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => resolve(data));
+    req.on('error', () => resolve(''));
+  });
+}
+
 function parseBody(req) {
   return new Promise((resolve) => {
     if (req.body) {
@@ -1050,6 +1067,68 @@ module.exports = async (req, res) => {
     }
 
     // ── Bills & Expense Management Routes ──────────────────────────────────
+    if (path === 'integration/tickets/search' && method === 'POST') {
+      const settings = await db.getSettings();
+      const isAdmin = isPasscodeValid(adminPasscode, settings);
+      const body = await parseBody(req);
+      const clientEmpId = String(headers['x-employee-id'] || headers['X-Employee-Id'] || body.employeeId || '').trim();
+
+      if (!isAdmin && !clientEmpId) {
+        return res.status(401).json({
+          success: false,
+          code: 'UNAUTHORIZED',
+          error: 'Employee ID or Admin passcode is required to search tickets.'
+        });
+      }
+
+      try {
+        const result = await integration.lookupAuthoritativeTickets({
+          query: body.query ?? body.q ?? body.search,
+          serialNo: body.serialNo ?? body.ticketNumber,
+          branchName: body.branchName ?? body.siteName,
+          clientName: body.clientName,
+          workNature: body.workNature,
+          personOfContact: body.personOfContact,
+          limit: body.limit
+        });
+
+        if (!result.ok && result.status === 400) {
+          return res.status(400).json({
+            success: false,
+            available: true,
+            unavailable: false,
+            code: result.code,
+            error: result.error,
+            tickets: []
+          });
+        }
+
+        return res.status(200).json({
+          success: Boolean(result.ok),
+          available: !result.unavailable,
+          unavailable: Boolean(result.unavailable),
+          code: result.code || (result.ok ? 'OK' : 'LOOKUP_FAILED'),
+          error: result.error || null,
+          count: result.count || 0,
+          multipleMatches: Boolean(result.multipleMatches),
+          noMatch: Boolean(result.noMatch),
+          tickets: Array.isArray(result.tickets) ? result.tickets : []
+        });
+      } catch (err) {
+        return res.status(200).json({
+          success: false,
+          available: false,
+          unavailable: true,
+          code: 'TICKET_PROXY_ERROR',
+          error: 'Unable to search Accounts tickets right now. You may submit your bill as Unlinked.',
+          count: 0,
+          multipleMatches: false,
+          noMatch: false,
+          tickets: []
+        });
+      }
+    }
+
     if (path === 'bills/next-number' && method === 'GET') {
       try {
         const nextNum = await db.getNextBillNumber();
@@ -1069,6 +1148,7 @@ module.exports = async (req, res) => {
           employeeId: body.employeeId,
           employeeName: body.employeeName,
           siteName: body.siteName,
+          date: body.date,
           billDate: body.billDate,
           transportationExpense: body.transportationExpense,
           materialExpense: body.materialExpense,
@@ -1076,7 +1156,16 @@ module.exports = async (req, res) => {
           accommodationExpense: body.accommodationExpense,
           otherExpense: body.otherExpense,
           description: body.description,
-          attachments: body.attachments
+          attachments: body.attachments,
+          externalTicketId: body.externalTicketId,
+          externalTicketSerialNo: body.externalTicketSerialNo,
+          externalJobMetadataId: body.externalJobMetadataId,
+          branchName: body.branchName,
+          clientName: body.clientName,
+          workNature: body.workNature,
+          ticketSubject: body.ticketSubject,
+          ticketSelectionMode: body.ticketSelectionMode,
+          ticketSelectionToken: body.ticketSelectionToken
         });
         return res.json({ success: true, bill });
       } catch (err) {
@@ -1336,6 +1425,172 @@ module.exports = async (req, res) => {
       } catch (err) {
         return res.status(err.status || 400).json({ error: err.message });
       }
+    }
+
+    if (path === 'bills/retry-failed-syncs' && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const body = await parseBody(req).catch(() => ({}));
+      try {
+        const includePending = body?.includePending !== false;
+        const summary = await db.retryAllFailedBillSyncs({ includePending });
+        return res.json({ success: true, ...summary });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path === 'integration/health' && method === 'GET') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      try {
+        const health = await db.getIntegrationSyncHealth();
+        return res.json({ success: true, health });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/link-ticket$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = decodeURIComponent(path.split('/')[1]);
+      const body = await parseBody(req);
+      try {
+        const result = await db.linkBillToAccountsTicket(id, {
+          ticketId: body.ticketId ?? body.externalTicketId,
+          serialNo: body.serialNo ?? body.externalTicketSerialNo,
+          jobMetadataId: body.jobMetadataId ?? body.externalJobMetadataId,
+          branchName: body.branchName,
+          clientName: body.clientName,
+          workNature: body.workNature,
+          subject: body.subject ?? body.ticketSubject,
+          ticketSelectionToken: body.ticketSelectionToken,
+          linkedBy: body.linkedBy || 'Admin'
+        });
+        return res.json({
+          success: true,
+          bill: result.bill,
+          syncResult: result.syncResult
+        });
+      } catch (err) {
+        return res.status(err.status || 400).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path === 'integration/bills/status-update' && method === 'POST') {
+      const rawBody = await readRawBody(req);
+      const verification = integration.verifySignedRequest({
+        method: 'POST',
+        path: req.url,
+        headers,
+        rawBody
+      });
+
+      if (!verification.valid) {
+        return res.status(verification.status || 401).json({
+          success: false,
+          code: verification.code,
+          error: verification.error
+        });
+      }
+
+      if (verification.isDuplicateReplay && verification.cachedResult) {
+        return res.status(200).json({ ...verification.cachedResult, idempotentReplay: true });
+      }
+
+      let parsedBody = {};
+      try {
+        parsedBody = rawBody && rawBody.trim() ? JSON.parse(rawBody) : {};
+      } catch {
+        return res.status(400).json({ success: false, code: 'INVALID_JSON', error: 'Invalid JSON body.' });
+      }
+
+      try {
+        const result = await db.applyAccountsStatusUpdate(parsedBody);
+        const responseBody = {
+          success: true,
+          applied: result.applied,
+          conflictIgnored: Boolean(result.conflictIgnored),
+          idempotent: Boolean(result.idempotent),
+          billId: result.bill.id,
+          billNumber: result.bill.billNumber,
+          status: result.bill.status,
+          accountsApprovalStatus: result.bill.accountsApprovalStatus,
+          totalVerifiedAmount: result.bill.totalVerifiedAmount,
+          totalApprovedAmount: result.bill.totalApprovedAmount
+        };
+        integration.storeIdempotencyResult(verification.idempotencyKey, responseBody);
+        return res.status(200).json(responseBody);
+      } catch (err) {
+        return res.status(err.status || 500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path.match(/^bills\/([^\/]+)\/sync-accounts$/) && method === 'POST') {
+      const settings = await db.getSettings();
+      if (!isPasscodeValid(adminPasscode, settings)) {
+        return res.status(401).json({ error: 'Unauthorized: Admin Passcode Required' });
+      }
+      const id = decodeURIComponent(path.split('/')[1]);
+      try {
+        const result = await db.syncBillToAccounts(id);
+        if (result.skipped) {
+          return res.status(400).json({
+            success: false,
+            code: 'BILL_UNLINKED',
+            error: result.syncResult.error,
+            bill: result.bill
+          });
+        }
+        return res.json({
+          success: result.ok,
+          bill: result.bill,
+          syncResult: result.syncResult
+        });
+      } catch (err) {
+        return res.status(err.status || 500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path.match(/^integration\/bills\/([^\/]+)\/attachments\/(\d+)$/) && method === 'GET') {
+      const verification = integration.verifySignedRequest({
+        method: 'GET',
+        path: req.url,
+        headers,
+        rawBody: ''
+      });
+
+      if (!verification.valid) {
+        return res.status(verification.status || 401).json({
+          success: false,
+          code: verification.code,
+          error: verification.error
+        });
+      }
+
+      const parts = path.split('/');
+      const billId = decodeURIComponent(parts[2]);
+      const attIndex = Number(parts[4]);
+      const decoded = await db.getBillAttachmentForIntegration(billId, attIndex);
+      if (!decoded.valid) {
+        return res.status(decoded.status || 404).json({
+          success: false,
+          error: decoded.error
+        });
+      }
+
+      res.setHeader('Content-Type', decoded.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${decoded.fileName}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, no-store');
+      return res.send(decoded.buffer);
     }
 
     // ── DAILY ATTENDANCE & BILLS WHATSAPP SUMMARY ────────────────────────────────

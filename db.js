@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
+const integration = require('./integration-client');
 
 // Load environment variables
 require('dotenv').config({ path: path.join(__dirname, '.env.local') });
@@ -6134,13 +6135,19 @@ const db = {
       throw err;
     }
 
-    const transportationExpense = Math.max(0, Number(billData.transportationExpense) || 0);
-    const materialExpense = Math.max(0, Number(billData.materialExpense) || 0);
-    const labourExpense = Math.max(0, Number(billData.labourExpense) || 0);
-    const accommodationExpense = Math.max(0, Number(billData.accommodationExpense) || 0);
-    const otherExpense = Math.max(0, Number(billData.otherExpense) || 0);
+    const transportationExpense = Math.round(Math.max(0, Number(billData.transportationExpense) || 0) * 100) / 100;
+    const materialExpense = Math.round(Math.max(0, Number(billData.materialExpense) || 0) * 100) / 100;
+    const labourExpense = Math.round(Math.max(0, Number(billData.labourExpense) || 0) * 100) / 100;
+    const accommodationExpense = Math.round(Math.max(0, Number(billData.accommodationExpense) || 0) * 100) / 100;
+    const otherExpense = Math.round(Math.max(0, Number(billData.otherExpense) || 0) * 100) / 100;
 
-    const totalClaimedAmount = transportationExpense + materialExpense + labourExpense + accommodationExpense + otherExpense;
+    const totalClaimedAmount = sumCurrencyAmounts([
+      transportationExpense,
+      materialExpense,
+      labourExpense,
+      accommodationExpense,
+      otherExpense
+    ]);
 
     if (totalClaimedAmount <= 0) {
       const err = new Error('At least one expense category must have a valid positive amount.');
@@ -6149,6 +6156,22 @@ const db = {
     }
 
     const attachments = Array.isArray(billData.attachments) ? billData.attachments : [];
+    for (const att of attachments) {
+      if (!att || typeof att !== 'object') continue;
+      let mime = att.type || '';
+      if (!mime && typeof att.dataUrl === 'string') {
+        const m = att.dataUrl.match(/^data:([^;,]+)[;,]/i);
+        if (m) mime = m[1];
+      }
+      if (mime || att.name) {
+        const mimeCheck = integration.validateAttachmentMimeType(mime, att.name || '');
+        if (!mimeCheck.valid) {
+          const err = new Error(mimeCheck.error);
+          err.status = 400;
+          throw err;
+        }
+      }
+    }
 
     const claimMap = {
       transportation: transportationExpense,
@@ -6181,16 +6204,31 @@ const db = {
       };
     });
 
-    return withBillLock(async () => {
+    const createdBill = await withBillLock(async () => {
       const nextNum = await this.getNextBillNumber();
       const nowIso = new Date().toISOString();
+      const ticketLinkage = resolveAndValidateBillTicketLinkage(billData);
+      const effectiveSiteName = ticketLinkage.ticketSelectionMode === 'LINKED'
+        ? ticketLinkage.authoritativeSiteName
+        : billData.siteName.trim();
 
       const newBill = {
         id: generateId('bill'),
         billNumber: nextNum,
         employeeId: String(billData.employeeId).trim(),
         employeeName: (billData.employeeName || 'Employee').trim(),
-        siteName: billData.siteName.trim(),
+        siteName: effectiveSiteName,
+        externalTicketId: ticketLinkage.externalTicketId,
+        externalTicketSerialNo: ticketLinkage.externalTicketSerialNo,
+        externalJobMetadataId: ticketLinkage.externalJobMetadataId,
+        clientName: ticketLinkage.clientName,
+        workNature: ticketLinkage.workNature,
+        ticketSubject: ticketLinkage.ticketSubject,
+        ticketSelectionMode: ticketLinkage.ticketSelectionMode,
+        externalExpenseId: null,
+        integrationSyncStatus: ticketLinkage.integrationSyncStatus,
+        integrationSyncedAt: null,
+        integrationSyncError: null,
         billDate: billData.billDate || billData.date || getLocalDateString(),
         submittedAt: nowIso,
         transportationExpense,
@@ -6221,7 +6259,22 @@ const db = {
             action: 'SUBMITTED',
             by: billData.employeeName || 'Employee',
             at: nowIso,
-            details: { totalClaimedAmount, billNumber: nextNum, attachmentsCount: attachments.length, categories }
+            details: {
+              totalClaimedAmount,
+              billNumber: nextNum,
+              attachmentsCount: attachments.length,
+              categories,
+              ticketMetadata: {
+                ticketSelectionMode: ticketLinkage.ticketSelectionMode,
+                externalTicketId: ticketLinkage.externalTicketId,
+                externalTicketSerialNo: ticketLinkage.externalTicketSerialNo,
+                externalJobMetadataId: ticketLinkage.externalJobMetadataId,
+                clientName: ticketLinkage.clientName,
+                workNature: ticketLinkage.workNature,
+                ticketSubject: ticketLinkage.ticketSubject,
+                integrationSyncStatus: ticketLinkage.integrationSyncStatus
+              }
+            }
           }
         ],
         createdAt: nowIso,
@@ -6269,6 +6322,7 @@ const db = {
         saveLocalData(data);
       } else {
         const hasNativeCategories = await checkBillsTableNativeCategories();
+        const hasIntegrationCols = await checkBillsTableIntegrationColumns();
         const rowToInsert = { ...newBill };
         delete rowToInsert.duplicateVerification;
         delete rowToInsert.duplicateMatches;
@@ -6278,6 +6332,9 @@ const db = {
           delete rowToInsert.totalVerifiedAmount;
           delete rowToInsert.totalApprovedAmount;
           rowToInsert.status = sanitizeLegacyBillStatus(rowToInsert.status);
+        }
+        if (!hasIntegrationCols) {
+          BILLS_INTEGRATION_COLUMNS.forEach(col => { delete rowToInsert[col]; });
         }
 
         try {
@@ -6345,6 +6402,715 @@ const db = {
 
       return normalizeBillRecord(newBill);
     });
+
+    // Non-blocking outbound expense sync to Accounts App for LINKED bills
+    if (
+      createdBill &&
+      createdBill.ticketSelectionMode === 'LINKED' &&
+      billData._autoSync !== false &&
+      (billData._syncOptions || integration.getIntegrationConfig().isConfigured)
+    ) {
+      try {
+        const syncOutcome = await this.syncBillToAccounts(createdBill, billData._syncOptions || {});
+        if (syncOutcome && syncOutcome.bill) {
+          return syncOutcome.bill;
+        }
+      } catch (e) {
+        // Bill creation must NEVER fail if Accounts App is down
+        console.warn('Non-fatal outbound bill sync failure:', e.message);
+      }
+    }
+
+    return createdBill;
+  },
+
+  async updateBillSyncMetadata(billId, syncPatch = {}) {
+    if (!billId) return null;
+    const nowIso = new Date().toISOString();
+    const rawBill = await this.getBillById(billId);
+    if (!rawBill) return null;
+
+    const existingLog = Array.isArray(rawBill.auditLog) ? rawBill.auditLog : [];
+    const auditLog = [
+      ...existingLog,
+      {
+        action: syncPatch.integrationSyncStatus === 'SYNCED' ? 'ACCOUNTS_SYNCED' : 'ACCOUNTS_SYNC_FAILED',
+        by: 'integration_sync',
+        at: nowIso,
+        details: {
+          syncMetadata: {
+            externalExpenseId: syncPatch.externalExpenseId ?? rawBill.externalExpenseId ?? null,
+            integrationSyncStatus: syncPatch.integrationSyncStatus || rawBill.integrationSyncStatus,
+            integrationSyncedAt: syncPatch.integrationSyncedAt ?? rawBill.integrationSyncedAt ?? null,
+            integrationSyncError: syncPatch.integrationSyncError ?? null
+          }
+        }
+      }
+    ];
+
+    const updates = {
+      externalExpenseId: syncPatch.externalExpenseId ?? rawBill.externalExpenseId ?? null,
+      integrationSyncStatus: syncPatch.integrationSyncStatus || rawBill.integrationSyncStatus,
+      integrationSyncedAt: syncPatch.integrationSyncedAt ?? rawBill.integrationSyncedAt ?? null,
+      integrationSyncError: syncPatch.integrationSyncError ?? null,
+      auditLog,
+      updatedAt: nowIso
+    };
+
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      data.bills = data.bills || [];
+      const idx = data.bills.findIndex(b => b.id === billId || b.billNumber === billId);
+      if (idx !== -1) {
+        data.bills[idx] = { ...data.bills[idx], ...updates };
+        saveLocalData(data);
+        return normalizeBillRecord(data.bills[idx]);
+      }
+      return normalizeBillRecord({ ...rawBill, ...updates });
+    }
+
+    try {
+      const hasIntegrationCols = await checkBillsTableIntegrationColumns();
+      const dbUpdates = hasIntegrationCols
+        ? updates
+        : { auditLog, updatedAt: nowIso };
+      await supabase.from('bills').update(dbUpdates).eq('id', rawBill.id);
+    } catch (err) {
+      console.warn('Supabase sync metadata update notice:', err.message);
+    }
+
+    try {
+      const data = loadLocalData();
+      const idx = (data.bills || []).findIndex(b => b.id === rawBill.id);
+      if (idx !== -1) {
+        data.bills[idx] = { ...data.bills[idx], ...updates };
+        saveLocalData(data);
+      }
+    } catch {}
+
+    return normalizeBillRecord({ ...rawBill, ...updates });
+  },
+
+  async syncBillToAccounts(billOrId, options = {}) {
+    const rawBill = typeof billOrId === 'string'
+      ? await this.getBillById(billOrId)
+      : billOrId;
+
+    if (!rawBill) {
+      const err = new Error('Bill not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const bill = normalizeBillRecord(rawBill);
+    if (bill.ticketSelectionMode !== 'LINKED' || !bill.externalTicketId || !bill.externalTicketSerialNo || !bill.externalJobMetadataId) {
+      return {
+        ok: false,
+        skipped: true,
+        bill,
+        syncResult: {
+          integrationSyncStatus: 'UNLINKED_LOCAL',
+          error: 'Only LINKED bills with verified Accounts ticket metadata can be synced to Accounts.'
+        }
+      };
+    }
+
+    const syncResult = await integration.syncBillExpenseToAccounts(bill, options);
+    const updatedBill = await this.updateBillSyncMetadata(bill.id, {
+      externalExpenseId: syncResult.externalExpenseId ?? bill.externalExpenseId ?? null,
+      integrationSyncStatus: syncResult.integrationSyncStatus,
+      integrationSyncedAt: syncResult.ok ? syncResult.integrationSyncedAt : bill.integrationSyncedAt,
+      integrationSyncError: syncResult.ok ? null : (syncResult.integrationSyncError || syncResult.error || 'Sync failed')
+    });
+
+    return {
+      ok: Boolean(syncResult.ok),
+      bill: updatedBill || bill,
+      syncResult
+    };
+  },
+
+  async getBillAttachmentForIntegration(billId, index = 0) {
+    const rawBill = await this.getBillById(billId);
+    if (!rawBill) {
+      return { valid: false, status: 404, error: 'Bill not found.' };
+    }
+    const attachments = Array.isArray(rawBill.attachments) ? rawBill.attachments : [];
+    const idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= attachments.length) {
+      return { valid: false, status: 404, error: 'Attachment index out of range.' };
+    }
+    return integration.decodeBillAttachmentDataUrl(attachments[idx]);
+  },
+
+  /**
+   * Office-side recovery workflow: links an existing UNLINKED bill to an authoritative
+   * Accounts Ticket + JobMetadata and attempts synchronization.
+   * Refuses duplicate overwrites on already LINKED bills and blocks fake/incomplete tickets.
+   */
+  async linkBillToAccountsTicket(billId, ticketData = {}, options = {}) {
+    if (!billId) {
+      const err = new Error('Bill ID is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    const ticketId = Number(ticketData.ticketId ?? ticketData.externalTicketId);
+    const jobMetadataId = Number(ticketData.jobMetadataId ?? ticketData.externalJobMetadataId);
+    const serialNo = String(ticketData.serialNo ?? ticketData.externalTicketSerialNo ?? '').trim();
+    const branchName = String(ticketData.branchName ?? '').trim();
+    const clientName = String(ticketData.clientName ?? '').trim();
+    const workNature = String(ticketData.workNature ?? '').trim();
+    const ticketSubject = String(ticketData.subject ?? ticketData.ticketSubject ?? '').trim() || null;
+
+    if (
+      !Number.isInteger(ticketId) ||
+      ticketId <= 0 ||
+      !Number.isInteger(jobMetadataId) ||
+      jobMetadataId <= 0 ||
+      !serialNo ||
+      !branchName ||
+      !clientName ||
+      !workNature
+    ) {
+      const err = new Error('Valid authoritative ticket fields (ticketId, serialNo, jobMetadataId, branchName, clientName, workNature) are required.');
+      err.status = 400;
+      throw err;
+    }
+
+    if (ticketData.ticketSelectionToken) {
+      const tokenValid = integration.verifyAuthoritativeTicketSelection(
+        {
+          ticketId,
+          serialNo,
+          jobMetadataId,
+          branchName,
+          clientName,
+          workNature,
+          subject: ticketSubject || ''
+        },
+        ticketData.ticketSelectionToken
+      );
+      if (!tokenValid) {
+        const err = new Error('Ticket selection token is invalid or metadata was tampered with. Re-select the ticket from Accounts lookup.');
+        err.status = 400;
+        throw err;
+      }
+    }
+
+    // Verify directly against Accounts App when configured or fetchFn provided (blocks fake/incomplete tickets)
+    const cfg = integration.getIntegrationConfig(options.config || {});
+    if (options.verifyWithAccounts !== false && (cfg.isConfigured || options.fetchFn)) {
+      const lookupRes = await integration.lookupAuthoritativeTickets(
+        { serialNo, limit: 20 },
+        { config: options.config, fetchFn: options.fetchFn }
+      );
+      if (!lookupRes.ok) {
+        const err = new Error(lookupRes.error || 'Unable to verify ticket against Accounts App.');
+        err.status = lookupRes.unavailable ? 503 : (lookupRes.status || 422);
+        throw err;
+      }
+      const exactMatch = (lookupRes.tickets || []).find(
+        t => Number(t.ticketId) === ticketId && Number(t.jobMetadataId) === jobMetadataId && String(t.serialNo).trim() === serialNo
+      );
+      if (!exactMatch) {
+        const err = new Error(`Ticket #${serialNo} (Job #${jobMetadataId}) does not exist as an active Ticket with complete JobMetadata in Accounts App.`);
+        err.status = 422;
+        throw err;
+      }
+    }
+
+    const linkedBill = await withBillLock(async () => {
+      const rawBill = await this.getBillById(billId);
+      if (!rawBill) {
+        const err = new Error('Bill not found.');
+        err.status = 404;
+        throw err;
+      }
+
+      const bill = normalizeBillRecord(rawBill);
+      if (bill.ticketSelectionMode === 'LINKED') {
+        const err = new Error(`Bill ${bill.billNumber} is already linked to Ticket #${bill.externalTicketSerialNo} and cannot be silently overwritten.`);
+        err.status = 409;
+        throw err;
+      }
+
+      const nowIso = new Date().toISOString();
+      const actor = String(ticketData.linkedBy || options.linkedBy || 'Admin').trim();
+      const existingLog = Array.isArray(rawBill.auditLog) ? rawBill.auditLog : [];
+      const auditLog = [
+        ...existingLog,
+        {
+          action: 'OFFICE_TICKET_LINKED',
+          by: actor,
+          at: nowIso,
+          details: {
+            previousSiteName: bill.siteName,
+            ticketMetadata: {
+              ticketSelectionMode: 'LINKED',
+              externalTicketId: ticketId,
+              externalTicketSerialNo: serialNo,
+              externalJobMetadataId: jobMetadataId,
+              clientName,
+              workNature,
+              ticketSubject,
+              integrationSyncStatus: 'PENDING_SYNC'
+            }
+          }
+        }
+      ];
+
+      const updates = {
+        siteName: branchName,
+        externalTicketId: ticketId,
+        externalTicketSerialNo: serialNo,
+        externalJobMetadataId: jobMetadataId,
+        clientName,
+        workNature,
+        ticketSubject,
+        ticketSelectionMode: 'LINKED',
+        integrationSyncStatus: 'PENDING_SYNC',
+        integrationSyncError: null,
+        auditLog,
+        updatedAt: nowIso
+      };
+
+      if (useLocalFallback || !supabase) {
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === bill.id || b.billNumber === bill.billNumber);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates };
+          saveLocalData(data);
+          return normalizeBillRecord(data.bills[idx]);
+        }
+        return normalizeBillRecord({ ...rawBill, ...updates });
+      }
+
+      const hasIntegrationCols = await checkBillsTableIntegrationColumns();
+      const dbUpdates = hasIntegrationCols
+        ? updates
+        : { siteName: branchName, auditLog, updatedAt: nowIso };
+      await supabase.from('bills').update(dbUpdates).eq('id', bill.id);
+
+      try {
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === bill.id);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates };
+          saveLocalData(data);
+        }
+      } catch {}
+
+      return normalizeBillRecord({ ...rawBill, ...updates });
+    });
+
+    // Attempt immediate sync after linking if Accounts is configured or mock fetchFn passed
+    if (options.autoSync !== false && (cfg.isConfigured || options.fetchFn)) {
+      try {
+        return await this.syncBillToAccounts(linkedBill, options);
+      } catch (e) {
+        console.warn('Post-link sync failed cleanly (retryable):', e.message);
+      }
+    }
+
+    return {
+      ok: true,
+      bill: linkedBill,
+      syncResult: {
+        integrationSyncStatus: linkedBill.integrationSyncStatus,
+        pending: true
+      }
+    };
+  },
+
+  /**
+   * Applies an inbound Accounts App approval/status update to a LINKED Attendance bill.
+   * Idempotent and conflict-safe (prevents stale lower-stage regressions).
+   */
+  async applyAccountsStatusUpdate(payload = {}) {
+    const extBillId = String(payload.externalBillId || '').trim();
+    const extBillNum = String(payload.externalBillNumber || payload.billNumber || '').trim();
+    const lookupKey = extBillId || extBillNum;
+
+    if (!lookupKey) {
+      const err = new Error('externalBillId or billNumber is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    const incomingApprovalStatus = String(payload.approvalStatus || '').toUpperCase().trim();
+    const APPROVAL_TO_BILL_STATUS = {
+      RECEIVED: 'SUBMITTED',
+      PARTIALLY_VERIFIED: 'PARTIALLY_VERIFIED',
+      VERIFIED: 'VERIFIED',
+      PARTIALLY_APPROVED: 'APPROVED',
+      APPROVED: 'APPROVED',
+      REJECTED: 'REJECTED'
+    };
+    const STAGE_RANK = {
+      RECEIVED: 1,
+      SUBMITTED: 1,
+      PENDING_VERIFICATION: 1,
+      PARTIALLY_VERIFIED: 2,
+      VERIFIED: 3,
+      PARTIALLY_APPROVED: 4,
+      APPROVED: 5,
+      REJECTED: 5
+    };
+
+    if (!APPROVAL_TO_BILL_STATUS[incomingApprovalStatus]) {
+      const err = new Error(`Invalid approvalStatus "${incomingApprovalStatus}".`);
+      err.status = 400;
+      throw err;
+    }
+
+    return withBillLock(async () => {
+      let rawBill = await this.getBillById(extBillId || extBillNum);
+      if (!rawBill && extBillNum && extBillId) {
+        rawBill = await this.getBillById(extBillNum);
+      }
+      if (!rawBill) {
+        const err = new Error(`Bill "${lookupKey}" not found in Attendance App.`);
+        err.status = 404;
+        throw err;
+      }
+
+      const bill = normalizeBillRecord(rawBill);
+      if (bill.ticketSelectionMode !== 'LINKED') {
+        const err = new Error(`Bill ${bill.billNumber} is UNLINKED and cannot receive Accounts approval updates.`);
+        err.status = 422;
+        throw err;
+      }
+
+      if (payload.ticketId && bill.externalTicketId && Number(payload.ticketId) !== Number(bill.externalTicketId)) {
+        const err = new Error(`Ticket ID mismatch for bill ${bill.billNumber}.`);
+        err.status = 422;
+        throw err;
+      }
+
+      const currentAccountStatus = String(bill.accountsApprovalStatus || bill.status || 'SUBMITTED').toUpperCase().trim();
+      const currentRank = STAGE_RANK[currentAccountStatus] || 1;
+      const incomingRank = STAGE_RANK[incomingApprovalStatus] || 1;
+
+      const isTerminalConflict = currentRank === 5 && currentAccountStatus !== incomingApprovalStatus && !payload.forceOverride;
+      if (incomingRank < currentRank || isTerminalConflict) {
+        return {
+          ok: true,
+          applied: false,
+          conflictIgnored: true,
+          idempotent: false,
+          bill
+        };
+      }
+
+      const incomingVerified = payload.verifiedAmount !== null && payload.verifiedAmount !== undefined
+        ? Math.max(0, Number(payload.verifiedAmount) || 0)
+        : null;
+      const incomingApproved = payload.approvedAmount !== null && payload.approvedAmount !== undefined
+        ? Math.max(0, Number(payload.approvedAmount) || 0)
+        : null;
+
+      // Idempotency check on identical state & amounts
+      const sameAccountStatus = bill.accountsApprovalStatus === incomingApprovalStatus ||
+        (incomingApprovalStatus === 'RECEIVED' && bill.status === 'SUBMITTED') ||
+        (incomingApprovalStatus === 'APPROVED' && bill.status === 'APPROVED') ||
+        (incomingApprovalStatus === 'VERIFIED' && bill.status === 'VERIFIED') ||
+        (incomingApprovalStatus === 'REJECTED' && bill.status === 'REJECTED');
+      const sameVerified = incomingVerified === null || Number(bill.totalVerifiedAmount ?? 0) === incomingVerified;
+      const sameApproved = incomingApproved === null || Number(bill.totalApprovedAmount ?? 0) === incomingApproved;
+
+      if (sameAccountStatus && sameVerified && sameApproved && bill.accountsApprovalStatus) {
+        return {
+          ok: true,
+          applied: false,
+          conflictIgnored: false,
+          idempotent: true,
+          bill
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      const categories = JSON.parse(JSON.stringify(bill.categories || {}));
+      const activeCats = BILL_EXPENSE_CATEGORIES.filter(c => categories[c] && Number(categories[c].claimedAmount) > 0);
+      const totalClaimed = bill.totalClaimedAmount || 0;
+
+      const distributeTotal = (targetSum) => {
+        const map = {};
+        if (!activeCats.length || totalClaimed <= 0) return map;
+        let remaining = Math.min(Math.max(0, Number(targetSum) || 0), totalClaimed);
+        activeCats.forEach((catKey, idx) => {
+          const catClaimed = Number(categories[catKey].claimedAmount) || 0;
+          if (idx === activeCats.length - 1) {
+            map[catKey] = Math.min(catClaimed, Math.max(0, Math.round(remaining * 100) / 100));
+          } else {
+            const share = Math.min(catClaimed, Math.round(((catClaimed / totalClaimed) * (Number(targetSum) || 0)) * 100) / 100);
+            map[catKey] = share;
+            remaining = Math.max(0, remaining - share);
+          }
+        });
+        return map;
+      };
+
+      if (incomingApprovalStatus === 'REJECTED') {
+        activeCats.forEach(c => {
+          categories[c].verificationStatus = 'REJECTED';
+          categories[c].approvalStatus = 'REJECTED';
+          categories[c].verifiedAmount = 0;
+          categories[c].approvedAmount = 0;
+          categories[c].rejectedBy = payload.rejectedBy || 'Accounts Admin';
+          categories[c].rejectedAt = payload.rejectedAt || nowIso;
+          categories[c].rejectionReason = payload.rejectionReason || 'Rejected in Accounts App';
+          categories[c].status = 'REJECTED';
+        });
+      } else if (incomingApprovalStatus === 'VERIFIED' || incomingApprovalStatus === 'PARTIALLY_VERIFIED') {
+        const targetV = incomingVerified !== null ? incomingVerified : totalClaimed;
+        const distV = distributeTotal(targetV);
+        activeCats.forEach(c => {
+          categories[c].verificationStatus = 'VERIFIED';
+          categories[c].verifiedAmount = distV[c] ?? categories[c].claimedAmount;
+          categories[c].verifiedBy = payload.verifiedBy || 'Accounts Admin';
+          categories[c].verifiedAt = payload.verifiedAt || nowIso;
+          categories[c].status = 'VERIFIED';
+          categories[c].approvalStatus = 'PENDING';
+          categories[c].approvedAmount = null;
+        });
+      } else if (incomingApprovalStatus === 'APPROVED' || incomingApprovalStatus === 'PARTIALLY_APPROVED') {
+        const targetA = incomingApproved !== null ? incomingApproved : (incomingVerified ?? totalClaimed);
+        const targetV = incomingVerified !== null ? Math.max(incomingVerified, targetA) : Math.max(targetA, bill.totalVerifiedAmount || 0);
+        const distV = distributeTotal(targetV);
+        const distA = distributeTotal(targetA);
+        activeCats.forEach(c => {
+          categories[c].verificationStatus = 'VERIFIED';
+          categories[c].verifiedAmount = Math.max(distV[c] ?? 0, distA[c] ?? 0);
+          categories[c].verifiedBy = categories[c].verifiedBy || payload.verifiedBy || 'Accounts Admin';
+          categories[c].verifiedAt = categories[c].verifiedAt || payload.verifiedAt || nowIso;
+          categories[c].approvalStatus = 'APPROVED';
+          categories[c].approvedAmount = distA[c] ?? 0;
+          categories[c].approvedBy = payload.approvedBy || 'Accounts Admin';
+          categories[c].approvedAt = payload.approvedAt || nowIso;
+          categories[c].status = 'APPROVED';
+        });
+      }
+
+      const calc = computeBillTotalsAndStatus(categories, APPROVAL_TO_BILL_STATUS[incomingApprovalStatus]);
+      const existingLog = Array.isArray(rawBill.auditLog) ? rawBill.auditLog : [];
+      const auditLog = [
+        ...existingLog,
+        {
+          action: 'ACCOUNTS_STATUS_SYNCED',
+          by: payload.approvedBy || payload.rejectedBy || payload.verifiedBy || 'Accounts App',
+          at: nowIso,
+          details: {
+            accountsApprovalStatus: incomingApprovalStatus,
+            verifiedAmount: incomingVerified ?? calc.totalVerifiedAmount,
+            approvedAmount: incomingApproved ?? calc.totalApprovedAmount,
+            syncMetadata: {
+              externalExpenseId: payload.externalExpenseId ?? bill.externalExpenseId ?? null,
+              integrationSyncStatus: 'SYNCED',
+              integrationSyncedAt: nowIso,
+              integrationSyncError: null,
+              accountsApprovalStatus: incomingApprovalStatus
+            }
+          }
+        }
+      ];
+
+      const updates = {
+        categories,
+        totalVerifiedAmount: incomingVerified !== null && incomingApprovalStatus !== 'REJECTED' ? incomingVerified : calc.totalVerifiedAmount,
+        totalApprovedAmount: incomingApproved !== null ? incomingApproved : calc.totalApprovedAmount,
+        verifiedAmount: incomingVerified !== null && incomingApprovalStatus !== 'REJECTED' ? incomingVerified : calc.totalVerifiedAmount,
+        approvedAmount: incomingApproved !== null ? incomingApproved : calc.totalApprovedAmount,
+        status: incomingApprovalStatus === 'REJECTED' ? 'REJECTED' : calc.status,
+        verifiedBy: payload.verifiedBy ?? bill.verifiedBy,
+        verifiedAt: payload.verifiedAt ?? bill.verifiedAt,
+        verificationComment: payload.verificationNotes ?? bill.verificationComment,
+        approvedBy: payload.approvedBy ?? bill.approvedBy,
+        approvedAt: payload.approvedAt ?? bill.approvedAt,
+        approvalComment: payload.approvalNotes ?? bill.approvalComment,
+        rejectedBy: payload.rejectedBy ?? bill.rejectedBy,
+        rejectedAt: payload.rejectedAt ?? bill.rejectedAt,
+        rejectionReason: payload.rejectionReason ?? bill.rejectionReason,
+        externalExpenseId: payload.externalExpenseId ?? bill.externalExpenseId,
+        integrationSyncStatus: 'SYNCED',
+        integrationSyncedAt: nowIso,
+        integrationSyncError: null,
+        auditLog,
+        updatedAt: nowIso
+      };
+
+      if (useLocalFallback || !supabase) {
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === bill.id || b.billNumber === bill.billNumber);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates, accountsApprovalStatus: incomingApprovalStatus };
+          saveLocalData(data);
+          return { ok: true, applied: true, conflictIgnored: false, idempotent: false, bill: normalizeBillRecord(data.bills[idx]) };
+        }
+        return { ok: true, applied: true, conflictIgnored: false, idempotent: false, bill: normalizeBillRecord({ ...rawBill, ...updates, accountsApprovalStatus: incomingApprovalStatus }) };
+      }
+
+      const hasNativeCategories = await checkBillsTableNativeCategories();
+      const hasIntegrationCols = await checkBillsTableIntegrationColumns();
+      const dbUpdates = {
+        verifiedAmount: updates.verifiedAmount,
+        verifiedBy: updates.verifiedBy,
+        verifiedAt: updates.verifiedAt,
+        verificationComment: updates.verificationComment,
+        approvedAmount: updates.approvedAmount,
+        approvedBy: updates.approvedBy,
+        approvedAt: updates.approvedAt,
+        approvalComment: updates.approvalComment,
+        rejectedBy: updates.rejectedBy,
+        rejectedAt: updates.rejectedAt,
+        rejectionReason: updates.rejectionReason,
+        status: hasNativeCategories ? updates.status : sanitizeLegacyBillStatus(updates.status),
+        auditLog,
+        updatedAt: nowIso
+      };
+      if (hasNativeCategories) {
+        dbUpdates.categories = updates.categories;
+        dbUpdates.totalVerifiedAmount = updates.totalVerifiedAmount;
+        dbUpdates.totalApprovedAmount = updates.totalApprovedAmount;
+      }
+      if (hasIntegrationCols) {
+        dbUpdates.externalExpenseId = updates.externalExpenseId;
+        dbUpdates.integrationSyncStatus = updates.integrationSyncStatus;
+        dbUpdates.integrationSyncedAt = updates.integrationSyncedAt;
+        dbUpdates.integrationSyncError = updates.integrationSyncError;
+      }
+      await supabase.from('bills').update(dbUpdates).eq('id', bill.id);
+
+      try {
+        const data = loadLocalData();
+        const idx = (data.bills || []).findIndex(b => b.id === bill.id);
+        if (idx !== -1) {
+          data.bills[idx] = { ...data.bills[idx], ...updates, accountsApprovalStatus: incomingApprovalStatus };
+          saveLocalData(data);
+        }
+      } catch {}
+
+      return {
+        ok: true,
+        applied: true,
+        conflictIgnored: false,
+        idempotent: false,
+        bill: normalizeBillRecord({ ...rawBill, ...updates, accountsApprovalStatus: incomingApprovalStatus })
+      };
+    });
+  },
+
+  /**
+   * Returns operational sync health metrics across all bills (zero secrets exposed).
+   */
+  async getIntegrationSyncHealth() {
+    const cfg = integration.getIntegrationConfig();
+    const bills = await this.getBills({ lightweight: true });
+
+    let linkedCount = 0;
+    let unlinkedCount = 0;
+    let syncedCount = 0;
+    let pendingSyncCount = 0;
+    let syncFailedCount = 0;
+    const failedBills = [];
+    const pendingBills = [];
+
+    for (const b of bills) {
+      if (b.ticketSelectionMode === 'LINKED') {
+        linkedCount++;
+        const st = String(b.integrationSyncStatus || 'PENDING_SYNC').toUpperCase();
+        if (st === 'SYNCED') syncedCount++;
+        else if (st === 'SYNC_FAILED') {
+          syncFailedCount++;
+          failedBills.push({
+            id: b.id,
+            billNumber: b.billNumber,
+            employeeName: b.employeeName,
+            siteName: b.siteName,
+            externalTicketSerialNo: b.externalTicketSerialNo,
+            totalClaimedAmount: b.totalClaimedAmount,
+            integrationSyncError: b.integrationSyncError || 'Sync failed',
+            updatedAt: b.updatedAt
+          });
+        } else {
+          pendingSyncCount++;
+          pendingBills.push({
+            id: b.id,
+            billNumber: b.billNumber,
+            employeeName: b.employeeName,
+            externalTicketSerialNo: b.externalTicketSerialNo,
+            totalClaimedAmount: b.totalClaimedAmount,
+            updatedAt: b.updatedAt
+          });
+        }
+      } else {
+        unlinkedCount++;
+      }
+    }
+
+    return {
+      enabled: cfg.enabled,
+      configured: cfg.isConfigured,
+      totalBills: bills.length,
+      linkedCount,
+      unlinkedCount,
+      syncedCount,
+      pendingSyncCount,
+      syncFailedCount,
+      attentionNeededCount: syncFailedCount + pendingSyncCount,
+      failedBills: failedBills.slice(0, 25),
+      pendingBills: pendingBills.slice(0, 25),
+      checkedAt: new Date().toISOString()
+    };
+  },
+
+  /**
+   * Retries syncing all LINKED bills currently in SYNC_FAILED (and optionally PENDING_SYNC).
+   */
+  async retryAllFailedBillSyncs(options = {}) {
+    const includePending = options.includePending !== false;
+    const bills = await this.getBills({ lightweight: false });
+
+    const targets = bills.filter(b => {
+      if (b.ticketSelectionMode !== 'LINKED') return false;
+      const st = String(b.integrationSyncStatus || 'PENDING_SYNC').toUpperCase();
+      return st === 'SYNC_FAILED' || (includePending && st === 'PENDING_SYNC');
+    });
+
+    let succeeded = 0;
+    let failed = 0;
+    const results = [];
+
+    for (const b of targets) {
+      try {
+        const res = await this.syncBillToAccounts(b, options);
+        if (res.ok) succeeded++;
+        else failed++;
+        results.push({
+          billId: b.id,
+          billNumber: b.billNumber,
+          ok: Boolean(res.ok),
+          integrationSyncStatus: res.bill?.integrationSyncStatus || res.syncResult?.integrationSyncStatus,
+          error: res.syncResult?.integrationSyncError || res.syncResult?.error || null
+        });
+      } catch (err) {
+        failed++;
+        results.push({
+          billId: b.id,
+          billNumber: b.billNumber,
+          ok: false,
+          integrationSyncStatus: 'SYNC_FAILED',
+          error: err.message
+        });
+      }
+    }
+
+    return {
+      totalAttempted: targets.length,
+      succeeded,
+      failed,
+      results
+    };
   },
 
   // Get Bills with optional scoping & filters
@@ -6356,9 +7122,11 @@ const db = {
     } else {
       try {
         const hasNativeCategories = await checkBillsTableNativeCategories();
+        const hasIntegrationCols = await checkBillsTableIntegrationColumns();
         const catCols = hasNativeCategories ? ', categories, totalVerifiedAmount, totalApprovedAmount' : '';
+        const intCols = hasIntegrationCols ? `, ${BILLS_INTEGRATION_COLUMNS.join(', ')}` : '';
         const listCols = lightweight
-          ? `id, billNumber, employeeId, employeeName, siteName, billDate, submittedAt, transportationExpense, materialExpense, labourExpense, accommodationExpense, otherExpense, totalClaimedAmount, description, status, verifiedAmount, verifiedBy, verifiedAt, verificationComment, approvedAmount, approvedBy, approvedAt, approvalComment, rejectedBy, rejectedAt, rejectionReason, auditLog, createdAt, updatedAt${catCols}`
+          ? `id, billNumber, employeeId, employeeName, siteName, billDate, submittedAt, transportationExpense, materialExpense, labourExpense, accommodationExpense, otherExpense, totalClaimedAmount, description, status, verifiedAmount, verifiedBy, verifiedAt, verificationComment, approvedAmount, approvedBy, approvedAt, approvalComment, rejectedBy, rejectedAt, rejectionReason, auditLog, createdAt, updatedAt${catCols}${intCols}`
           : '*';
         let query = supabase.from('bills').select(listCols).order('submittedAt', { ascending: false, nullsFirst: false }).range(0, 9999);
         if (employeeId) {
@@ -6445,6 +7213,9 @@ const db = {
         String(b.employeeName || '').toLowerCase().includes(term) ||
         String(b.employeeId || '').toLowerCase().includes(term) ||
         String(b.siteName || '').toLowerCase().includes(term) ||
+        String(b.externalTicketSerialNo || '').toLowerCase().includes(term) ||
+        String(b.clientName || '').toLowerCase().includes(term) ||
+        String(b.workNature || '').toLowerCase().includes(term) ||
         String(b.billDate || '').toLowerCase().includes(term) ||
         String(b.status || '').toLowerCase().includes(term)
       );
@@ -6549,7 +7320,7 @@ const db = {
       throw err;
     }
 
-    return withBillLock(async () => {
+    const updatedBill = await withBillLock(async () => {
       const maxRetries = 5;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         const rawBill = await this.getBillById(id);
@@ -6696,6 +7467,11 @@ const db = {
         }
       }
     });
+
+    if (updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      this.syncBillToAccounts(updatedBill).catch(() => {});
+    }
+    return updatedBill;
   },
 
   // Category-wise Rejection (Verification or Approval Stage)
@@ -6707,7 +7483,7 @@ const db = {
       throw err;
     }
 
-    return withBillLock(async () => {
+    const updatedBill = await withBillLock(async () => {
       const maxRetries = 5;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         const rawBill = await this.getBillById(id);
@@ -6847,6 +7623,11 @@ const db = {
         }
       }
     });
+
+    if (updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      this.syncBillToAccounts(updatedBill).catch(() => {});
+    }
+    return updatedBill;
   },
 
   // Category-wise Senior Admin Approval
@@ -6868,7 +7649,7 @@ const db = {
       throw err;
     }
 
-    return withBillLock(async () => {
+    const updatedBill = await withBillLock(async () => {
       const maxRetries = 5;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         const rawBill = await this.getBillById(id);
@@ -7022,6 +7803,11 @@ const db = {
         }
       }
     });
+
+    if (updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      this.syncBillToAccounts(updatedBill).catch(() => {});
+    }
+    return updatedBill;
   },
 
   // Legacy Whole-Bill Verification (Backward Compatibility Batch)
@@ -8082,6 +8868,160 @@ const db = {
 
 const BILL_EXPENSE_CATEGORIES = ['transportation', 'material', 'labour', 'accommodation', 'other'];
 
+const BILLS_INTEGRATION_COLUMNS = [
+  'externalTicketId',
+  'externalTicketSerialNo',
+  'externalJobMetadataId',
+  'clientName',
+  'workNature',
+  'ticketSubject',
+  'ticketSelectionMode',
+  'externalExpenseId',
+  'integrationSyncStatus',
+  'integrationSyncedAt',
+  'integrationSyncError'
+];
+
+let billsTableHasIntegrationColumns = null;
+async function checkBillsTableIntegrationColumns() {
+  if (billsTableHasIntegrationColumns !== null) return billsTableHasIntegrationColumns;
+  if (!supabase || useLocalFallback) {
+    billsTableHasIntegrationColumns = true;
+    return true;
+  }
+  try {
+    const { error } = await supabase.from('bills').select('externalTicketId, ticketSelectionMode').limit(1);
+    if (error && (error.message?.includes('externalTicketId') || error.message?.includes('ticketSelectionMode') || error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
+      billsTableHasIntegrationColumns = false;
+    } else {
+      billsTableHasIntegrationColumns = true;
+    }
+  } catch (e) {
+    billsTableHasIntegrationColumns = false;
+  }
+  return billsTableHasIntegrationColumns;
+}
+
+/**
+ * Validates and resolves authoritative ticket linkage for bill creation.
+ * Supports LINKED (confirmed Accounts ticket) or UNLINKED fallback.
+ * Prevents fake ticket numbers and prevents post-selection tampering.
+ */
+function resolveAndValidateBillTicketLinkage(billData = {}) {
+  const requestedMode = String(billData.ticketSelectionMode || '').toUpperCase().trim();
+  const hasTicketIds = Boolean(billData.externalTicketId || billData.externalJobMetadataId);
+  const isLinked = requestedMode === 'LINKED' || (requestedMode !== 'UNLINKED' && hasTicketIds);
+
+  if (!isLinked) {
+    return {
+      ticketSelectionMode: 'UNLINKED',
+      externalTicketId: null,
+      externalTicketSerialNo: null,
+      externalJobMetadataId: null,
+      clientName: null,
+      workNature: null,
+      ticketSubject: null,
+      authoritativeSiteName: String(billData.siteName || '').trim(),
+      integrationSyncStatus: 'UNLINKED_LOCAL'
+    };
+  }
+
+  const externalTicketId = Number(billData.externalTicketId);
+  const externalJobMetadataId = Number(billData.externalJobMetadataId);
+  const externalTicketSerialNo = String(billData.externalTicketSerialNo || '').trim();
+  const clientName = String(billData.clientName || '').trim();
+  const workNature = String(billData.workNature || '').trim();
+  const ticketSubject = String(billData.ticketSubject || '').trim() || null;
+  const authoritativeSiteName = String(billData.branchName || billData.siteName || '').trim();
+
+  if (
+    !Number.isInteger(externalTicketId) ||
+    externalTicketId <= 0 ||
+    !Number.isInteger(externalJobMetadataId) ||
+    externalJobMetadataId <= 0 ||
+    !externalTicketSerialNo ||
+    !authoritativeSiteName ||
+    !clientName ||
+    !workNature
+  ) {
+    const err = new Error('Linked bill requires valid authoritative ticket metadata (ticket ID, serial number, job ID, branch/site, client name, and work nature).');
+    err.status = 400;
+    throw err;
+  }
+
+  // If a selection token was provided from server-side ticket search, verify metadata was not tampered with
+  if (billData.ticketSelectionToken) {
+    const validToken = integration.verifyAuthoritativeTicketSelection(
+      {
+        ticketId: externalTicketId,
+        serialNo: externalTicketSerialNo,
+        jobMetadataId: externalJobMetadataId,
+        branchName: authoritativeSiteName,
+        clientName,
+        workNature,
+        subject: ticketSubject || ''
+      },
+      billData.ticketSelectionToken
+    );
+    if (!validToken) {
+      const err = new Error('Authoritative ticket metadata cannot be manually altered after selection. Use "Change Ticket" to pick a different ticket.');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  // Also ensure siteName wasn't altered from the authoritative branchName when both were sent
+  if (billData.siteName && billData.branchName && billData.siteName.trim() !== billData.branchName.trim()) {
+    const err = new Error('Authoritative ticket site/branch cannot be overwritten after selection.');
+    err.status = 400;
+    throw err;
+  }
+
+  return {
+    ticketSelectionMode: 'LINKED',
+    externalTicketId,
+    externalTicketSerialNo,
+    externalJobMetadataId,
+    clientName,
+    workNature,
+    ticketSubject,
+    authoritativeSiteName,
+    integrationSyncStatus: 'PENDING_SYNC'
+  };
+}
+
+/**
+ * Guards against silent overwriting of authoritative ticket metadata on an existing linked bill.
+ */
+function ensureImmutableTicketMetadata(existingBill, attemptedUpdates = {}) {
+  if (!existingBill || !attemptedUpdates || typeof attemptedUpdates !== 'object') return;
+  const existingMode = String(existingBill.ticketSelectionMode || 'UNLINKED').toUpperCase();
+  if (existingMode !== 'LINKED') return;
+
+  const immutableFields = [
+    'externalTicketId',
+    'externalTicketSerialNo',
+    'externalJobMetadataId',
+    'clientName',
+    'workNature',
+    'ticketSubject',
+    'siteName',
+    'ticketSelectionMode'
+  ];
+
+  for (const field of immutableFields) {
+    if (Object.prototype.hasOwnProperty.call(attemptedUpdates, field) && attemptedUpdates[field] !== undefined) {
+      const prevVal = existingBill[field] === null || existingBill[field] === undefined ? '' : String(existingBill[field]).trim();
+      const nextVal = attemptedUpdates[field] === null || attemptedUpdates[field] === undefined ? '' : String(attemptedUpdates[field]).trim();
+      if (prevVal !== nextVal) {
+        const err = new Error(`Authoritative field "${field}" on linked bill cannot be silently overwritten.`);
+        err.status = 400;
+        throw err;
+      }
+    }
+  }
+}
+
 let billsTableHasNativeCategories = null;
 async function checkBillsTableNativeCategories() {
   if (billsTableHasNativeCategories !== null) return billsTableHasNativeCategories;
@@ -8110,10 +9050,15 @@ function sanitizeLegacyBillStatus(status) {
   return 'PENDING_VERIFICATION';
 }
 
+function sumCurrencyAmounts(values = []) {
+  const totalCents = values.reduce((acc, val) => acc + Math.round(Math.max(0, Number(val) || 0) * 100), 0);
+  return totalCents / 100;
+}
+
 function computeBillTotalsAndStatus(categories, currentOverallStatus) {
-  let totalClaimed = 0;
-  let totalVerified = 0;
-  let totalApproved = 0;
+  let totalClaimedCents = 0;
+  let totalVerifiedCents = 0;
+  let totalApprovedCents = 0;
   let hasAnyVerified = false;
   let hasAnyApproved = false;
 
@@ -8127,7 +9072,7 @@ function computeBillTotalsAndStatus(categories, currentOverallStatus) {
     const cat = categories[c];
     if (!cat) return;
     const claimed = Math.max(0, Number(cat.claimedAmount) || 0);
-    totalClaimed += claimed;
+    totalClaimedCents += Math.round(claimed * 100);
 
     if (claimed > 0) {
       activeCount++;
@@ -8137,7 +9082,7 @@ function computeBillTotalsAndStatus(categories, currentOverallStatus) {
       } else if (cat.verificationStatus === 'VERIFIED') {
         verifiedCount++;
         const vAmt = Math.max(0, Number(cat.verifiedAmount) || 0);
-        totalVerified += vAmt;
+        totalVerifiedCents += Math.round(vAmt * 100);
         hasAnyVerified = true;
 
         if (cat.approvalStatus === 'REJECTED') {
@@ -8145,12 +9090,16 @@ function computeBillTotalsAndStatus(categories, currentOverallStatus) {
         } else if (cat.approvalStatus === 'APPROVED') {
           approvedCount++;
           const aAmt = Math.max(0, Number(cat.approvedAmount) || 0);
-          totalApproved += aAmt;
+          totalApprovedCents += Math.round(aAmt * 100);
           hasAnyApproved = true;
         }
       }
     }
   });
+
+  const totalClaimed = totalClaimedCents / 100;
+  const totalVerified = totalVerifiedCents / 100;
+  const totalApproved = totalApprovedCents / 100;
 
   if (currentOverallStatus === 'REJECTED' && approvedCount === 0 && verifiedCount === 0) {
     return {
@@ -8204,6 +9153,38 @@ function normalizeBillRecord(bill) {
   const billDate = b.billDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : getLocalDateString());
   b.date = billDate;
   b.billDate = billDate;
+
+  // Recover ticketMetadata and latest syncMetadata from auditLog if the DB table has not yet run the Phase 2 migration
+  let auditTicketMeta = null;
+  let auditSyncMeta = null;
+  if (Array.isArray(b.auditLog) && b.auditLog.length > 0) {
+    const entryWithMeta = b.auditLog.slice().reverse().find(entry => entry && entry.details && entry.details.ticketMetadata);
+    if (entryWithMeta && entryWithMeta.details && entryWithMeta.details.ticketMetadata) {
+      auditTicketMeta = entryWithMeta.details.ticketMetadata;
+    }
+    const entryWithSync = b.auditLog.slice().reverse().find(entry => entry && entry.details && entry.details.syncMetadata);
+    if (entryWithSync && entryWithSync.details && entryWithSync.details.syncMetadata) {
+      auditSyncMeta = entryWithSync.details.syncMetadata;
+    }
+  }
+
+  const rawTicketId = b.externalTicketId ?? (auditTicketMeta ? auditTicketMeta.externalTicketId : null);
+  const rawSerialNo = b.externalTicketSerialNo ?? (auditTicketMeta ? auditTicketMeta.externalTicketSerialNo : null);
+  const rawJobId = b.externalJobMetadataId ?? (auditTicketMeta ? auditTicketMeta.externalJobMetadataId : null);
+  const inferredMode = (b.ticketSelectionMode || (auditTicketMeta && auditTicketMeta.ticketSelectionMode) || (rawTicketId && rawSerialNo ? 'LINKED' : 'UNLINKED'));
+
+  b.ticketSelectionMode = String(inferredMode).toUpperCase() === 'LINKED' ? 'LINKED' : 'UNLINKED';
+  b.externalTicketId = rawTicketId !== null && rawTicketId !== undefined ? Number(rawTicketId) : null;
+  b.externalTicketSerialNo = rawSerialNo ? String(rawSerialNo).trim() : null;
+  b.externalJobMetadataId = rawJobId !== null && rawJobId !== undefined ? Number(rawJobId) : null;
+  b.clientName = b.clientName ?? (auditTicketMeta ? auditTicketMeta.clientName : null) ?? null;
+  b.workNature = b.workNature ?? (auditTicketMeta ? auditTicketMeta.workNature : null) ?? null;
+  b.ticketSubject = b.ticketSubject ?? (auditTicketMeta ? auditTicketMeta.ticketSubject : null) ?? null;
+  b.externalExpenseId = b.externalExpenseId ?? (auditSyncMeta ? auditSyncMeta.externalExpenseId : null) ?? null;
+  b.integrationSyncStatus = b.integrationSyncStatus || (auditSyncMeta && auditSyncMeta.integrationSyncStatus) || (auditTicketMeta && auditTicketMeta.integrationSyncStatus) || (b.ticketSelectionMode === 'LINKED' ? 'PENDING_SYNC' : 'UNLINKED_LOCAL');
+  b.integrationSyncedAt = b.integrationSyncedAt ?? (auditSyncMeta ? auditSyncMeta.integrationSyncedAt : null) ?? null;
+  b.integrationSyncError = b.integrationSyncError ?? (auditSyncMeta ? auditSyncMeta.integrationSyncError : null) ?? null;
+  b.accountsApprovalStatus = b.accountsApprovalStatus ?? (auditSyncMeta ? auditSyncMeta.accountsApprovalStatus : null) ?? null;
 
   const transportationExpense = Math.max(0, Number(b.transportationExpense) || 0);
   const materialExpense = Math.max(0, Number(b.materialExpense) || 0);
@@ -8575,5 +9556,7 @@ function attachDuplicateVerificationToBills(bills, allReferenceBills = null) {
 db.calculateLateStatus = calculateLateStatus;
 db.getBillDuplicateVerification = getBillDuplicateVerification;
 db.attachDuplicateVerificationToBills = attachDuplicateVerificationToBills;
+db.resolveAndValidateBillTicketLinkage = resolveAndValidateBillTicketLinkage;
+db.ensureImmutableTicketMetadata = ensureImmutableTicketMetadata;
 
 module.exports = db;

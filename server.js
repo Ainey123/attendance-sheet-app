@@ -8,6 +8,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 require('dotenv').config();
 
 const db = require('./db');
+const integration = require('./integration-client');
 
 // Initialize Supabase client only if credentials exist
 let supabase = null;
@@ -20,7 +21,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, _res, buf) => {
+    if (buf && buf.length) {
+      req.rawBody = buf.toString('utf8');
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve frontend static assets from public folder
@@ -1096,6 +1104,70 @@ app.get('/api/bills/next-number', async (req, res) => {
   }
 });
 
+// POST /api/integration/tickets/search (Server-side authenticated proxy to Accounts App)
+app.post('/api/integration/tickets/search', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    const adminPass = (req.headers['x-admin-passcode'] || req.headers['x-senior-passcode'] || '').trim();
+    const isAdmin = isPasscodeValid(adminPass, settings);
+    const body = req.body || {};
+    const employeeId = String(req.headers['x-employee-id'] || body.employeeId || '').trim();
+
+    if (!isAdmin && !employeeId) {
+      return res.status(401).json({
+        success: false,
+        code: 'UNAUTHORIZED',
+        error: 'Employee ID or Admin passcode is required to search tickets.'
+      });
+    }
+
+    const result = await integration.lookupAuthoritativeTickets({
+      query: body.query ?? body.q ?? body.search,
+      serialNo: body.serialNo ?? body.ticketNumber,
+      branchName: body.branchName ?? body.siteName,
+      clientName: body.clientName,
+      workNature: body.workNature,
+      personOfContact: body.personOfContact,
+      limit: body.limit
+    });
+
+    if (!result.ok && result.status === 400) {
+      return res.status(400).json({
+        success: false,
+        available: true,
+        unavailable: false,
+        code: result.code,
+        error: result.error,
+        tickets: []
+      });
+    }
+
+    return res.status(200).json({
+      success: Boolean(result.ok),
+      available: !result.unavailable,
+      unavailable: Boolean(result.unavailable),
+      code: result.code || (result.ok ? 'OK' : 'LOOKUP_FAILED'),
+      error: result.error || null,
+      count: result.count || 0,
+      multipleMatches: Boolean(result.multipleMatches),
+      noMatch: Boolean(result.noMatch),
+      tickets: Array.isArray(result.tickets) ? result.tickets : []
+    });
+  } catch (err) {
+    return res.status(200).json({
+      success: false,
+      available: false,
+      unavailable: true,
+      code: 'TICKET_PROXY_ERROR',
+      error: 'Unable to search Accounts tickets right now. You may submit your bill as Unlinked.',
+      count: 0,
+      multipleMatches: false,
+      noMatch: false,
+      tickets: []
+    });
+  }
+});
+
 // POST /api/bills (Employee submits a new bill)
 app.post('/api/bills', async (req, res) => {
   try {
@@ -1103,6 +1175,7 @@ app.post('/api/bills', async (req, res) => {
       employeeId,
       employeeName,
       siteName,
+      date,
       billDate,
       transportationExpense,
       materialExpense,
@@ -1110,7 +1183,16 @@ app.post('/api/bills', async (req, res) => {
       accommodationExpense,
       otherExpense,
       description,
-      attachments
+      attachments,
+      externalTicketId,
+      externalTicketSerialNo,
+      externalJobMetadataId,
+      branchName,
+      clientName,
+      workNature,
+      ticketSubject,
+      ticketSelectionMode,
+      ticketSelectionToken
     } = req.body;
 
     if (!employeeId) {
@@ -1124,6 +1206,7 @@ app.post('/api/bills', async (req, res) => {
       employeeId,
       employeeName,
       siteName,
+      date,
       billDate,
       transportationExpense,
       materialExpense,
@@ -1131,7 +1214,16 @@ app.post('/api/bills', async (req, res) => {
       accommodationExpense,
       otherExpense,
       description,
-      attachments
+      attachments,
+      externalTicketId,
+      externalTicketSerialNo,
+      externalJobMetadataId,
+      branchName,
+      clientName,
+      workNature,
+      ticketSubject,
+      ticketSelectionMode,
+      ticketSelectionToken
     });
 
     res.json({ success: true, bill });
@@ -1366,6 +1458,153 @@ app.post('/api/bills/:id/override-duplicate', checkAdminAuth, async (req, res) =
     res.json({ success: true, bill: updated, message: 'Bill marked as verified legitimate (not duplicate).' });
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// POST /api/bills/retry-failed-syncs (Batch retry all SYNC_FAILED / PENDING_SYNC linked bills)
+app.post('/api/bills/retry-failed-syncs', checkAdminAuth, async (req, res) => {
+  try {
+    const includePending = req.body?.includePending !== false;
+    const summary = await db.retryAllFailedBillSyncs({ includePending });
+    return res.json({ success: true, ...summary });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/integration/health (Admin operational sync health & retry queue summary)
+app.get('/api/integration/health', checkAdminAuth, async (_req, res) => {
+  try {
+    const health = await db.getIntegrationSyncHealth();
+    return res.json({ success: true, health });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/bills/:id/link-ticket (Office-side recovery: link UNLINKED bill to authoritative Accounts ticket)
+app.post('/api/bills/:id/link-ticket', checkAdminAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await db.linkBillToAccountsTicket(req.params.id, {
+      ticketId: body.ticketId ?? body.externalTicketId,
+      serialNo: body.serialNo ?? body.externalTicketSerialNo,
+      jobMetadataId: body.jobMetadataId ?? body.externalJobMetadataId,
+      branchName: body.branchName,
+      clientName: body.clientName,
+      workNature: body.workNature,
+      subject: body.subject ?? body.ticketSubject,
+      ticketSelectionToken: body.ticketSelectionToken,
+      linkedBy: body.linkedBy || 'Admin'
+    });
+    return res.json({
+      success: true,
+      bill: result.bill,
+      syncResult: result.syncResult
+    });
+  } catch (err) {
+    return res.status(err.status || 400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/integration/bills/status-update (HMAC-verified inbound status callback from Accounts App)
+app.post('/api/integration/bills/status-update', async (req, res) => {
+  try {
+    const rawBody = req.rawBody !== undefined ? req.rawBody : JSON.stringify(req.body || {});
+    const verification = integration.verifySignedRequest({
+      method: 'POST',
+      path: req.originalUrl || req.url,
+      headers: req.headers,
+      rawBody
+    });
+
+    if (!verification.valid) {
+      return res.status(verification.status || 401).json({
+        success: false,
+        code: verification.code,
+        error: verification.error
+      });
+    }
+
+    if (verification.isDuplicateReplay && verification.cachedResult) {
+      return res.status(200).json({ ...verification.cachedResult, idempotentReplay: true });
+    }
+
+    const result = await db.applyAccountsStatusUpdate(req.body || {});
+    const responseBody = {
+      success: true,
+      applied: result.applied,
+      conflictIgnored: Boolean(result.conflictIgnored),
+      idempotent: Boolean(result.idempotent),
+      billId: result.bill.id,
+      billNumber: result.bill.billNumber,
+      status: result.bill.status,
+      accountsApprovalStatus: result.bill.accountsApprovalStatus,
+      totalVerifiedAmount: result.bill.totalVerifiedAmount,
+      totalApprovedAmount: result.bill.totalApprovedAmount
+    };
+    integration.storeIdempotencyResult(verification.idempotencyKey, responseBody);
+    return res.status(200).json(responseBody);
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/bills/:id/sync-accounts (Retry or manually trigger outbound expense sync for LINKED bill)
+app.post('/api/bills/:id/sync-accounts', checkAdminAuth, async (req, res) => {
+  try {
+    const result = await db.syncBillToAccounts(req.params.id);
+    if (result.skipped) {
+      return res.status(400).json({
+        success: false,
+        code: 'BILL_UNLINKED',
+        error: result.syncResult.error,
+        bill: result.bill
+      });
+    }
+    return res.json({
+      success: result.ok,
+      bill: result.bill,
+      syncResult: result.syncResult
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/integration/bills/:id/attachments/:index (HMAC-authenticated binary receipt streaming)
+app.get('/api/integration/bills/:id/attachments/:index', async (req, res) => {
+  try {
+    const verification = integration.verifySignedRequest({
+      method: 'GET',
+      path: req.originalUrl || req.url,
+      headers: req.headers,
+      rawBody: ''
+    });
+
+    if (!verification.valid) {
+      return res.status(verification.status || 401).json({
+        success: false,
+        code: verification.code,
+        error: verification.error
+      });
+    }
+
+    const decoded = await db.getBillAttachmentForIntegration(req.params.id, req.params.index);
+    if (!decoded.valid) {
+      return res.status(decoded.status || 404).json({
+        success: false,
+        error: decoded.error
+      });
+    }
+
+    res.setHeader('Content-Type', decoded.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${decoded.fileName}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.send(decoded.buffer);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to stream bill attachment.' });
   }
 });
 
