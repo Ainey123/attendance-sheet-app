@@ -1039,6 +1039,158 @@ async function syncBillExpenseToAccounts(bill, options = {}) {
   };
 }
 
+/**
+ * Strips heavy nested snapshots / Base64 strings from bill auditLog entries
+ * while keeping the complete human-readable timeline for read-only viewing.
+ */
+function sanitizeAuditLogForIntegration(auditLog = []) {
+  if (!Array.isArray(auditLog)) return [];
+  return auditLog
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => {
+      const action = String(entry.action || 'UPDATED').trim();
+      const performedBy = String(entry.performedBy || entry.by || 'System').trim();
+      const timestamp = entry.timestamp || entry.at || null;
+      const category = entry.category ? String(entry.category).trim() : null;
+
+      let summary = '';
+      if (typeof entry.details === 'string') {
+        summary = entry.details.trim();
+      } else if (entry.details && typeof entry.details === 'object') {
+        const parts = [];
+        if (entry.details.billNumber) parts.push(String(entry.details.billNumber));
+        if (entry.details.totalClaimedAmount !== undefined) parts.push(`Claimed: Rs. ${Number(entry.details.totalClaimedAmount || 0).toLocaleString()}`);
+        if (entry.details.claimedAmount !== undefined) parts.push(`Claimed: Rs. ${Number(entry.details.claimedAmount || 0).toLocaleString()}`);
+        if (entry.details.verifiedAmount !== undefined && entry.details.verifiedAmount !== null) parts.push(`Verified: Rs. ${Number(entry.details.verifiedAmount || 0).toLocaleString()}`);
+        if (entry.details.approvedAmount !== undefined && entry.details.approvedAmount !== null) parts.push(`Approved: Rs. ${Number(entry.details.approvedAmount || 0).toLocaleString()}`);
+        if (entry.details.comment) parts.push(`Note: ${String(entry.details.comment).trim()}`);
+        if (entry.details.reason) parts.push(`Reason: ${String(entry.details.reason).trim()}`);
+        if (entry.details.summary) parts.push(String(entry.details.summary).trim());
+        if (entry.details.billStatus) parts.push(`Status: ${String(entry.details.billStatus)}`);
+        if (entry.details.accountsApprovalStatus) parts.push(`Accounts: ${String(entry.details.accountsApprovalStatus)}`);
+        summary = parts.join(' • ');
+      }
+
+      return {
+        action,
+        performedBy,
+        timestamp,
+        category,
+        summary: summary.slice(0, 500),
+      };
+    });
+}
+
+/**
+ * Builds a complete, read-only, Base64-free DTO of an Approved Attendance Bill
+ * for Accounts App employee portals (including all category breakdowns, approval info,
+ * ticket metadata, duplicate verification status, attachment metadata, and audit timeline).
+ */
+function buildApprovedBillIntegrationDto(bill) {
+  if (!bill || !bill.id) {
+    throw new Error('Valid bill object with id is required to build approved bill DTO.');
+  }
+
+  const amounts = resolveSyncedExpenseAmounts(bill);
+  const attachmentsMeta = Array.isArray(bill._attachmentsMetaOverride)
+    ? bill._attachmentsMetaOverride
+    : extractAttachmentMetadata(bill.attachments || []);
+
+  const catObj = bill.categories && typeof bill.categories === 'object' ? bill.categories : {};
+  const catValues = Object.values(catObj).filter((c) => c && typeof c === 'object');
+
+  const latestVerifiedCat = catValues
+    .filter((c) => c.verifiedBy || c.verifiedAt)
+    .sort((a, b) => new Date(b.verifiedAt || 0) - new Date(a.verifiedAt || 0))[0] || null;
+  const latestApprovedCat = catValues
+    .filter((c) => c.approvedBy || c.approvedAt)
+    .sort((a, b) => new Date(b.approvedAt || 0) - new Date(a.approvedAt || 0))[0] || null;
+
+  const uniqueVerComments = Array.from(
+    new Set(catValues.map((c) => (c.verificationComment || c.verifiedComment || '').trim()).filter(Boolean))
+  );
+  const uniqueApprComments = Array.from(
+    new Set(catValues.map((c) => (c.approvalComment || c.approvedComment || '').trim()).filter(Boolean))
+  );
+
+  const resolvedVerifiedBy = bill.verifiedBy || latestVerifiedCat?.verifiedBy || null;
+  const resolvedVerifiedAt = bill.verifiedAt || latestVerifiedCat?.verifiedAt || null;
+  const resolvedVerificationComment = bill.verificationComment || (uniqueVerComments.length ? uniqueVerComments.join(' | ') : null);
+  const resolvedApprovedBy = bill.approvedBy || latestApprovedCat?.approvedBy || null;
+  const resolvedApprovedAt = bill.approvedAt || latestApprovedCat?.approvedAt || null;
+  const resolvedApprovalComment = bill.approvalComment || (uniqueApprComments.length ? uniqueApprComments.join(' | ') : null);
+
+  const dup = bill.duplicateVerification && typeof bill.duplicateVerification === 'object'
+    ? {
+        isDuplicate: Boolean(bill.duplicateVerification.isDuplicate),
+        severity: bill.duplicateVerification.severity || 'NONE',
+        matchCount: Number(bill.duplicateVerification.matchCount || 0),
+        overridden: Boolean(bill.duplicateOverridden || bill.duplicateVerification.overridden),
+        summary: bill.duplicateVerification.summary || '',
+        matches: Array.isArray(bill.duplicateVerification.matches)
+          ? bill.duplicateVerification.matches.map((m) => ({
+              billId: m.billId || null,
+              billNumber: m.billNumber || null,
+              siteName: m.siteName || null,
+              billDate: m.billDate || null,
+              totalClaimedAmount: Number(m.totalClaimedAmount || 0),
+              status: m.status || null,
+              matchType: m.matchType || '',
+            }))
+          : [],
+      }
+    : null;
+
+  return {
+    id: String(bill.id).trim(),
+    billNumber: String(bill.billNumber || '').trim(),
+    employeeId: String(bill.employeeId || '').trim(),
+    employeeName: String(bill.employeeName || 'Employee').trim(),
+    siteName: String(bill.siteName || '').trim(),
+    billDate: bill.billDate || bill.date || null,
+    submittedAt: bill.submittedAt || bill.createdAt || null,
+    createdAt: bill.createdAt || null,
+    updatedAt: bill.updatedAt || null,
+    status: String(bill.status || 'APPROVED').toUpperCase().trim(),
+    accountsApprovalStatus: amounts.approvalStatus,
+    totalClaimedAmount: amounts.claimedAmount,
+    totalVerifiedAmount: amounts.verifiedAmount,
+    totalApprovedAmount: amounts.approvedAmount,
+    transportationExpense: Math.max(0, Number(bill.transportationExpense) || 0),
+    materialExpense: Math.max(0, Number(bill.materialExpense) || 0),
+    labourExpense: Math.max(0, Number(bill.labourExpense) || 0),
+    accommodationExpense: Math.max(0, Number(bill.accommodationExpense) || 0),
+    otherExpense: Math.max(0, Number(bill.otherExpense) || 0),
+    categories: catObj,
+    description: String(bill.description || '').trim(),
+    verifiedBy: resolvedVerifiedBy,
+    verifiedAt: resolvedVerifiedAt,
+    verificationComment: resolvedVerificationComment,
+    approvedBy: resolvedApprovedBy,
+    approvedAt: resolvedApprovedAt,
+    approvalComment: resolvedApprovalComment,
+    ticketSelectionMode: bill.ticketSelectionMode || 'UNLINKED',
+    externalTicketId: bill.externalTicketId ? Number(bill.externalTicketId) : null,
+    externalTicketSerialNo: bill.externalTicketSerialNo ? String(bill.externalTicketSerialNo).trim() : null,
+    externalJobMetadataId: bill.externalJobMetadataId ? Number(bill.externalJobMetadataId) : null,
+    clientName: bill.clientName ? String(bill.clientName).trim() : null,
+    workNature: bill.workNature ? String(bill.workNature).trim() : null,
+    ticketSubject: bill.ticketSubject ? String(bill.ticketSubject).trim() : null,
+    externalExpenseId: bill.externalExpenseId ? Number(bill.externalExpenseId) : null,
+    integrationSyncStatus: bill.integrationSyncStatus || null,
+    integrationSyncedAt: bill.integrationSyncedAt || null,
+    isDuplicate: Boolean(bill.isDuplicate),
+    duplicateOverridden: Boolean(bill.duplicateOverridden),
+    duplicateOverrideBy: bill.duplicateOverrideBy || null,
+    duplicateOverrideAt: bill.duplicateOverrideAt || null,
+    duplicateOverrideNote: bill.duplicateOverrideNote || null,
+    duplicateVerification: dup,
+    attachmentsMeta,
+    attachmentsCount: attachmentsMeta.length,
+    auditLog: sanitizeAuditLogForIntegration(bill.auditLog),
+  };
+}
+
 module.exports = {
   MAX_TIMESTAMP_SKEW_MS,
   IDEMPOTENCY_TTL_MS,
@@ -1060,6 +1212,8 @@ module.exports = {
   buildAttachmentProxyUrl,
   resolveSyncedExpenseAmounts,
   buildExpenseSyncPayload,
+  sanitizeAuditLogForIntegration,
+  buildApprovedBillIntegrationDto,
   sanitizeForLog,
   normalizeAuthoritativeTicket,
   signAuthoritativeTicketSelection,

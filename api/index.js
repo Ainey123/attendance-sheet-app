@@ -1559,6 +1559,75 @@ module.exports = async (req, res) => {
       }
     }
 
+    if (path === 'integration/bills/approved' && method === 'GET') {
+      const verification = integration.verifySignedRequest({
+        method: 'GET',
+        path: req.url,
+        headers,
+        rawBody: '',
+        recordIdempotency: false
+      });
+
+      if (!verification.valid) {
+        return res.status(verification.status || 401).json({
+          success: false,
+          code: verification.code,
+          error: verification.error
+        });
+      }
+
+      try {
+        const result = await db.getApprovedBillsForIntegration({
+          status: query.status || 'ALL_APPROVED',
+          employeeId: query.employeeId || null,
+          search: query.search || null,
+          startDate: query.startDate || null,
+          endDate: query.endDate || null
+        });
+        return res.status(200).json({
+          success: true,
+          ...result
+        });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message || 'Failed to fetch approved bills.' });
+      }
+    }
+
+    if (path.match(/^integration\/bills\/([^\/]+)$/) && method === 'GET') {
+      const verification = integration.verifySignedRequest({
+        method: 'GET',
+        path: req.url,
+        headers,
+        rawBody: '',
+        recordIdempotency: false
+      });
+
+      if (!verification.valid) {
+        return res.status(verification.status || 401).json({
+          success: false,
+          code: verification.code,
+          error: verification.error
+        });
+      }
+
+      const billId = decodeURIComponent(path.split('/')[2]);
+      try {
+        const result = await db.getApprovedBillByIdForIntegration(billId);
+        if (!result.found) {
+          return res.status(result.status || 404).json({
+            success: false,
+            error: result.error
+          });
+        }
+        return res.status(200).json({
+          success: true,
+          bill: result.bill
+        });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message || 'Failed to fetch approved bill details.' });
+      }
+    }
+
     if (path.match(/^integration\/bills\/([^\/]+)\/attachments\/(\d+)$/) && method === 'GET') {
       const verification = integration.verifySignedRequest({
         method: 'GET',

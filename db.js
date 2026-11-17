@@ -19,6 +19,7 @@ let recoveryPromise = null;
 let cachedSettings = null;
 let lastSettingsFetch = 0;
 let settingsFetchPromise = null;
+const _approvedBillAttachmentsMetaCache = new Map();
 
 // Check if Supabase is configured
 if (supabaseUrl && supabaseKey) {
@@ -6541,6 +6542,185 @@ const db = {
       return { valid: false, status: 404, error: 'Attachment index out of range.' };
     }
     return integration.decodeBillAttachmentDataUrl(attachments[idx]);
+  },
+
+  async getApprovedBillsForIntegration({
+    status = 'ALL_APPROVED',
+    employeeId = null,
+    search = null,
+    startDate = null,
+    endDate = null
+  } = {}) {
+    const allBills = await this.getBills({
+      employeeId: employeeId || null,
+      search: search || null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+      lightweight: true
+    });
+
+    const normStatus = String(status || 'ALL_APPROVED').toUpperCase().trim();
+    const approvedBills = (allBills || []).filter((b) => {
+      const st = String(b.status || '').toUpperCase().trim();
+      if (normStatus === 'APPROVED') return st === 'APPROVED';
+      if (normStatus === 'PARTIALLY_APPROVED') return st === 'PARTIALLY_APPROVED';
+      return st === 'APPROVED' || st === 'PARTIALLY_APPROVED';
+    });
+
+    // Hydrate Base64-free attachments metadata without leaking binary blobs
+    const localAttByBillId = new Map();
+    try {
+      const localData = loadLocalData();
+      (localData.bills || []).forEach((lb) => {
+        if (lb && lb.id && Array.isArray(lb.attachments) && lb.attachments.some((a) => a && (a.dataUrl || a.url))) {
+          localAttByBillId.set(lb.id, integration.extractAttachmentMetadata(lb.attachments));
+        }
+      });
+    } catch {}
+
+    const idsToFetchFromSupabase = [];
+    approvedBills.forEach((b) => {
+      const cacheKey = String(b.id);
+      const cached = _approvedBillAttachmentsMetaCache.get(cacheKey);
+      const ver = String(b.updatedAt || '');
+      if (cached && cached.updatedAt === ver) {
+        b._attachmentsMetaOverride = cached.attachmentsMeta;
+        return;
+      }
+      if (localAttByBillId.has(cacheKey)) {
+        const meta = localAttByBillId.get(cacheKey);
+        b._attachmentsMetaOverride = meta;
+        _approvedBillAttachmentsMetaCache.set(cacheKey, { updatedAt: ver, attachmentsMeta: meta });
+        return;
+      }
+      if (supabase && !useLocalFallback) {
+        idsToFetchFromSupabase.push(b);
+      } else {
+        b._attachmentsMetaOverride = [];
+      }
+    });
+
+    if (idsToFetchFromSupabase.length > 0 && supabase && !useLocalFallback) {
+      const startMs = Date.now();
+      const chunkSize = 8;
+      for (let i = 0; i < idsToFetchFromSupabase.length; i += chunkSize) {
+        if (Date.now() - startMs > 4500) break;
+        const chunkBills = idsToFetchFromSupabase.slice(i, i + chunkSize);
+        const chunkIds = chunkBills.map((b) => b.id);
+        try {
+          const { data: attRows, error: attErr } = await supabase
+            .from('bills')
+            .select('id, attachments')
+            .in('id', chunkIds);
+          if (!attErr && Array.isArray(attRows)) {
+            const rowMap = new Map(attRows.map((r) => [String(r.id), r.attachments]));
+            chunkBills.forEach((b) => {
+              const rawAtts = rowMap.get(String(b.id));
+              if (Array.isArray(rawAtts)) {
+                const meta = integration.extractAttachmentMetadata(rawAtts);
+                b._attachmentsMetaOverride = meta;
+                _approvedBillAttachmentsMetaCache.set(String(b.id), {
+                  updatedAt: String(b.updatedAt || ''),
+                  attachmentsMeta: meta
+                });
+              }
+            });
+          }
+        } catch {}
+      }
+    }
+
+    // Fallback for any bill whose lightweight attachment hint existed before timeout
+    approvedBills.forEach((b) => {
+      if (Array.isArray(b._attachmentsMetaOverride)) return;
+      if (Array.isArray(b.attachments) && b.attachments.length > 0) {
+        b._attachmentsMetaOverride = b.attachments
+          .map((att, idx) => {
+            if (!att || typeof att !== 'object') return null;
+            const mimeCheck = integration.validateAttachmentMimeType(att.type || '', att.name || '');
+            if (!mimeCheck.valid) return null;
+            return {
+              index: idx,
+              name: String(att.name || `attachment_${idx + 1}`).replace(/[^\w.\- ()]/g, '_').slice(0, 120),
+              type: mimeCheck.normalizedType,
+              size: Number(att.size) || 0,
+              isPdf: Boolean(att.isPdf || mimeCheck.normalizedType === 'application/pdf'),
+              hasBinary: true
+            };
+          })
+          .filter(Boolean);
+      } else {
+        b._attachmentsMetaOverride = [];
+      }
+    });
+
+    const dtos = approvedBills.map((b) => integration.buildApprovedBillIntegrationDto(b));
+
+    let fullyApprovedCount = 0;
+    let partiallyApprovedCount = 0;
+    let totalClaimedAmount = 0;
+    let totalVerifiedAmount = 0;
+    let totalApprovedAmount = 0;
+    let totalAttachmentsCount = 0;
+    const empMap = new Map();
+
+    dtos.forEach((b) => {
+      if (b.status === 'PARTIALLY_APPROVED') partiallyApprovedCount++;
+      else fullyApprovedCount++;
+
+      totalClaimedAmount += Number(b.totalClaimedAmount || 0);
+      totalVerifiedAmount += Number(b.totalVerifiedAmount || 0);
+      totalApprovedAmount += Number(b.totalApprovedAmount || 0);
+      totalAttachmentsCount += Number(b.attachmentsCount || 0);
+
+      if (b.employeeId || b.employeeName) {
+        const empKey = String(b.employeeId || b.employeeName).trim();
+        if (!empMap.has(empKey)) {
+          empMap.set(empKey, {
+            employeeId: b.employeeId || empKey,
+            employeeName: b.employeeName || empKey
+          });
+        }
+      }
+    });
+
+    const employees = Array.from(empMap.values()).sort((a, b) =>
+      String(a.employeeName || '').localeCompare(String(b.employeeName || ''))
+    );
+
+    return {
+      bills: dtos,
+      stats: {
+        totalCount: dtos.length,
+        fullyApprovedCount,
+        partiallyApprovedCount,
+        totalClaimedAmount: Math.round(totalClaimedAmount * 100) / 100,
+        totalVerifiedAmount: Math.round(totalVerifiedAmount * 100) / 100,
+        totalApprovedAmount: Math.round(totalApprovedAmount * 100) / 100,
+        totalAttachmentsCount
+      },
+      employees
+    };
+  },
+
+  async getApprovedBillByIdForIntegration(billId) {
+    const bill = await this.getBillById(billId);
+    if (!bill) {
+      return { found: false, status: 404, error: 'Approved bill not found.' };
+    }
+    const st = String(bill.status || '').toUpperCase().trim();
+    if (st !== 'APPROVED' && st !== 'PARTIALLY_APPROVED') {
+      return {
+        found: false,
+        status: 403,
+        error: 'Only approved or partially approved bills can be viewed via this integration endpoint.'
+      };
+    }
+    return {
+      found: true,
+      status: 200,
+      bill: integration.buildApprovedBillIntegrationDto(bill)
+    };
   },
 
   /**

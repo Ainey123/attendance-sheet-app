@@ -1572,6 +1572,78 @@ app.post('/api/bills/:id/sync-accounts', checkAdminAuth, async (req, res) => {
   }
 });
 
+// GET /api/integration/bills/approved (HMAC-authenticated read-only list of all approved bills)
+app.get('/api/integration/bills/approved', async (req, res) => {
+  try {
+    const verification = integration.verifySignedRequest({
+      method: 'GET',
+      path: req.originalUrl || req.url,
+      headers: req.headers,
+      rawBody: '',
+      recordIdempotency: false
+    });
+
+    if (!verification.valid) {
+      return res.status(verification.status || 401).json({
+        success: false,
+        code: verification.code,
+        error: verification.error
+      });
+    }
+
+    const result = await db.getApprovedBillsForIntegration({
+      status: req.query.status || 'ALL_APPROVED',
+      employeeId: req.query.employeeId || null,
+      search: req.query.search || null,
+      startDate: req.query.startDate || null,
+      endDate: req.query.endDate || null
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message || 'Failed to fetch approved bills.' });
+  }
+});
+
+// GET /api/integration/bills/:id (HMAC-authenticated read-only full approved bill details)
+app.get('/api/integration/bills/:id', async (req, res) => {
+  try {
+    const verification = integration.verifySignedRequest({
+      method: 'GET',
+      path: req.originalUrl || req.url,
+      headers: req.headers,
+      rawBody: '',
+      recordIdempotency: false
+    });
+
+    if (!verification.valid) {
+      return res.status(verification.status || 401).json({
+        success: false,
+        code: verification.code,
+        error: verification.error
+      });
+    }
+
+    const result = await db.getApprovedBillByIdForIntegration(req.params.id);
+    if (!result.found) {
+      return res.status(result.status || 404).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      bill: result.bill
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message || 'Failed to fetch approved bill details.' });
+  }
+});
+
 // GET /api/integration/bills/:id/attachments/:index (HMAC-authenticated binary receipt streaming)
 app.get('/api/integration/bills/:id/attachments/:index', async (req, res) => {
   try {
