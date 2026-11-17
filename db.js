@@ -6684,6 +6684,36 @@ const db = {
       }
     });
 
+    // Always include active Attendance employees in the filter dropdown
+    try {
+      const allEmployees = await this.getEmployees(false);
+      if (Array.isArray(allEmployees)) {
+        const existingNames = new Set(
+          Array.from(empMap.values())
+            .map((e) => String(e.employeeName || '').trim().toLowerCase())
+            .filter(Boolean)
+        );
+        allEmployees.forEach((emp) => {
+          const empId = String(emp?.id || '').trim();
+          const empName = String(emp?.name || '').trim();
+          const empKey = empId || empName;
+          if (!empKey) return;
+          if (empMap.has(empKey)) return;
+          if (!empId && empName && existingNames.has(empName.toLowerCase())) return;
+          if (empId && empName && empMap.has(empName)) {
+            empMap.delete(empName);
+          }
+          empMap.set(empKey, {
+            employeeId: empId || empName,
+            employeeName: empName || empId
+          });
+          if (empName) existingNames.add(empName.toLowerCase());
+        });
+      }
+    } catch (_) {
+      // Non-fatal: still return bill-derived employees
+    }
+
     const employees = Array.from(empMap.values()).sort((a, b) =>
       String(a.employeeName || '').localeCompare(String(b.employeeName || ''))
     );

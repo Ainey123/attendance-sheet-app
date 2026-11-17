@@ -249,6 +249,21 @@ async function runSuite() {
         await new Promise((resolve) => server.close(resolve));
       }
     });
+
+    await runTest('Test 5: Active Attendance roster employees appear in employees filter even without bills', async () => {
+      const rosterEmp = await db.addEmployee('Roster Only Technician', 'Field Engineer');
+      const res = await db.getApprovedBillsForIntegration();
+      assert.ok(Array.isArray(res.employees), 'employees must be an array');
+      assert.ok(
+        res.employees.some((e) => e.employeeId === rosterEmp.id && e.employeeName === 'Roster Only Technician'),
+        'Active Attendance roster employee without approved bills must still appear in employees filter list'
+      );
+      // Verify bill employees are also present cleanly without empty names
+      assert.ok(
+        res.employees.some((e) => e.employeeName === 'Bilal Ahmed'),
+        'Bill employee Bilal Ahmed must remain in employees list'
+      );
+    });
   } finally {
     if (originalDataJson !== null) {
       fs.writeFileSync(dataJsonPath, originalDataJson, 'utf8');
