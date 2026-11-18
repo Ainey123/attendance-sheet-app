@@ -1302,8 +1302,6 @@ async function submitClockOutDetails(e) {
       updateEmployeeStatusBadge('OUT', true);
       await loadEmployeesList(selectedEmployee.id);
       updateClockButtonsDisabledState(false);
-      // Prompt employee if they have a bill to submit
-      openClockOutBillPrompt();
     } else {
       showToast((res && res.error) || 'Clock out failed', 'error');
       updateClockButtonsDisabledState(false);
@@ -5760,7 +5758,11 @@ function closeClockOutBillPrompt() {
 
 function openBillSubmissionScreen() {
   if (!selectedEmployee) {
-    showToast('Please select an employee profile first', 'error');
+    showToast('Select your name first to attach & submit a bill anytime.', 'info');
+    const selectPanel = document.getElementById('select-employee-panel');
+    if (selectPanel) selectPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const searchInput = document.getElementById('employee-search');
+    if (searchInput) searchInput.focus();
     return;
   }
   const employeeSec = document.getElementById('employee-portal-view');
@@ -8275,6 +8277,11 @@ function initBillEventListeners() {
   const btnSubmitBill = document.getElementById('btn-submit-bill-final');
   if (btnSubmitBill) {
     btnSubmitBill.addEventListener('click', submitBillForm);
+  }
+  const billDateInput = document.getElementById('bill-date-display');
+  if (billDateInput) {
+    billDateInput.addEventListener('change', updateBillReviewSummary);
+    billDateInput.addEventListener('input', updateBillReviewSummary);
   }
 
   const btnRefreshEmpBills = document.getElementById('btn-refresh-emp-bills');

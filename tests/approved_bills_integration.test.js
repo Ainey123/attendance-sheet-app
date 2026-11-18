@@ -372,6 +372,53 @@ async function runSuite() {
         await new Promise((resolve) => server.close(resolve));
       }
     });
+
+    await runTest('Test 7: Employees can attach/submit bills anytime without being bound to Clock Out', async () => {
+      const indexHtml = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+      const appJs = fs.readFileSync(path.resolve(__dirname, '../public/app.js'), 'utf8');
+
+      // Anytime entry points exist across header, sub-navigation, and portal
+      assert.ok(indexHtml.includes('id="btn-header-submit-bill"'), 'Header Attach Bill button missing');
+      assert.ok(indexHtml.includes('id="btn-subnav-submit-bill"'), 'Employee subnav Attach/Submit Bill button missing');
+      assert.ok(indexHtml.includes('id="btn-portal-submit-bill"'), 'Attendance pane Attach/Submit Bill button missing');
+
+      // Bill date is editable (type="date", not readonly) for submitting bills anytime
+      assert.ok(
+        /<input[^>]*type="date"[^>]*id="bill-date-display"/.test(indexHtml) &&
+        !/id="bill-date-display"[^>]*readonly/.test(indexHtml),
+        'bill-date-display must be an editable date input'
+      );
+
+      // No duplicate inline handlers alongside addEventListener bindings in initBillEventListeners
+      assert.ok(!/id="btn-bill-add-pictures"[^>]*onclick=/.test(indexHtml), 'Duplicate onclick on btn-bill-add-pictures');
+      assert.ok(!/id="bill-file-input"[^>]*onchange=/.test(indexHtml), 'Duplicate onchange on bill-file-input');
+      assert.ok(!/id="btn-submit-bill-final"[^>]*onclick=/.test(indexHtml), 'Duplicate onclick on btn-submit-bill-final');
+
+      // Clock out submission must NOT force/trigger openClockOutBillPrompt()
+      const clockOutStart = appJs.indexOf('async function submitClockOutDetails(');
+      assert.ok(clockOutStart !== -1, 'submitClockOutDetails not found');
+      const clockOutEnd = appJs.indexOf('\nfunction ', clockOutStart + 1);
+      const clockOutBody = appJs.slice(clockOutStart, clockOutEnd !== -1 ? clockOutEnd : clockOutStart + 1800);
+      assert.ok(!clockOutBody.includes('openClockOutBillPrompt('), 'submitClockOutDetails still invokes openClockOutBillPrompt');
+
+      // Database allows any employee to attach & submit a bill even with zero attendance / clock-out records
+      const independentBill = await db.createBill({
+        employeeId: 'emp-no-attendance-anytime',
+        employeeName: 'Usman Tariq',
+        siteName: 'Ferozepur Road Site',
+        billDate: '2026-11-18',
+        transportationExpense: 400,
+        description: 'Standalone bill without clocking in/out',
+        attachments: [
+          { name: 'fuel-slip.png', type: 'image/png', dataUrl: samplePngBase64 },
+        ],
+        ticketSelectionMode: 'UNLINKED',
+        _autoSync: false,
+      });
+      assert.ok(independentBill && independentBill.id, 'Expected bill id for standalone submission');
+      assert.strictEqual(independentBill.status, 'SUBMITTED');
+      assert.strictEqual(independentBill.attachments.length, 1);
+    });
   } finally {
     if (originalDataJson !== null) {
       fs.writeFileSync(dataJsonPath, originalDataJson, 'utf8');
