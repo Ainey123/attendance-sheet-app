@@ -264,6 +264,114 @@ async function runSuite() {
         'Bill employee Bilal Ahmed must remain in employees list'
       );
     });
+
+    await runTest('Test 6: Full Bill Management HTTP routes (list all statuses, detail pending, verify/approve/reject/override/link)', async () => {
+      const apiHandler = require('../api/index');
+      const server = http.createServer((req, res) => {
+        res.status = (code) => { res.statusCode = code; return res; };
+        res.json = (obj) => {
+          if (!res.headersSent) res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(obj));
+        };
+        res.send = (buf) => res.end(buf);
+        apiHandler(req, res);
+      });
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const port = server.address().port;
+
+      try {
+        // Unsigned rejected
+        const unauth = await fetch(`http://127.0.0.1:${port}/api/integration/bill-management`);
+        assert.strictEqual(unauth.status, 401);
+
+        // Signed full Bill Management list includes SUBMITTED & REJECTED & APPROVED
+        const listPath = '/api/integration/bill-management';
+        const listHeaders = integration.createSignedHeaders({ method: 'GET', path: listPath, body: '' });
+        const listResp = await fetch(`http://127.0.0.1:${port}${listPath}`, { headers: listHeaders });
+        assert.strictEqual(listResp.status, 200);
+        const listData = await listResp.json();
+        assert.strictEqual(listData.success, true);
+        assert(listData.bills.some((b) => b.id === approvedLinkedId), 'Includes approved bill');
+        assert(listData.bills.some((b) => b.id === pendingId), 'Includes pending bill');
+        assert(listData.bills.some((b) => b.id === rejectedId), 'Includes rejected bill');
+        assert(listData.stats && listData.stats.totalBills >= 4, 'Includes full stats summary');
+        assert(listData.syncHealth && typeof listData.syncHealth.linkedCount === 'number', 'Includes syncHealth');
+        assert(listData.employees.some((e) => e.employeeName === 'Roster Only Technician'), 'Includes roster employees');
+
+        // Detail endpoint works for pending bill (whereas /api/integration/bills/:id keeps 403)
+        const detPath = `/api/integration/bill-management/${encodeURIComponent(pendingId)}`;
+        const detHeaders = integration.createSignedHeaders({ method: 'GET', path: detPath, body: '' });
+        const detResp = await fetch(`http://127.0.0.1:${port}${detPath}`, { headers: detHeaders });
+        assert.strictEqual(detResp.status, 200);
+        const detData = await detResp.json();
+        assert.strictEqual(detData.bill.id, pendingId);
+
+        // Verify category on pending bill via integration endpoint
+        const verPath = `/api/integration/bill-management/${encodeURIComponent(pendingId)}/verify-category`;
+        const verBody = JSON.stringify({
+          category: 'material',
+          verifiedAmount: 1800,
+          verificationComment: 'Verified from Accounts',
+          verifiedBy: 'Batch 1 (Ali)'
+        });
+        const verHeaders = integration.createSignedHeaders({ method: 'POST', path: verPath, body: verBody });
+        const verResp = await fetch(`http://127.0.0.1:${port}${verPath}`, {
+          method: 'POST',
+          headers: { ...verHeaders, 'Content-Type': 'application/json' },
+          body: verBody
+        });
+        assert.strictEqual(verResp.status, 200);
+        const verData = await verResp.json();
+        assert.strictEqual(verData.bill.status, 'VERIFIED');
+        assert.strictEqual(verData.bill.totalVerifiedAmount, 1800);
+
+        // Approve category via integration endpoint (HMAC-verified, no local passcode needed)
+        const appPath = `/api/integration/bill-management/${encodeURIComponent(pendingId)}/approve-category`;
+        const appBody = JSON.stringify({
+          category: 'material',
+          approvedAmount: 1750,
+          approvalComment: 'Approved by Accounts Admin',
+          approvedBy: 'Fatma (Accounts Admin)'
+        });
+        const appHeaders = integration.createSignedHeaders({ method: 'POST', path: appPath, body: appBody });
+        const appResp = await fetch(`http://127.0.0.1:${port}${appPath}`, {
+          method: 'POST',
+          headers: { ...appHeaders, 'Content-Type': 'application/json' },
+          body: appBody
+        });
+        assert.strictEqual(appResp.status, 200);
+        const appData = await appResp.json();
+        assert.strictEqual(appData.bill.status, 'APPROVED');
+        assert.strictEqual(appData.bill.totalApprovedAmount, 1750);
+
+        // Link unlinked bill via integration endpoint
+        const linkPath = `/api/integration/bill-management/${encodeURIComponent(pendingId)}/link-ticket`;
+        const linkBody = JSON.stringify({
+          ticketId: 102,
+          serialNo: '1051',
+          jobMetadataId: 502,
+          branchName: 'Johar Town Branch',
+          clientName: 'MCB',
+          workNature: 'SOLAR',
+          subject: 'Solar Inverter Check',
+          linkedBy: 'Admin',
+          verifyWithAccounts: false
+        });
+        const linkHeaders = integration.createSignedHeaders({ method: 'POST', path: linkPath, body: linkBody });
+        const linkResp = await fetch(`http://127.0.0.1:${port}${linkPath}`, {
+          method: 'POST',
+          headers: { ...linkHeaders, 'Content-Type': 'application/json' },
+          body: linkBody
+        });
+        assert.strictEqual(linkResp.status, 200);
+        const linkData = await linkResp.json();
+        assert.strictEqual(linkData.bill.ticketSelectionMode, 'LINKED');
+        assert.strictEqual(linkData.bill.externalTicketSerialNo, '1051');
+      } finally {
+        if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
   } finally {
     if (originalDataJson !== null) {
       fs.writeFileSync(dataJsonPath, originalDataJson, 'utf8');

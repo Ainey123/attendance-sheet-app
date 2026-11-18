@@ -1082,13 +1082,12 @@ function sanitizeAuditLogForIntegration(auditLog = []) {
 }
 
 /**
- * Builds a complete, read-only, Base64-free DTO of an Approved Attendance Bill
- * for Accounts App employee portals (including all category breakdowns, approval info,
- * ticket metadata, duplicate verification status, attachment metadata, and audit timeline).
+ * Builds a complete, Base64-free DTO of any Attendance Bill for Accounts App
+ * Bill Management (verification, approval, rejection, duplicates, sync health, attachments, audit log).
  */
-function buildApprovedBillIntegrationDto(bill) {
+function buildBillManagementIntegrationDto(bill, { defaultStatus = 'SUBMITTED' } = {}) {
   if (!bill || !bill.id) {
-    throw new Error('Valid bill object with id is required to build approved bill DTO.');
+    throw new Error('Valid bill object with id is required to build bill DTO.');
   }
 
   const amounts = resolveSyncedExpenseAmounts(bill);
@@ -1105,12 +1104,18 @@ function buildApprovedBillIntegrationDto(bill) {
   const latestApprovedCat = catValues
     .filter((c) => c.approvedBy || c.approvedAt)
     .sort((a, b) => new Date(b.approvedAt || 0) - new Date(a.approvedAt || 0))[0] || null;
+  const latestRejectedCat = catValues
+    .filter((c) => c.rejectedBy || c.rejectedAt || c.rejectionReason)
+    .sort((a, b) => new Date(b.rejectedAt || 0) - new Date(a.rejectedAt || 0))[0] || null;
 
   const uniqueVerComments = Array.from(
     new Set(catValues.map((c) => (c.verificationComment || c.verifiedComment || '').trim()).filter(Boolean))
   );
   const uniqueApprComments = Array.from(
     new Set(catValues.map((c) => (c.approvalComment || c.approvedComment || '').trim()).filter(Boolean))
+  );
+  const uniqueRejReasons = Array.from(
+    new Set(catValues.map((c) => (c.rejectionReason || '').trim()).filter(Boolean))
   );
 
   const resolvedVerifiedBy = bill.verifiedBy || latestVerifiedCat?.verifiedBy || null;
@@ -1119,6 +1124,9 @@ function buildApprovedBillIntegrationDto(bill) {
   const resolvedApprovedBy = bill.approvedBy || latestApprovedCat?.approvedBy || null;
   const resolvedApprovedAt = bill.approvedAt || latestApprovedCat?.approvedAt || null;
   const resolvedApprovalComment = bill.approvalComment || (uniqueApprComments.length ? uniqueApprComments.join(' | ') : null);
+  const resolvedRejectedBy = bill.rejectedBy || latestRejectedCat?.rejectedBy || null;
+  const resolvedRejectedAt = bill.rejectedAt || latestRejectedCat?.rejectedAt || null;
+  const resolvedRejectionReason = bill.rejectionReason || (uniqueRejReasons.length ? uniqueRejReasons.join(' | ') : null);
 
   const dup = bill.duplicateVerification && typeof bill.duplicateVerification === 'object'
     ? {
@@ -1131,6 +1139,7 @@ function buildApprovedBillIntegrationDto(bill) {
           ? bill.duplicateVerification.matches.map((m) => ({
               billId: m.billId || null,
               billNumber: m.billNumber || null,
+              employeeName: m.employeeName || null,
               siteName: m.siteName || null,
               billDate: m.billDate || null,
               totalClaimedAmount: Number(m.totalClaimedAmount || 0),
@@ -1151,7 +1160,7 @@ function buildApprovedBillIntegrationDto(bill) {
     submittedAt: bill.submittedAt || bill.createdAt || null,
     createdAt: bill.createdAt || null,
     updatedAt: bill.updatedAt || null,
-    status: String(bill.status || 'APPROVED').toUpperCase().trim(),
+    status: String(bill.status || defaultStatus).toUpperCase().trim(),
     accountsApprovalStatus: amounts.approvalStatus,
     totalClaimedAmount: amounts.claimedAmount,
     totalVerifiedAmount: amounts.verifiedAmount,
@@ -1169,6 +1178,9 @@ function buildApprovedBillIntegrationDto(bill) {
     approvedBy: resolvedApprovedBy,
     approvedAt: resolvedApprovedAt,
     approvalComment: resolvedApprovalComment,
+    rejectedBy: resolvedRejectedBy,
+    rejectedAt: resolvedRejectedAt,
+    rejectionReason: resolvedRejectionReason,
     ticketSelectionMode: bill.ticketSelectionMode || 'UNLINKED',
     externalTicketId: bill.externalTicketId ? Number(bill.externalTicketId) : null,
     externalTicketSerialNo: bill.externalTicketSerialNo ? String(bill.externalTicketSerialNo).trim() : null,
@@ -1179,6 +1191,7 @@ function buildApprovedBillIntegrationDto(bill) {
     externalExpenseId: bill.externalExpenseId ? Number(bill.externalExpenseId) : null,
     integrationSyncStatus: bill.integrationSyncStatus || null,
     integrationSyncedAt: bill.integrationSyncedAt || null,
+    integrationSyncError: bill.integrationSyncError || null,
     isDuplicate: Boolean(bill.isDuplicate),
     duplicateOverridden: Boolean(bill.duplicateOverridden),
     duplicateOverrideBy: bill.duplicateOverrideBy || null,
@@ -1189,6 +1202,14 @@ function buildApprovedBillIntegrationDto(bill) {
     attachmentsCount: attachmentsMeta.length,
     auditLog: sanitizeAuditLogForIntegration(bill.auditLog),
   };
+}
+
+/**
+ * Builds a complete, read-only, Base64-free DTO of an Approved Attendance Bill
+ * for Accounts App employee portals.
+ */
+function buildApprovedBillIntegrationDto(bill) {
+  return buildBillManagementIntegrationDto(bill, { defaultStatus: 'APPROVED' });
 }
 
 module.exports = {
@@ -1213,6 +1234,7 @@ module.exports = {
   resolveSyncedExpenseAmounts,
   buildExpenseSyncPayload,
   sanitizeAuditLogForIntegration,
+  buildBillManagementIntegrationDto,
   buildApprovedBillIntegrationDto,
   sanitizeForLog,
   normalizeAuthoritativeTicket,

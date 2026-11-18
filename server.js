@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const db = require('./db');
 const integration = require('./integration-client');
+const billManagementIntegration = require('./bill-management-integration');
 
 // Initialize Supabase client only if credentials exist
 let supabase = null;
@@ -1569,6 +1570,31 @@ app.post('/api/bills/:id/sync-accounts', checkAdminAuth, async (req, res) => {
     });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, error: err.message });
+  }
+});
+
+// /api/integration/bill-management/* (HMAC-authenticated full Bill Management endpoints)
+app.use('/api/integration/bill-management', async (req, res, next) => {
+  try {
+    const cleanPath = String(req.originalUrl || req.url || '').split('?')[0].replace(/^\/api\//, '');
+    const rawBody = req.method === 'POST'
+      ? (req.rawBody !== undefined ? req.rawBody : JSON.stringify(req.body || {}))
+      : '';
+    const handled = await billManagementIntegration.handleBillManagementRoute({
+      method: req.method,
+      path: cleanPath,
+      url: req.originalUrl || req.url,
+      query: req.query || {},
+      headers: req.headers,
+      rawBody,
+      parsedBody: req.method === 'POST' ? (req.body || {}) : null
+    });
+    if (handled) {
+      return res.status(handled.status).json(handled.body);
+    }
+    return next();
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, error: err.message || 'Bill management request failed.' });
   }
 });
 

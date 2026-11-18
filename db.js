@@ -6544,42 +6544,43 @@ const db = {
     return integration.decodeBillAttachmentDataUrl(attachments[idx]);
   },
 
-  async getApprovedBillsForIntegration({
-    status = 'ALL_APPROVED',
-    employeeId = null,
-    search = null,
-    startDate = null,
-    endDate = null
-  } = {}) {
-    const allBills = await this.getBills({
-      employeeId: employeeId || null,
-      search: search || null,
-      startDate: startDate || null,
-      endDate: endDate || null,
-      lightweight: true
-    });
+  async getEmployeesForIntegration() {
+    await maybeRecoverSupabase();
+    if (useLocalFallback || !supabase) {
+      const data = loadLocalData();
+      return (data.employees || []).filter(e => e && e.status !== 'DELETED' && !e.isArchived);
+    }
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('id, name, role, status, isArchived')
+        .order('dateCreated', { ascending: false });
+      if (error) throw error;
+      return (data || []).filter(e => e && e.status !== 'DELETED' && !e.isArchived);
+    } catch (err) {
+      if (isQuotaOrNetworkError(err)) {
+        const data = loadLocalData();
+        return (data.employees || []).filter(e => e && e.status !== 'DELETED' && !e.isArchived);
+      }
+      return [];
+    }
+  },
 
-    const normStatus = String(status || 'ALL_APPROVED').toUpperCase().trim();
-    const approvedBills = (allBills || []).filter((b) => {
-      const st = String(b.status || '').toUpperCase().trim();
-      if (normStatus === 'APPROVED') return st === 'APPROVED';
-      if (normStatus === 'PARTIALLY_APPROVED') return st === 'PARTIALLY_APPROVED';
-      return st === 'APPROVED' || st === 'PARTIALLY_APPROVED';
-    });
+  async hydrateBillsIntegrationAttachmentMeta(targetBills = []) {
+    if (!Array.isArray(targetBills) || targetBills.length === 0) return;
 
-    // Hydrate Base64-free attachments metadata without leaking binary blobs
     const localAttByBillId = new Map();
     try {
       const localData = loadLocalData();
       (localData.bills || []).forEach((lb) => {
         if (lb && lb.id && Array.isArray(lb.attachments) && lb.attachments.some((a) => a && (a.dataUrl || a.url))) {
-          localAttByBillId.set(lb.id, integration.extractAttachmentMetadata(lb.attachments));
+          localAttByBillId.set(String(lb.id), integration.extractAttachmentMetadata(lb.attachments));
         }
       });
     } catch {}
 
     const idsToFetchFromSupabase = [];
-    approvedBills.forEach((b) => {
+    targetBills.forEach((b) => {
       const cacheKey = String(b.id);
       const cached = _approvedBillAttachmentsMetaCache.get(cacheKey);
       const ver = String(b.updatedAt || '');
@@ -6596,42 +6597,109 @@ const db = {
       if (supabase && !useLocalFallback) {
         idsToFetchFromSupabase.push(b);
       } else {
-        b._attachmentsMetaOverride = [];
+        b._attachmentsMetaOverride = integration.extractAttachmentMetadata(b.attachments || []);
       }
     });
 
     if (idsToFetchFromSupabase.length > 0 && supabase && !useLocalFallback) {
-      const startMs = Date.now();
-      const chunkSize = 8;
-      for (let i = 0; i < idsToFetchFromSupabase.length; i += chunkSize) {
-        if (Date.now() - startMs > 4500) break;
-        const chunkBills = idsToFetchFromSupabase.slice(i, i + chunkSize);
-        const chunkIds = chunkBills.map((b) => b.id);
-        try {
-          const { data: attRows, error: attErr } = await supabase
-            .from('bills')
-            .select('id, attachments')
-            .in('id', chunkIds);
-          if (!attErr && Array.isArray(attRows)) {
-            const rowMap = new Map(attRows.map((r) => [String(r.id), r.attachments]));
-            chunkBills.forEach((b) => {
-              const rawAtts = rowMap.get(String(b.id));
-              if (Array.isArray(rawAtts)) {
-                const meta = integration.extractAttachmentMetadata(rawAtts);
-                b._attachmentsMetaOverride = meta;
-                _approvedBillAttachmentsMetaCache.set(String(b.id), {
-                  updatedAt: String(b.updatedAt || ''),
-                  attachmentsMeta: meta
+      // Fast single-query JSONB metadata projection (avoids downloading multi-MB Base64 blobs)
+      let projectionOk = false;
+      try {
+        const maxSlots = 8;
+        const projCols = [
+          'id',
+          ...Array.from({ length: maxSlots }, (_, idx) => [
+            `a${idx}n:attachments->${idx}->>name`,
+            `a${idx}t:attachments->${idx}->>type`
+          ]).flat()
+        ].join(', ');
+
+        const chunkIdsList = [];
+        for (let i = 0; i < idsToFetchFromSupabase.length; i += 80) {
+          chunkIdsList.push(idsToFetchFromSupabase.slice(i, i + 80));
+        }
+
+        const chunkResults = await Promise.all(
+          chunkIdsList.map((chunkBills) =>
+            supabase
+              .from('bills')
+              .select(projCols)
+              .in('id', chunkBills.map((b) => b.id))
+          )
+        );
+
+        const anyErr = chunkResults.find((r) => r.error)?.error;
+        if (!anyErr) {
+          projectionOk = true;
+          const rowMap = new Map();
+          chunkResults.forEach((r) => {
+            (r.data || []).forEach((row) => {
+              if (row && row.id) rowMap.set(String(row.id), row);
+            });
+          });
+
+          idsToFetchFromSupabase.forEach((b) => {
+            const row = rowMap.get(String(b.id));
+            const meta = [];
+            if (row) {
+              for (let idx = 0; idx < maxSlots; idx++) {
+                const rawName = row[`a${idx}n`];
+                const rawType = row[`a${idx}t`];
+                if (!rawName && !rawType) continue;
+                const safeName = String(rawName || `attachment_${idx + 1}`).replace(/[^\w.\- ()]/g, '_').slice(0, 120);
+                const mimeCheck = integration.validateAttachmentMimeType(rawType || '', safeName);
+                const normType = mimeCheck.valid ? mimeCheck.normalizedType : (String(rawType || 'image/jpeg').trim() || 'image/jpeg');
+                meta.push({
+                  index: idx,
+                  name: safeName,
+                  type: normType,
+                  size: 0,
+                  isPdf: normType === 'application/pdf' || safeName.toLowerCase().endsWith('.pdf'),
+                  hasBinary: true
                 });
               }
+            }
+            b._attachmentsMetaOverride = meta;
+            _approvedBillAttachmentsMetaCache.set(String(b.id), {
+              updatedAt: String(b.updatedAt || ''),
+              attachmentsMeta: meta
             });
-          }
-        } catch {}
+          });
+        }
+      } catch {}
+
+      // Fallback time-boxed batch fetch if PostgREST JSONB projection is unavailable
+      if (!projectionOk) {
+        const startMs = Date.now();
+        const chunkSize = 15;
+        for (let i = 0; i < idsToFetchFromSupabase.length; i += chunkSize) {
+          if (Date.now() - startMs > 2500) break;
+          const chunkBills = idsToFetchFromSupabase.slice(i, i + chunkSize);
+          try {
+            const { data: attRows, error: attErr } = await supabase
+              .from('bills')
+              .select('id, attachments')
+              .in('id', chunkBills.map((b) => b.id));
+            if (!attErr && Array.isArray(attRows)) {
+              const rowMap = new Map(attRows.map((r) => [String(r.id), r.attachments]));
+              chunkBills.forEach((b) => {
+                const rawAtts = rowMap.get(String(b.id));
+                if (Array.isArray(rawAtts)) {
+                  const meta = integration.extractAttachmentMetadata(rawAtts);
+                  b._attachmentsMetaOverride = meta;
+                  _approvedBillAttachmentsMetaCache.set(String(b.id), {
+                    updatedAt: String(b.updatedAt || ''),
+                    attachmentsMeta: meta
+                  });
+                }
+              });
+            }
+          } catch {}
+        }
       }
     }
 
-    // Fallback for any bill whose lightweight attachment hint existed before timeout
-    approvedBills.forEach((b) => {
+    targetBills.forEach((b) => {
       if (Array.isArray(b._attachmentsMetaOverride)) return;
       if (Array.isArray(b.attachments) && b.attachments.length > 0) {
         b._attachmentsMetaOverride = b.attachments
@@ -6653,26 +6721,12 @@ const db = {
         b._attachmentsMetaOverride = [];
       }
     });
+  },
 
-    const dtos = approvedBills.map((b) => integration.buildApprovedBillIntegrationDto(b));
-
-    let fullyApprovedCount = 0;
-    let partiallyApprovedCount = 0;
-    let totalClaimedAmount = 0;
-    let totalVerifiedAmount = 0;
-    let totalApprovedAmount = 0;
-    let totalAttachmentsCount = 0;
+  buildIntegrationEmployeeList(billDtos = [], rosterEmployees = []) {
     const empMap = new Map();
 
-    dtos.forEach((b) => {
-      if (b.status === 'PARTIALLY_APPROVED') partiallyApprovedCount++;
-      else fullyApprovedCount++;
-
-      totalClaimedAmount += Number(b.totalClaimedAmount || 0);
-      totalVerifiedAmount += Number(b.totalVerifiedAmount || 0);
-      totalApprovedAmount += Number(b.totalApprovedAmount || 0);
-      totalAttachmentsCount += Number(b.attachmentsCount || 0);
-
+    (billDtos || []).forEach((b) => {
       if (b.employeeId || b.employeeName) {
         const empKey = String(b.employeeId || b.employeeName).trim();
         if (!empMap.has(empKey)) {
@@ -6684,39 +6738,83 @@ const db = {
       }
     });
 
-    // Always include active Attendance employees in the filter dropdown
-    try {
-      const allEmployees = await this.getEmployees(false);
-      if (Array.isArray(allEmployees)) {
-        const existingNames = new Set(
-          Array.from(empMap.values())
-            .map((e) => String(e.employeeName || '').trim().toLowerCase())
-            .filter(Boolean)
-        );
-        allEmployees.forEach((emp) => {
-          const empId = String(emp?.id || '').trim();
-          const empName = String(emp?.name || '').trim();
-          const empKey = empId || empName;
-          if (!empKey) return;
-          if (empMap.has(empKey)) return;
-          if (!empId && empName && existingNames.has(empName.toLowerCase())) return;
-          if (empId && empName && empMap.has(empName)) {
-            empMap.delete(empName);
-          }
-          empMap.set(empKey, {
-            employeeId: empId || empName,
-            employeeName: empName || empId
-          });
-          if (empName) existingNames.add(empName.toLowerCase());
+    if (Array.isArray(rosterEmployees)) {
+      const existingNames = new Set(
+        Array.from(empMap.values())
+          .map((e) => String(e.employeeName || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+      rosterEmployees.forEach((emp) => {
+        const empId = String(emp?.id || '').trim();
+        const empName = String(emp?.name || '').trim();
+        const empKey = empId || empName;
+        if (!empKey) return;
+        if (empMap.has(empKey)) return;
+        if (!empId && empName && existingNames.has(empName.toLowerCase())) return;
+        if (empId && empName && empMap.has(empName)) {
+          empMap.delete(empName);
+        }
+        empMap.set(empKey, {
+          employeeId: empId || empName,
+          employeeName: empName || empId
         });
-      }
-    } catch (_) {
-      // Non-fatal: still return bill-derived employees
+        if (empName) existingNames.add(empName.toLowerCase());
+      });
     }
 
-    const employees = Array.from(empMap.values()).sort((a, b) =>
+    return Array.from(empMap.values()).sort((a, b) =>
       String(a.employeeName || '').localeCompare(String(b.employeeName || ''))
     );
+  },
+
+  async getApprovedBillsForIntegration({
+    status = 'ALL_APPROVED',
+    employeeId = null,
+    search = null,
+    startDate = null,
+    endDate = null
+  } = {}) {
+    const [allBills, rosterEmployees] = await Promise.all([
+      this.getBills({
+        employeeId: employeeId || null,
+        search: search || null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        lightweight: true
+      }),
+      this.getEmployeesForIntegration().catch(() => [])
+    ]);
+
+    const normStatus = String(status || 'ALL_APPROVED').toUpperCase().trim();
+    const approvedBills = (allBills || []).filter((b) => {
+      const st = String(b.status || '').toUpperCase().trim();
+      if (normStatus === 'APPROVED') return st === 'APPROVED';
+      if (normStatus === 'PARTIALLY_APPROVED') return st === 'PARTIALLY_APPROVED';
+      return st === 'APPROVED' || st === 'PARTIALLY_APPROVED';
+    });
+
+    await this.hydrateBillsIntegrationAttachmentMeta(approvedBills);
+
+    const dtos = approvedBills.map((b) => integration.buildApprovedBillIntegrationDto(b));
+
+    let fullyApprovedCount = 0;
+    let partiallyApprovedCount = 0;
+    let totalClaimedAmount = 0;
+    let totalVerifiedAmount = 0;
+    let totalApprovedAmount = 0;
+    let totalAttachmentsCount = 0;
+
+    dtos.forEach((b) => {
+      if (b.status === 'PARTIALLY_APPROVED') partiallyApprovedCount++;
+      else fullyApprovedCount++;
+
+      totalClaimedAmount += Number(b.totalClaimedAmount || 0);
+      totalVerifiedAmount += Number(b.totalVerifiedAmount || 0);
+      totalApprovedAmount += Number(b.totalApprovedAmount || 0);
+      totalAttachmentsCount += Number(b.attachmentsCount || 0);
+    });
+
+    const employees = this.buildIntegrationEmployeeList(dtos, rosterEmployees);
 
     return {
       bills: dtos,
@@ -6730,6 +6828,191 @@ const db = {
         totalAttachmentsCount
       },
       employees
+    };
+  },
+
+  async getBillManagementDataForIntegration({
+    status = 'ALL',
+    employeeId = null,
+    search = null,
+    startDate = null,
+    endDate = null
+  } = {}) {
+    const [allBills, rosterEmployees] = await Promise.all([
+      this.getBills({ lightweight: true }),
+      this.getEmployeesForIntegration().catch(() => [])
+    ]);
+
+    // Compute overall Bill Management 6 stats cards & sync health across all bills
+    let totalClaimedAmount = 0;
+    let totalVerifiedAmount = 0;
+    let totalApprovedAmount = 0;
+    let pendingCount = 0;
+    let pendingAmount = 0;
+    let verifiedCount = 0;
+    let verifiedCardAmount = 0;
+    let approvedCount = 0;
+    let approvedCardAmount = 0;
+    let rejectedCount = 0;
+    let rejectedAmount = 0;
+    let duplicateAlertsCount = 0;
+    let duplicateAlertsAmount = 0;
+
+    let linkedCount = 0;
+    let unlinkedCount = 0;
+    let syncedCount = 0;
+    let pendingSyncCount = 0;
+    let syncFailedCount = 0;
+
+    (allBills || []).forEach((b) => {
+      const claimed = Number(b.totalClaimedAmount || 0);
+      const verAmt = b.totalVerifiedAmount !== null && b.totalVerifiedAmount !== undefined ? Number(b.totalVerifiedAmount || 0) : Number(b.verifiedAmount || 0);
+      const appAmt = b.totalApprovedAmount !== null && b.totalApprovedAmount !== undefined ? Number(b.totalApprovedAmount || 0) : Number(b.approvedAmount || 0);
+      totalClaimedAmount += claimed;
+      totalVerifiedAmount += verAmt;
+      totalApprovedAmount += appAmt;
+
+      if (b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION' || b.status === 'PARTIALLY_VERIFIED') {
+        pendingCount++;
+        pendingAmount += claimed;
+      } else if (b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED') {
+        verifiedCount++;
+        verifiedCardAmount += verAmt || claimed;
+      } else if (b.status === 'APPROVED') {
+        approvedCount++;
+        approvedCardAmount += appAmt || verAmt || claimed;
+      } else if (b.status === 'REJECTED') {
+        rejectedCount++;
+        rejectedAmount += claimed;
+      }
+
+      if ((b.isDuplicate || b.duplicateVerification?.isDuplicate) && b.status !== 'REJECTED') {
+        duplicateAlertsCount++;
+        duplicateAlertsAmount += claimed;
+      }
+
+      if (b.ticketSelectionMode === 'LINKED') {
+        linkedCount++;
+        const st = String(b.integrationSyncStatus || 'PENDING_SYNC').toUpperCase();
+        if (st === 'SYNCED') syncedCount++;
+        else if (st === 'SYNC_FAILED') syncFailedCount++;
+        else pendingSyncCount++;
+      } else {
+        unlinkedCount++;
+      }
+    });
+
+    // Apply requested filters
+    let filtered = [...(allBills || [])];
+    if (employeeId) {
+      const empF = String(employeeId).trim();
+      filtered = filtered.filter((b) =>
+        String(b.employeeId || '').trim() === empF ||
+        String(b.employeeName || '').trim().toLowerCase() === empF.toLowerCase()
+      );
+    }
+    if (startDate) {
+      filtered = filtered.filter((b) => {
+        const bDate = b.billDate || b.date || (b.submittedAt ? String(b.submittedAt).slice(0, 10) : '');
+        return !bDate || bDate >= startDate;
+      });
+    }
+    if (endDate) {
+      filtered = filtered.filter((b) => {
+        const bDate = b.billDate || b.date || (b.submittedAt ? String(b.submittedAt).slice(0, 10) : '');
+        return !bDate || bDate <= endDate;
+      });
+    }
+    if (search && String(search).trim()) {
+      const term = String(search).trim().toLowerCase();
+      filtered = filtered.filter((b) =>
+        String(b.billNumber || '').toLowerCase().includes(term) ||
+        String(b.employeeName || '').toLowerCase().includes(term) ||
+        String(b.employeeId || '').toLowerCase().includes(term) ||
+        String(b.siteName || '').toLowerCase().includes(term) ||
+        String(b.externalTicketSerialNo || '').toLowerCase().includes(term) ||
+        String(b.clientName || '').toLowerCase().includes(term) ||
+        String(b.workNature || '').toLowerCase().includes(term) ||
+        String(b.billDate || '').toLowerCase().includes(term) ||
+        String(b.description || '').toLowerCase().includes(term)
+      );
+    }
+
+    const normStatus = String(status || 'ALL').toUpperCase().trim();
+    if (normStatus === 'PENDING_VERIFICATION' || normStatus === 'SUBMITTED') {
+      filtered = filtered.filter((b) => b.status === 'SUBMITTED' || b.status === 'PENDING_VERIFICATION' || b.status === 'PARTIALLY_VERIFIED');
+    } else if (normStatus === 'VERIFIED') {
+      filtered = filtered.filter((b) => b.status === 'VERIFIED' || b.status === 'PARTIALLY_APPROVED');
+    } else if (normStatus === 'DUPLICATE') {
+      filtered = filtered.filter((b) => b.isDuplicate || b.duplicateVerification?.isDuplicate);
+    } else if (normStatus === 'UNLINKED') {
+      filtered = filtered.filter((b) => (b.ticketSelectionMode || 'UNLINKED') !== 'LINKED');
+    } else if (normStatus === 'SYNC_FAILED') {
+      filtered = filtered.filter((b) => b.ticketSelectionMode === 'LINKED' && b.integrationSyncStatus === 'SYNC_FAILED');
+    } else if (normStatus !== 'ALL') {
+      filtered = filtered.filter((b) => b.status === normStatus);
+    }
+
+    await this.hydrateBillsIntegrationAttachmentMeta(filtered);
+
+    const dtos = filtered.map((b) => integration.buildBillManagementIntegrationDto(b));
+    const allEmployees = this.buildIntegrationEmployeeList(
+      (allBills || []).map((b) => ({ employeeId: b.employeeId, employeeName: b.employeeName })),
+      rosterEmployees
+    );
+
+    const cfg = integration.getIntegrationConfig();
+
+    return {
+      bills: dtos,
+      stats: {
+        totalBills: allBills.length,
+        totalClaimedAmount: Math.round(totalClaimedAmount * 100) / 100,
+        totalVerifiedAmount: Math.round(totalVerifiedAmount * 100) / 100,
+        totalApprovedAmount: Math.round(totalApprovedAmount * 100) / 100,
+        pendingVerificationCount: pendingCount,
+        pendingAmount: Math.round(pendingAmount * 100) / 100,
+        verifiedCount,
+        verifiedAmount: Math.round(verifiedCardAmount * 100) / 100,
+        approvedCount,
+        approvedAmount: Math.round(approvedCardAmount * 100) / 100,
+        rejectedCount,
+        rejectedAmount: Math.round(rejectedAmount * 100) / 100,
+        duplicateAlertsCount,
+        duplicateAlertsAmount: Math.round(duplicateAlertsAmount * 100) / 100
+      },
+      syncHealth: {
+        enabled: cfg.enabled,
+        configured: cfg.isConfigured,
+        totalBills: allBills.length,
+        linkedCount,
+        unlinkedCount,
+        syncedCount,
+        pendingSyncCount,
+        syncFailedCount
+      },
+      employees: allEmployees
+    };
+  },
+
+  async getBillForIntegrationManagementById(billId) {
+    const bill = await this.getBillById(billId);
+    if (!bill) {
+      return { found: false, status: 404, error: 'Bill not found.' };
+    }
+    try {
+      const dupRes = await this.verifyBillDuplicates(bill);
+      if (dupRes && dupRes.duplicateVerification) {
+        bill.duplicateVerification = dupRes.duplicateVerification;
+        bill.isDuplicate = Boolean(dupRes.duplicateVerification.isDuplicate);
+        bill.duplicateMatches = dupRes.duplicateVerification.matches || [];
+      }
+    } catch {}
+
+    return {
+      found: true,
+      status: 200,
+      bill: integration.buildBillManagementIntegrationDto(bill)
     };
   },
 
@@ -7338,8 +7621,10 @@ const db = {
       list = (data.bills || []).map(b => normalizeBillRecord(b));
     } else {
       try {
-        const hasNativeCategories = await checkBillsTableNativeCategories();
-        const hasIntegrationCols = await checkBillsTableIntegrationColumns();
+        const [hasNativeCategories, hasIntegrationCols] = await Promise.all([
+          checkBillsTableNativeCategories(),
+          checkBillsTableIntegrationColumns()
+        ]);
         const catCols = hasNativeCategories ? ', categories, totalVerifiedAmount, totalApprovedAmount' : '';
         const intCols = hasIntegrationCols ? `, ${BILLS_INTEGRATION_COLUMNS.join(', ')}` : '';
         const listCols = lightweight
@@ -8344,7 +8629,10 @@ const db = {
       }
     } else {
       try {
-        await supabase.from('bills').update(updates).eq('id', id);
+        const { error: dupUpdErr } = await supabase.from('bills').update(updates).eq('id', id);
+        if (dupUpdErr) {
+          await supabase.from('bills').update({ auditLog, updatedAt: nowIso }).eq('id', id);
+        }
       } catch (err) {
         const data = loadLocalData();
         const idx = (data.bills || []).findIndex(b => b.id === id || b.billNumber === id);
@@ -9382,6 +9670,13 @@ function normalizeBillRecord(bill) {
     const entryWithSync = b.auditLog.slice().reverse().find(entry => entry && entry.details && entry.details.syncMetadata);
     if (entryWithSync && entryWithSync.details && entryWithSync.details.syncMetadata) {
       auditSyncMeta = entryWithSync.details.syncMetadata;
+    }
+    const entryWithDupOverride = b.auditLog.slice().reverse().find(entry => entry && entry.action === 'DUPLICATE_OVERRIDDEN');
+    if (entryWithDupOverride && !b.duplicateOverridden) {
+      b.duplicateOverridden = true;
+      b.duplicateOverrideBy = b.duplicateOverrideBy || entryWithDupOverride.by || 'Admin';
+      b.duplicateOverrideAt = b.duplicateOverrideAt || entryWithDupOverride.at || null;
+      b.duplicateOverrideNote = b.duplicateOverrideNote || entryWithDupOverride.details?.note || null;
     }
   }
 

@@ -1,6 +1,7 @@
 // api/index.js — single serverless function handling ALL routes
 const db = require('../db');
 const integration = require('../integration-client');
+const billManagementIntegration = require('../bill-management-integration');
 
 // Parse request body
 // Parse request body
@@ -1556,6 +1557,21 @@ module.exports = async (req, res) => {
         });
       } catch (err) {
         return res.status(err.status || 500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (path.startsWith('integration/bill-management')) {
+      const rawBody = method === 'POST' ? await readRawBody(req) : '';
+      const handled = await billManagementIntegration.handleBillManagementRoute({
+        method,
+        path,
+        url: req.url,
+        query,
+        headers,
+        rawBody
+      });
+      if (handled) {
+        return res.status(handled.status).json(handled.body);
       }
     }
 
