@@ -935,13 +935,28 @@ async function syncBillExpenseToAccounts(bill, options = {}) {
   const rawBody = JSON.stringify(payload);
   const endpointUrl = `${cfg.accountsBaseUrl}/api/integration/expenses/sync`;
 
-  // Deterministic idempotency key per bill state unless caller supplies an explicit one
+  // Deterministic idempotency key per bill state & category signature unless caller supplies an explicit one
+  const catSig = ['transportation', 'material', 'labour', 'accommodation', 'other']
+    .map((k) => {
+      const c = payload.breakdown?.categories?.[k];
+      if (!c) return '';
+      return `${k[0]}:${c.verificationStatus || ''}:${c.verifiedAmount ?? ''}:${c.approvalStatus || ''}:${c.approvedAmount ?? ''}`;
+    })
+    .filter(Boolean)
+    .join('|');
+  const sigHash = crypto
+    .createHash('sha256')
+    .update(`${catSig}|${payload.verifiedBy || ''}|${payload.approvedBy || ''}|${payload.rejectedBy || ''}`)
+    .digest('hex')
+    .slice(0, 10);
+
   const deterministicSuffix = [
     bill.id,
     payload.approvalStatus,
     payload.totalClaimedAmount,
     payload.totalVerifiedAmount ?? 'nv',
-    payload.totalApprovedAmount ?? 'na'
+    payload.totalApprovedAmount ?? 'na',
+    sigHash
   ].join('_');
 
   const idempotencyKey = options.idempotencyKey || generateIdempotencyKey('bill', deterministicSuffix);

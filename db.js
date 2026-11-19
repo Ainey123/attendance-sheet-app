@@ -7634,7 +7634,7 @@ const db = {
         if (employeeId) {
           query = query.eq('employeeId', employeeId);
         }
-        if (status && status !== 'ALL') {
+        if (hasNativeCategories && status && status !== 'ALL') {
           if (status === 'PENDING_VERIFICATION' || status === 'SUBMITTED') {
             query = query.in('status', ['SUBMITTED', 'PENDING_VERIFICATION', 'PARTIALLY_VERIFIED']);
           } else {
@@ -7814,7 +7814,7 @@ const db = {
   },
 
   // Category-wise Admin Verification
-  async verifyBillCategory(id, { category, verifiedAmount, verificationComment = '', verifiedBy = 'Admin' } = {}) {
+  async verifyBillCategory(id, { category, verifiedAmount, verificationComment = '', verifiedBy = 'Admin', skipAccountsSync = false } = {}) {
     const catName = String(category || '').toLowerCase().trim();
     if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
       const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
@@ -7885,6 +7885,9 @@ const db = {
             categories: bill.categories
           }
         };
+        bill.verifiedBy = verifiedBy || 'Admin';
+        bill.verifiedAt = nowIso;
+        bill.verificationComment = commentText || bill.verificationComment || '';
         bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
         bill.updatedAt = nowIso;
 
@@ -7894,6 +7897,9 @@ const db = {
           totalApprovedAmount: bill.totalApprovedAmount,
           verifiedAmount: bill.verifiedAmount,
           approvedAmount: bill.approvedAmount,
+          verifiedBy: bill.verifiedBy,
+          verifiedAt: bill.verifiedAt,
+          verificationComment: bill.verificationComment,
           status: bill.status,
           auditLog: bill.auditLog,
           updatedAt: nowIso
@@ -7970,14 +7976,14 @@ const db = {
       }
     });
 
-    if (updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
-      this.syncBillToAccounts(updatedBill).catch(() => {});
+    if (!skipAccountsSync && updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      await this.syncBillToAccounts(updatedBill).catch(() => {});
     }
     return updatedBill;
   },
 
   // Category-wise Rejection (Verification or Approval Stage)
-  async rejectBillCategory(id, { category, rejectionReason = '', reason = '', rejectedBy = 'Admin', stage = 'verification' } = {}) {
+  async rejectBillCategory(id, { category, rejectionReason = '', reason = '', rejectedBy = 'Admin', stage = 'verification', skipAccountsSync = false } = {}) {
     const catName = String(category || '').toLowerCase().trim();
     if (!BILL_EXPENSE_CATEGORIES.includes(catName)) {
       const err = new Error(`Invalid expense category "${category}". Must be one of: ${BILL_EXPENSE_CATEGORIES.join(', ')}`);
@@ -8041,6 +8047,11 @@ const db = {
             categories: bill.categories
           }
         };
+        if (bill.status === 'REJECTED') {
+          bill.rejectedBy = rejectedBy || 'Admin';
+          bill.rejectedAt = nowIso;
+          bill.rejectionReason = reasonText;
+        }
         bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
         bill.updatedAt = nowIso;
 
@@ -8050,6 +8061,11 @@ const db = {
           totalApprovedAmount: bill.totalApprovedAmount,
           verifiedAmount: bill.verifiedAmount,
           approvedAmount: bill.approvedAmount,
+          ...(bill.status === 'REJECTED' ? {
+            rejectedBy: bill.rejectedBy,
+            rejectedAt: bill.rejectedAt,
+            rejectionReason: bill.rejectionReason
+          } : {}),
           status: bill.status,
           auditLog: bill.auditLog,
           updatedAt: nowIso
@@ -8126,14 +8142,14 @@ const db = {
       }
     });
 
-    if (updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
-      this.syncBillToAccounts(updatedBill).catch(() => {});
+    if (!skipAccountsSync && updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      await this.syncBillToAccounts(updatedBill).catch(() => {});
     }
     return updatedBill;
   },
 
   // Category-wise Senior Admin Approval
-  async approveBillCategory(id, { category, approvedAmount, approvalComment = '', approvedBy = 'Senior Admin', seniorPasscode } = {}) {
+  async approveBillCategory(id, { category, approvedAmount, approvalComment = '', approvedBy = 'Senior Admin', seniorPasscode, skipAccountsSync = false } = {}) {
     if (seniorPasscode !== undefined) {
       const settings = await this.getSettings();
       const validPass = (settings && settings.seniorAdminPasscode) || '9999';
@@ -8221,6 +8237,9 @@ const db = {
             categories: bill.categories
           }
         };
+        bill.approvedBy = approvedBy || 'Senior Admin';
+        bill.approvedAt = nowIso;
+        bill.approvalComment = commentText || bill.approvalComment || '';
         bill.auditLog = Array.isArray(bill.auditLog) ? [...bill.auditLog, auditEntry] : [auditEntry];
         bill.updatedAt = nowIso;
 
@@ -8230,6 +8249,9 @@ const db = {
           totalApprovedAmount: bill.totalApprovedAmount,
           verifiedAmount: bill.verifiedAmount,
           approvedAmount: bill.approvedAmount,
+          approvedBy: bill.approvedBy,
+          approvedAt: bill.approvedAt,
+          approvalComment: bill.approvalComment,
           status: bill.status,
           auditLog: bill.auditLog,
           updatedAt: nowIso
@@ -8306,14 +8328,14 @@ const db = {
       }
     });
 
-    if (updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
-      this.syncBillToAccounts(updatedBill).catch(() => {});
+    if (!skipAccountsSync && updatedBill && updatedBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      await this.syncBillToAccounts(updatedBill).catch(() => {});
     }
     return updatedBill;
   },
 
   // Legacy Whole-Bill Verification (Backward Compatibility Batch)
-  async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin' } = {}) {
+  async verifyBill(id, { verifiedAmount, verificationComment = '', verifiedComment = '', verifiedBy = 'Admin', skipAccountsSync = false } = {}) {
     const rawBill = await this.getBillById(id);
     if (!rawBill) {
       const err = new Error('Bill not found.');
@@ -8350,14 +8372,19 @@ const db = {
         category: catKey,
         verifiedAmount: Math.max(0, catAmt),
         verificationComment: verificationComment || verifiedComment || '',
-        verifiedBy
+        verifiedBy,
+        skipAccountsSync: true
       });
     }
-    return this.getBillById(id);
+    const finalBill = await this.getBillById(id);
+    if (!skipAccountsSync && finalBill && finalBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      await this.syncBillToAccounts(finalBill).catch(() => {});
+    }
+    return finalBill;
   },
 
   // Legacy Whole-Bill Approval (Backward Compatibility Batch)
-  async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin' } = {}) {
+  async approveBill(id, { approvedAmount, approvalComment = '', approvedComment = '', approvedBy = 'Senior Admin', skipAccountsSync = false } = {}) {
     const rawBill = await this.getBillById(id);
     if (!rawBill) {
       const err = new Error('Bill not found.');
@@ -8394,14 +8421,19 @@ const db = {
         category: catKey,
         approvedAmount: Math.max(0, catAmt),
         approvalComment: approvalComment || approvedComment || '',
-        approvedBy
+        approvedBy,
+        skipAccountsSync: true
       });
     }
-    return this.getBillById(id);
+    const finalBill = await this.getBillById(id);
+    if (!skipAccountsSync && finalBill && finalBill.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      await this.syncBillToAccounts(finalBill).catch(() => {});
+    }
+    return finalBill;
   },
 
   // Whole-Bill Rejection (Audited & Non-Destructive)
-  async rejectBill(id, { rejectionReason = '', reason = '', rejectedBy = 'Admin' } = {}) {
+  async rejectBill(id, { rejectionReason = '', reason = '', rejectedBy = 'Admin', skipAccountsSync = false } = {}) {
     const rawBill = await this.getBillById(id);
     if (!rawBill) {
       const err = new Error('Bill not found.');
@@ -8418,7 +8450,8 @@ const db = {
         category: catKey,
         rejectionReason: reasonText,
         rejectedBy,
-        stage: 'verification'
+        stage: 'verification',
+        skipAccountsSync: true
       });
     }
 
@@ -8454,7 +8487,11 @@ const db = {
       await supabase.from('bills').update(updates).eq('id', id);
     }
     const finalBill = await this.getBillById(id);
-    return finalBill.bill || finalBill;
+    const resolvedFinal = (finalBill && finalBill.bill) || finalBill;
+    if (!skipAccountsSync && resolvedFinal && resolvedFinal.ticketSelectionMode === 'LINKED' && integration.getIntegrationConfig().isConfigured) {
+      await this.syncBillToAccounts(resolvedFinal).catch(() => {});
+    }
+    return resolvedFinal;
   },
 
   // Bill Statistics

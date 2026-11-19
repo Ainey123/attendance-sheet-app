@@ -419,6 +419,125 @@ async function runSuite() {
       assert.strictEqual(independentBill.status, 'SUBMITTED');
       assert.strictEqual(independentBill.attachments.length, 1);
     });
+
+    await runTest('Test 8: Bidirectional verification/approval persists attribution, awaits sync, distinct idem keys & no duplicate button onclicks', async () => {
+      const indexHtml = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+      assert.ok(!/id="btn-submit-cat-verification"[^>]*onclick=/.test(indexHtml), 'Duplicate onclick on btn-submit-cat-verification');
+      assert.ok(!/id="btn-submit-cat-approval"[^>]*onclick=/.test(indexHtml), 'Duplicate onclick on btn-submit-cat-approval');
+      assert.ok(!/id="btn-submit-cat-rejection"[^>]*onclick=/.test(indexHtml), 'Duplicate onclick on btn-submit-cat-rejection');
+
+      const origAccountsUrl = process.env.ACCOUNTS_APP_BASE_URL;
+      process.env.ACCOUNTS_APP_BASE_URL = origAccountsUrl || 'https://accounts-management.vercel.app';
+
+      const snap = {
+        ticketId: 101,
+        serialNo: '1050',
+        jobMetadataId: 501,
+        branchName: 'Model Town Branch',
+        clientName: 'Meezan Bank',
+        workNature: 'ELECTRICAL',
+        subject: 'UPS Overhaul',
+      };
+
+      const bill = await db.createBill({
+        employeeId: 'emp-bidir-1',
+        employeeName: 'Sajid Mahmood',
+        siteName: 'Model Town Branch',
+        branchName: 'Model Town Branch',
+        billDate: '2026-11-19',
+        transportationExpense: 800,
+        materialExpense: 2200,
+        description: 'Bidirectional category sync test',
+        ticketSelectionMode: 'LINKED',
+        externalTicketId: snap.ticketId,
+        externalTicketSerialNo: snap.serialNo,
+        externalJobMetadataId: snap.jobMetadataId,
+        clientName: snap.clientName,
+        workNature: snap.workNature,
+        ticketSubject: snap.subject,
+        ticketSelectionToken: integration.signAuthoritativeTicketSelection(snap),
+        _autoSync: false,
+      });
+
+      const origSync = db.syncBillToAccounts.bind(db);
+      const syncCalls = [];
+      db.syncBillToAccounts = async (billObj, opts) => {
+        syncCalls.push({ id: billObj.id, status: billObj.status, opts });
+        return { ok: true, skipped: true };
+      };
+
+      try {
+        // 1. Category verification without skipAccountsSync awaits syncBillToAccounts and sets top-level verifiedBy
+        const afterVer1 = await db.verifyBillCategory(bill.id, {
+          category: 'transportation',
+          verifiedAmount: 800,
+          verificationComment: 'Verified by Accounts Emp',
+          verifiedBy: 'Ahsan Ali (Batch 1 - Accounts)',
+        });
+        assert.strictEqual(afterVer1.verifiedBy, 'Ahsan Ali (Batch 1 - Accounts)');
+        assert.strictEqual(afterVer1.status, 'PARTIALLY_VERIFIED');
+        assert.strictEqual(syncCalls.length, 1, 'verifyBillCategory must await syncBillToAccounts by default');
+
+        // 2. Category verification with skipAccountsSync: true skips outbound callback
+        const afterVer2 = await db.verifyBillCategory(bill.id, {
+          category: 'material',
+          verifiedAmount: 2100,
+          verificationComment: 'Verified by Admin',
+          verifiedBy: 'Attendance Admin',
+          skipAccountsSync: true,
+        });
+        assert.strictEqual(afterVer2.verifiedBy, 'Attendance Admin');
+        assert.strictEqual(afterVer2.status, 'VERIFIED');
+        assert.strictEqual(syncCalls.length, 1, 'skipAccountsSync: true must skip outbound syncBillToAccounts');
+
+        // 3. Category approvals update status -> PARTIALLY_APPROVED -> APPROVED and persist approvedBy
+        const afterApp1 = await db.approveBillCategory(bill.id, {
+          category: 'transportation',
+          approvedAmount: 750,
+          approvalComment: 'Partial approve',
+          approvedBy: 'Fatma (Accounts Admin)',
+        });
+        assert.strictEqual(afterApp1.status, 'PARTIALLY_APPROVED');
+        assert.strictEqual(afterApp1.approvedBy, 'Fatma (Accounts Admin)');
+        assert.strictEqual(syncCalls.length, 2, 'approveBillCategory must await syncBillToAccounts');
+
+        const afterApp2 = await db.approveBillCategory(bill.id, {
+          category: 'material',
+          approvedAmount: 2100,
+          approvalComment: 'Full approve',
+          approvedBy: 'Fatma (Accounts Admin)',
+        });
+        assert.strictEqual(afterApp2.status, 'APPROVED');
+        assert.strictEqual(afterApp2.approvedBy, 'Fatma (Accounts Admin)');
+        assert.strictEqual(syncCalls.length, 3);
+
+        // 4. Deterministic idempotency key changes whenever category verification/approval state changes
+        const seenKeys = [];
+        const spyFetch = async (_url, init) => {
+          const h = init.headers || {};
+          seenKeys.push(h['X-FES-Idempotency-Key'] || h['x-fes-idempotency-key']);
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ success: true, expenseId: 777 }),
+          };
+        };
+        const cfg = {
+          enabled: true,
+          accountsBaseUrl: 'https://accounts-management.vercel.app',
+          apiKey: process.env.FES_INTEGRATION_API_KEY,
+          secret: process.env.FES_INTEGRATION_SECRET,
+        };
+        await integration.syncBillExpenseToAccounts(afterVer1, { config: cfg, fetchFn: spyFetch });
+        await integration.syncBillExpenseToAccounts(afterVer2, { config: cfg, fetchFn: spyFetch });
+        assert.strictEqual(seenKeys.length, 2);
+        assert.notStrictEqual(seenKeys[0], seenKeys[1], 'Distinct category verification states must produce distinct deterministic idempotency keys');
+      } finally {
+        db.syncBillToAccounts = origSync;
+        if (origAccountsUrl === undefined) delete process.env.ACCOUNTS_APP_BASE_URL;
+        else process.env.ACCOUNTS_APP_BASE_URL = origAccountsUrl;
+      }
+    });
   } finally {
     if (originalDataJson !== null) {
       fs.writeFileSync(dataJsonPath, originalDataJson, 'utf8');

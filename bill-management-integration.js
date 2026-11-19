@@ -6,13 +6,15 @@ const integration = require('./integration-client');
  * endpoints across Express (`server.js`) and Vercel (`api/index.js`).
  */
 async function executeBillManagementAction(action, billId, body = {}) {
+  const skipAccountsSync = body.skipAccountsSync === true;
   switch (action) {
     case 'verify-category': {
       const updated = await db.verifyBillCategory(billId, {
         category: body.category,
         verifiedAmount: body.verifiedAmount,
         verificationComment: body.verificationComment || body.verifiedComment || body.comment || '',
-        verifiedBy: body.verifiedBy || 'Accounts Staff'
+        verifiedBy: body.verifiedBy || 'Accounts Staff',
+        skipAccountsSync
       });
       const detail = await db.getBillForIntegrationManagementById(billId);
       return {
@@ -26,7 +28,8 @@ async function executeBillManagementAction(action, billId, body = {}) {
         category: body.category,
         approvedAmount: body.approvedAmount,
         approvalComment: body.approvalComment || body.approvedComment || body.comment || '',
-        approvedBy: body.approvedBy || 'Senior Admin'
+        approvedBy: body.approvedBy || 'Senior Admin',
+        skipAccountsSync
       });
       const detail = await db.getBillForIntegrationManagementById(billId);
       return {
@@ -42,7 +45,8 @@ async function executeBillManagementAction(action, billId, body = {}) {
         rejectionReason: reason,
         reason,
         rejectedBy: body.rejectedBy || 'Admin',
-        stage: body.stage || 'verification'
+        stage: body.stage || 'verification',
+        skipAccountsSync
       });
       const detail = await db.getBillForIntegrationManagementById(billId);
       return {
@@ -54,7 +58,8 @@ async function executeBillManagementAction(action, billId, body = {}) {
     case 'reject': {
       const updated = await db.rejectBill(billId, {
         rejectionReason: body.rejectionReason || body.reason || '',
-        rejectedBy: body.rejectedBy || 'Admin'
+        rejectedBy: body.rejectedBy || 'Admin',
+        skipAccountsSync
       });
       const detail = await db.getBillForIntegrationManagementById(billId);
       return {

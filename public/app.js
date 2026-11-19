@@ -26,6 +26,9 @@ async function fetchJson(url, options = {}) {
   if (!options.headers['X-Admin-Passcode']) {
     options.headers['X-Admin-Passcode'] = getAdminPasscode();
   }
+  if (!options.cache) {
+    options.cache = 'no-store';
+  }
   const response = await fetch(url, options);
   const payload = await response.json().catch(() => null);
   // Service Worker offline fallback returns 503 with { error: 'Network error' }
@@ -7041,9 +7044,16 @@ function renderAdminBillsTable() {
       empTotalApproved += approved;
 
       const tr = document.createElement('tr');
+      const catValues = bill.categories && typeof bill.categories === 'object' ? Object.values(bill.categories) : [];
+      const resolvedVerBy = bill.verifiedBy || catValues.find(c => c && c.verifiedBy)?.verifiedBy || null;
+      const resolvedAppBy = bill.approvedBy || catValues.find(c => c && c.approvedBy)?.approvedBy || null;
       const badgeHtml = getBillStatusBadgeHtml(bill.status);
-      const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined ? `Rs. ${verifiedAmt.toLocaleString()}` : '—';
-      const approvedTxt = approvedAmt !== null && approvedAmt !== undefined ? `Rs. ${approvedAmt.toLocaleString()}` : '—';
+      const verifiedTxt = verifiedAmt !== null && verifiedAmt !== undefined
+        ? `<div>Rs. ${verifiedAmt.toLocaleString()}</div>${resolvedVerBy ? `<div style="font-size:0.7rem; color:#93c5fd; font-weight:500;">by ${escapeHtml(resolvedVerBy)}</div>` : ''}`
+        : '—';
+      const approvedTxt = approvedAmt !== null && approvedAmt !== undefined
+        ? `<div>Rs. ${approvedAmt.toLocaleString()}</div>${resolvedAppBy ? `<div style="font-size:0.7rem; color:#86efac; font-weight:500;">by ${escapeHtml(resolvedAppBy)}</div>` : ''}`
+        : '—';
 
       const isDup = Boolean(bill.isDuplicate || (bill.duplicateVerification && bill.duplicateVerification.isDuplicate));
       let dupBadgeHtml = '';
@@ -7246,12 +7256,12 @@ function renderBillCategoriesTable(bill, isReadOnly) {
     const isCatVerified = !isCatRejected && !isCatApproved && (cat.status === 'VERIFIED' || cat.verificationStatus === 'VERIFIED');
 
     let subNote = '';
-    if (isCatRejected && cat.rejectionReason) {
-      subNote = `<div style="font-size:0.75rem; color:#f87171; margin-top:2px;">Rej: ${escapeHtml(cat.rejectionReason)}</div>`;
-    } else if (isCatApproved && (cat.approvedComment || cat.approvalComment)) {
-      subNote = `<div style="font-size:0.75rem; color:#86efac; margin-top:2px;">Appr: ${escapeHtml(cat.approvedComment || cat.approvalComment)}</div>`;
-    } else if (isCatVerified && (cat.verifiedComment || cat.verificationComment)) {
-      subNote = `<div style="font-size:0.75rem; color:#93c5fd; margin-top:2px;">Ver: ${escapeHtml(cat.verifiedComment || cat.verificationComment)}</div>`;
+    if (isCatRejected && (cat.rejectionReason || cat.rejectedBy)) {
+      subNote = `<div style="font-size:0.75rem; color:#f87171; margin-top:2px;">Rej: ${escapeHtml(cat.rejectionReason || 'Rejected')}${cat.rejectedBy ? ` (${escapeHtml(cat.rejectedBy)})` : ''}</div>`;
+    } else if (isCatApproved && (cat.approvedComment || cat.approvalComment || cat.approvedBy)) {
+      subNote = `<div style="font-size:0.75rem; color:#86efac; margin-top:2px;">Appr: ${escapeHtml(cat.approvedComment || cat.approvalComment || 'Approved')}${cat.approvedBy ? ` (${escapeHtml(cat.approvedBy)})` : ''}</div>`;
+    } else if (isCatVerified && (cat.verifiedComment || cat.verificationComment || cat.verifiedBy)) {
+      subNote = `<div style="font-size:0.75rem; color:#93c5fd; margin-top:2px;">Ver: ${escapeHtml(cat.verifiedComment || cat.verificationComment || 'Verified')}${cat.verifiedBy ? ` (${escapeHtml(cat.verifiedBy)})` : ''}</div>`;
     }
 
     let verifiedCell = '';
@@ -8198,8 +8208,24 @@ async function openAdminBillModal(billId, isReadOnly = false) {
       } else {
         logs.forEach(l => {
           const li = document.createElement('li');
-          const time = l.timestamp ? new Date(l.timestamp).toLocaleString() : '';
-          li.innerHTML = `<strong>${escapeHtml(l.action)}:</strong> ${escapeHtml(l.details || '')} <span style="font-size:0.75rem; color:#64748b;">(${escapeHtml(l.performedBy || 'system')} — ${time})</span>`;
+          const rawTs = l.timestamp || l.at;
+          const time = rawTs ? new Date(rawTs).toLocaleString() : '';
+          const actor = l.performedBy || l.by || 'system';
+          let summaryTxt = '';
+          if (typeof l.details === 'string') {
+            summaryTxt = l.details;
+          } else if (l.details && typeof l.details === 'object') {
+            const parts = [];
+            if (l.details.billNumber) parts.push(String(l.details.billNumber));
+            if (l.details.verifiedAmount !== undefined && l.details.verifiedAmount !== null) parts.push(`Verified: Rs. ${Number(l.details.verifiedAmount).toLocaleString()}`);
+            if (l.details.approvedAmount !== undefined && l.details.approvedAmount !== null) parts.push(`Approved: Rs. ${Number(l.details.approvedAmount).toLocaleString()}`);
+            if (l.details.comment) parts.push(`Note: ${l.details.comment}`);
+            if (l.details.reason) parts.push(`Reason: ${l.details.reason}`);
+            if (l.details.billStatus) parts.push(`Status: ${l.details.billStatus}`);
+            summaryTxt = parts.join(' • ');
+          }
+          const catPrefix = l.category ? `[${l.category}] ` : '';
+          li.innerHTML = `<strong>${escapeHtml(l.action || 'UPDATED')}:</strong> ${escapeHtml(catPrefix + summaryTxt)} <span style="font-size:0.75rem; color:#64748b;">(${escapeHtml(actor)}${time ? ' — ' + escapeHtml(time) : ''})</span>`;
           auditList.appendChild(li);
         });
       }
@@ -8424,6 +8450,26 @@ function initBillEventListeners() {
       renderAdminBillsTable();
     });
   }
+
+  // Keep Attendance App bill views synchronized when returning from Accounts App tab
+  const refreshActiveBillViewsOnFocus = () => {
+    if (document.visibilityState === 'hidden') return;
+    if (currentView === 'admin' && currentAdminTab === 'tab-bills' && getAdminPasscode()) {
+      loadAdminBills().catch(() => {});
+      const modalEl = document.getElementById('modal-admin-bill-details');
+      const actionBoxEl = document.getElementById('admin-bill-cat-action-box');
+      if (modalEl && !modalEl.classList.contains('hidden') && currentActiveAdminBillId && (!actionBoxEl || actionBoxEl.classList.contains('hidden'))) {
+        openAdminBillModal(currentActiveAdminBillId, currentActiveAdminBillIsReadOnly).catch(() => {});
+      }
+    } else if (selectedEmployee) {
+      const empBillsPane = document.getElementById('emp-pane-my-bills');
+      if (empBillsPane && empBillsPane.classList.contains('active')) {
+        loadEmployeeBills().catch(() => {});
+      }
+    }
+  };
+  document.addEventListener('visibilitychange', refreshActiveBillViewsOnFocus);
+  window.addEventListener('focus', refreshActiveBillViewsOnFocus);
 
   // Global window bindings for inline HTML handlers
   window.searchAccountsTicketsForBill = searchAccountsTicketsForBill;

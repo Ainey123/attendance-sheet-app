@@ -67,6 +67,10 @@ module.exports = async (req, res) => {
 
   const path = getPath(req);
   const method = req.method;
+  if (path.startsWith('bills') || path.startsWith('integration/')) {
+    res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+  }
   const headers = req.headers || {};
   const query = req.query || {};
   const queryPasscode = query.passcode || query.adminPasscode || query.pass || '';
